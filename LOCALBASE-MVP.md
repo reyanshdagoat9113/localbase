@@ -102,7 +102,7 @@ DELETE /api/:table/:id     → delete
 
 ---
 
-### Phase 4: CLI (`packages/cli`)
+### Phase 4: CLI (`packages/cli`) ✅ DONE
 
 ```
 localbase init         → scaffold project + config file
@@ -111,13 +111,13 @@ localbase db migrate   → run pending migrations
 localbase db reset     → drop all tables, re-run migrations
 ```
 
-- [ ] Set up Commander.js with all 4 commands
-- [ ] `init`: create `.localbase/` dir, `localbase.config.ts`, example schema
-- [ ] `dev`: start Hono server, watch config file for changes, reload on save
-- [ ] `db migrate`: load config, run migration runner, print status
-- [ ] `db reset`: drop tables, re-run all migrations
-- [ ] Add colored output (picocolors) for success/error/status messages
-- [ ] Add `npx @localbase/cli` support (bin field in package.json)
+- [x] Set up Commander.js with all 4 commands
+- [x] `init`: create `.localbase/` dir, `localbase.config.ts`, example schema
+- [x] `dev`: start Hono server, watch config file for changes, reload on save
+- [x] `db migrate`: load config, run migration runner, print status
+- [x] `db reset`: drop tables, re-run all migrations
+- [x] Add colored output (picocolors) for success/error/status messages
+- [x] Add `npx @localbase/cli` support (bin field in package.json)
 
 ---
 
