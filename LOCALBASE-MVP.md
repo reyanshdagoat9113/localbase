@@ -38,11 +38,11 @@ localbase/
 
 Set up the monorepo. Get `npm run build` working across all packages.
 
-- [ ] Init npm monorepo with workspace config
-- [ ] Create all 4 packages with `package.json` and `tsconfig.json`
-- [ ] Add `tsup` build config to each package
-- [ ] Add `shared` as dependency to `core`, `cli`, `sdk`
-- [ ] Verify `npm run build -ws` compiles all packages with no errors
+- [x] Init npm monorepo with workspace config
+- [x] Create all 4 packages with `package.json` and `tsconfig.json`
+- [x] Add `tsup` build config to each package
+- [x] Add `shared` as dependency to `core`, `cli`, `sdk`
+- [x] Verify `npm run build -ws` compiles all packages with no errors
 
 ---
 
