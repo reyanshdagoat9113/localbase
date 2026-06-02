@@ -34,7 +34,7 @@ localbase/
 
 ## Build Phases
 
-### Phase 1: Project Scaffolding
+### Phase 1: Project Scaffolding ✅ DONE
 
 Set up the monorepo. Get `npm run build` working across all packages.
 
@@ -76,7 +76,7 @@ export default {
 
 ---
 
-### Phase 3: REST API (`packages/core`)
+### Phase 3: REST API (`packages/core`) ✅ DONE
 
 Auto-generate CRUD endpoints from schema.
 
@@ -92,13 +92,13 @@ DELETE /api/:table/:id     → delete
 - `?order=created_at.desc&limit=10`
 - `?email=eq.reyansh@example.com`
 
-- [ ] Scaffold Hono server with `/api/:table` routes
-- [ ] Wire routes to query executor from Phase 2
-- [ ] Implement filtering (`eq`, `neq`, `gt`, `lt`, `like`)
-- [ ] Implement sorting (`order`), pagination (`limit`, `offset`)
-- [ ] Add input validation (reject unknown columns, wrong types)
-- [ ] Add error responses with proper HTTP status codes
-- [ ] Write integration tests for every endpoint and filter
+- [x] Scaffold Hono server with `/api/:table` routes
+- [x] Wire routes to query executor from Phase 2
+- [x] Implement filtering (`eq`, `neq`, `gt`, `lt`, `like`)
+- [x] Implement sorting (`order`), pagination (`limit`, `offset`)
+- [x] Add input validation (reject unknown columns, wrong types)
+- [x] Add error responses with proper HTTP status codes
+- [x] Write integration tests for every endpoint and filter
 
 ---
 

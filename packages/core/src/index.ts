@@ -2,6 +2,9 @@
 export { Database } from "./db.js";
 export type { DatabaseOptions } from "./db.js";
 
+// API server
+export { createServer } from "./api.js";
+
 // DDL compiler
 export { schemaToDDL, tableToDDL, columnToDDL } from "./ddl.js";
 
