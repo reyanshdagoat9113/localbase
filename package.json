@@ -1,0 +1,17 @@
+{
+  "name": "localbase",
+  "private": true,
+  "workspaces": [
+    "packages/shared",
+    "packages/core",
+    "packages/cli",
+    "packages/sdk"
+  ],
+  "scripts": {
+    "build": "npm run build -ws",
+    "clean": "npm run clean -ws"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}
