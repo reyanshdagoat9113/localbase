@@ -12,16 +12,22 @@
       "require": "./dist/index.cjs"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
-    "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\""
+    "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
+    "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
-    "@localbase/shared": "0.1.0"
+    "@localbase/shared": "0.1.0",
+    "better-sqlite3": "^12.10.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
     "tsup": "^8.0.0",
+    "tsx": "^4.22.4",
     "typescript": "^5.7.0"
   }
 }

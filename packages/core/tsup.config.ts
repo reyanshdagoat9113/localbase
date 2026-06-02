@@ -6,5 +6,5 @@ export default defineConfig({
   dts: true,
   clean: true,
   sourcemap: true,
-  external: ["@localbase/shared"],
+  external: ["@localbase/shared", "better-sqlite3"],
 });

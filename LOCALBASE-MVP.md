@@ -46,7 +46,7 @@ Set up the monorepo. Get `npm run build` working across all packages.
 
 ---
 
-### Phase 2: Database Layer (`packages/core`)
+### Phase 2: Database Layer (`packages/core`) ✅ DONE
 
 Read schema → create SQLite tables → run queries.
 
@@ -66,13 +66,13 @@ export default {
 };
 ```
 
-- [ ] Define `TableSchema` and `ColumnSchema` types in `shared`
-- [ ] Build schema → DDL compiler (`CREATE TABLE`, column types, constraints)
-- [ ] Implement migration tracking (`_migrations` table in SQLite)
-- [ ] Implement migration runner (apply pending, skip applied)
-- [ ] Build query executor: `select`, `insert`, `update`, `delete`
-- [ ] Support foreign keys and relationships
-- [ ] Write unit tests for: DDL generation, migrations, all CRUD operations
+- [x] Define `TableSchema` and `ColumnSchema` types in `shared`
+- [x] Build schema → DDL compiler (`CREATE TABLE`, column types, constraints)
+- [x] Implement migration tracking (`_migrations` table in SQLite)
+- [x] Implement migration runner (apply pending, skip applied)
+- [x] Build query executor: `select`, `insert`, `update`, `delete`
+- [x] Support foreign keys and relationships
+- [x] Write unit tests for: DDL generation, migrations, all CRUD operations
 
 ---
 
