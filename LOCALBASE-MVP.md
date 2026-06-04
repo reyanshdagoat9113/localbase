@@ -121,7 +121,7 @@ localbase db reset     → drop all tables, re-run migrations
 
 ---
 
-### Phase 5: SDK (`packages/sdk`)
+### Phase 5: SDK (`packages/sdk`) ✅ DONE
 
 ```ts
 import { createClient } from "@localbase/sdk";
@@ -134,13 +134,13 @@ await db.from("users").update({ name: "New" }).eq("id", 1);
 await db.from("users").delete().eq("id", 1);
 ```
 
-- [ ] Build chainable query builder: `from().select().eq().order().limit()`
-- [ ] Implement filters: `eq`, `neq`, `gt`, `lt`, `gte`, `lte`, `like`, `in`
-- [ ] Implement modifiers: `order`, `limit`, `offset`, `single`
-- [ ] Implement `insert`, `update`, `delete` terminators
-- [ ] Compile builder state → URL query params → fetch call
-- [ ] Parse response into `{ data, error }` shape
-- [ ] Write tests against a running dev server
+- [x] Build chainable query builder: `from().select().eq().order().limit()`
+- [x] Implement filters: `eq`, `neq`, `gt`, `lt`, `gte`, `lte`, `like`, `in`
+- [x] Implement modifiers: `order`, `limit`, `offset`, `single`
+- [x] Implement `insert`, `update`, `delete` terminators
+- [x] Compile builder state → URL query params → fetch call
+- [x] Parse response into `{ data, error }` shape
+- [x] Write tests against a running dev server
 
 ---
 
