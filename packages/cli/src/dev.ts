@@ -3,12 +3,17 @@ import path from "node:path";
 import { serve } from "@hono/node-server";
 import type { Server } from "node:http";
 import { Database, createServer as createApi } from "@localbase/core";
-import { loadConfig } from "./config.js";
+import { loadConfig, ConfigError } from "./config.js";
 import { log } from "./log.js";
 
 const DEFAULT_PORT = 54321;
 
-export async function devCommand(): Promise<void> {
+export interface DevOptions {
+  port?: number;
+}
+
+export async function devCommand(opts: DevOptions = {}): Promise<void> {
+  const port = opts.port ?? DEFAULT_PORT;
   let currentServer: Server | null = null;
   let currentDb: Database | null = null;
   let reloading = false;
@@ -35,7 +40,7 @@ export async function devCommand(): Promise<void> {
     const server = serve(
       {
         fetch: app.fetch,
-        port: DEFAULT_PORT,
+        port,
       },
       (info) => {
         log.success(`Server running at http://localhost:${info.port}`);
@@ -68,7 +73,12 @@ export async function devCommand(): Promise<void> {
           await start();
           reloading = false;
         } catch (err) {
-          log.error(`Reload failed: ${err instanceof Error ? err.message : err}`);
+          if (err instanceof ConfigError) {
+            log.error(`Reload failed: ${err.message}`);
+            if (err.hint) log.hint(err.hint);
+          } else {
+            log.error(`Reload failed: ${err instanceof Error ? err.message : err}`);
+          }
           log.info("Fix the config and save again to retry.");
           reloading = false;
         }
@@ -104,7 +114,7 @@ export async function devCommand(): Promise<void> {
   try {
     await start();
   } catch (err) {
-    log.error(`Failed to start: ${err instanceof Error ? err.message : err}`);
-    process.exit(1);
+    // Re-throw so the top-level handler in index.ts can format + add hint
+    throw err;
   }
 }

@@ -6,4 +6,5 @@ export const log = {
   info: (msg: string) => console.log(pc.cyan("ℹ") + " " + msg),
   warn: (msg: string) => console.log(pc.yellow("▲") + " " + msg),
   heading: (msg: string) => console.log(pc.bold(pc.cyan(msg))),
+  hint: (msg: string) => console.log(pc.dim("  ↳ " + msg)),
 };

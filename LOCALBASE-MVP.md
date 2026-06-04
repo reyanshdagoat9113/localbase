@@ -144,13 +144,13 @@ await db.from("users").delete().eq("id", 1);
 
 ---
 
-### Phase 6: Polish
+### Phase 6: Polish ✅ DONE
 
-- [ ] End-to-end test: `init` → define schema → `dev` → query via SDK → assert results
-- [ ] Error handling: clear messages for missing config, bad schema, connection refused
-- [ ] Add `--port` flag to `dev` command (default 54321)
-- [ ] Add `--help` to all CLI commands
-- [ ] README with quickstart guide
+- [x] End-to-end test: `init` → define schema → `dev` → query via SDK → assert results
+- [x] Error handling: clear messages for missing config, bad schema, connection refused
+- [x] Add `--port` flag to `dev` command (default 54321)
+- [x] Add `--help` to all CLI commands
+- [x] README with quickstart guide
 
 ---
 

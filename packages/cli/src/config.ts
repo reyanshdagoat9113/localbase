@@ -1,4 +1,5 @@
 import path from "node:path";
+import fs from "node:fs";
 import { createJiti } from "jiti";
 import type { LocalBaseConfig } from "@localbase/shared";
 
@@ -18,6 +19,17 @@ export interface ResolvedConfig {
 }
 
 /**
+ * Custom error for config-related issues, with hints for the user.
+ */
+export class ConfigError extends Error {
+  hint?: string;
+  constructor(message: string, hint?: string) {
+    super(message);
+    this.hint = hint;
+  }
+}
+
+/**
  * Loads the localbase config from the project directory.
  * Uses jiti to support TypeScript config files.
  */
@@ -27,6 +39,14 @@ export async function loadConfig(
   const configPath = path.resolve(cwd, CONFIG_FILE);
   const dbDir = path.resolve(cwd, DB_DIR);
   const dbPath = path.resolve(dbDir, DB_FILE);
+
+  // Check file exists first for a cleaner error than jiti's default
+  if (!fs.existsSync(configPath)) {
+    throw new ConfigError(
+      `No ${CONFIG_FILE} found in ${cwd}`,
+      `Run \`localbase init\` to create one.`
+    );
+  }
 
   const jiti = createJiti(cwd, {
     interopDefault: true,
@@ -48,14 +68,16 @@ export async function loadConfig(
 
   // Validate config shape
   if (!config || typeof config !== "object" || !("tables" in config)) {
-    throw new Error(
-      `Invalid config: must export an object with a "tables" property.\n` +
-        `Example: export default { tables: { ... } }`
+    throw new ConfigError(
+      `Invalid config: must export an object with a "tables" property.`,
+      `Example: export default { tables: { ... } }`
     );
   }
 
   if (typeof config.tables !== "object" || config.tables === null) {
-    throw new Error(`Invalid config: "tables" must be an object.`);
+    throw new ConfigError(
+      `Invalid config: "tables" must be an object.`
+    );
   }
 
   return { configPath, dbPath, dbDir, config };
