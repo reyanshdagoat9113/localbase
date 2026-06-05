@@ -360,15 +360,19 @@ export function createServer(db: Database, schema: DatabaseSchema): Hono {
       return c.json({ error: `Unknown table: "${tableName}"` }, 404);
     }
 
-    const count = db.delete(tableName, [
-      { column: "id", operator: "eq", value: id },
-    ]);
+    try {
+      const count = db.delete(tableName, [
+        { column: "id", operator: "eq", value: id },
+      ]);
 
-    if (count === 0) {
-      return c.json({ error: "Row not found" }, 404);
+      if (count === 0) {
+        return c.json({ error: "Row not found" }, 404);
+      }
+
+      return c.json({ data: { deleted: true } });
+    } catch (err) {
+      return handleError(c, err);
     }
-
-    return c.json({ data: { deleted: true } });
   });
 
   // ── Health check ──
@@ -390,6 +394,12 @@ function handleError(c: any, err: unknown) {
     const sqliteErr = err as Error & { code: string };
     if (sqliteErr.code === "SQLITE_CONSTRAINT_UNIQUE") {
       return c.json({ error: sqliteErr.message }, 409);
+    }
+    if (sqliteErr.code === "SQLITE_CONSTRAINT_FOREIGNKEY") {
+      return c.json(
+        { error: "Foreign key constraint failed — delete or update the referenced rows first." },
+        409
+      );
     }
     if (sqliteErr.code.startsWith("SQLITE_CONSTRAINT")) {
       return c.json({ error: sqliteErr.message }, 400);
