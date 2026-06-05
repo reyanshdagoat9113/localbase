@@ -16,7 +16,7 @@ npx @localbase/cli init
 localbase dev
 ```
 
-That's it. You now have a REST API running at `http://localhost:54321`.
+That's it. You now have a REST API running at `http://localhost:5180`.
 
 ---
 
@@ -61,7 +61,7 @@ Save the file — the dev server hot-reloads automatically.
 
 ```
 localbase init             Scaffold a new project (creates .localbase/ + config file)
-localbase dev              Start dev server (port 54321, hot-reload on schema change)
+localbase dev              Start dev server (port 5180, hot-reload on schema change)
 localbase dev --port 4000  Start on a custom port
 localbase db migrate       Run pending migrations + show status
 localbase db reset         Drop all tables, re-run migrations from scratch
@@ -106,7 +106,7 @@ GET /api/users?age=gte.25&order=created_at.desc&limit=10
 ```ts
 import { createClient } from "@localbase/sdk";
 
-const db = createClient("http://localhost:54321");
+const db = createClient("http://localhost:5180");
 
 // SELECT
 const users = await db.from("users").select("*");

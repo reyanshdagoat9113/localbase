@@ -122,7 +122,7 @@ localbase jobs logs <name>       Show run history for a job
 
 ```ts
 await storage.from("avatars").upload(file);
-// → { path: "avatars/reyansh.jpg", url: "http://localhost:54321/storage/avatars/reyansh.jpg" }
+// → { path: "avatars/reyansh.jpg", url: "http://localhost:5180/storage/avatars/reyansh.jpg" }
 
 const url = storage.from("avatars").getPublicUrl("reyansh.jpg");
 const signedUrl = await storage.from("documents").createSignedUrl("report.pdf", { expiresIn: 3600 });

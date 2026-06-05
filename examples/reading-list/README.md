@@ -51,7 +51,7 @@ localbase dev
 You should see:
 
 ```
-✔ Server running at http://localhost:54321
+✔ Server running at http://localhost:3000
 ℹ Watching localbase.config.ts for changes...
 ```
 
@@ -69,7 +69,7 @@ Then from this folder:
 npm run dev
 ```
 
-Open the URL Vite prints (http://localhost:5180).
+Open the URL Vite prints (http://localhost:3000).
 
 ---
 
@@ -89,20 +89,20 @@ Open the URL Vite prints (http://localhost:5180).
 While the dev server is running, open these in your browser:
 
 ```
-http://localhost:54321/api/bookmarks
-http://localhost:54321/api/bookmarks?status=eq.unread&order=created_at.desc&limit=5
+http://localhost:3000/api/bookmarks
+http://localhost:3000/api/bookmarks?status=eq.unread&order=created_at.desc&limit=5
 ```
 
 Or with curl:
 
 ```bash
 # Add a bookmark
-curl -X POST http://localhost:54321/api/bookmarks \
+curl -X POST http://localhost:3000/api/bookmarks \
   -H "Content-Type: application/json" \
   -d '{"url":"https://example.com","title":"Example"}'
 
 # List unread
-curl http://localhost:54321/api/bookmarks?status=eq.unread
+curl http://localhost:3000/api/bookmarks?status=eq.unread
 ```
 
 ---
@@ -138,8 +138,8 @@ examples/reading-list/
 
 **"No localbase.config.ts found"** — make sure you run `localbase dev` from this folder.
 
-**CORS errors in the browser console** — not an issue, LocalBase's dev server allows all origins. If you see them, check the URL is `http://localhost:54321`.
+**CORS errors in the browser console** — not an issue, LocalBase's dev server allows all origins. If you see them, check the URL is `http://localhost:3000`.
 
 **"Cannot find @localbase/sdk"** — run `npm install` from the repo root.
 
-**Port 54321 already in use** — `localbase dev --port 54322`, then update `src/api.ts`.
+**Port 5180 already in use** — `localbase dev --port 54322`, then update `src/api.ts`.

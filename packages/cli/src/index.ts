@@ -43,8 +43,8 @@ program
   .description("Start the dev server with hot-reload")
   .option(
     "-p, --port <number>",
-    "Port to run the server on (default: 54321)",
-    "54321"
+    "Port to run the server on (default: 5180)",
+    "5180"
   )
   .action(async (opts: { port: string }) => {
     const port = Number.parseInt(opts.port, 10);

@@ -6,7 +6,7 @@ import { Database, createServer as createApi } from "@localbase/core";
 import { loadConfig, ConfigError } from "./config.js";
 import { log } from "./log.js";
 
-const DEFAULT_PORT = 54321;
+const DEFAULT_PORT = 5180;
 
 export interface DevOptions {
   port?: number;

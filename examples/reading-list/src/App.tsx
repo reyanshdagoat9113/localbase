@@ -74,7 +74,7 @@ export default function App() {
     <div className="app">
       <header className="app-header">
         <h1>📖 Reading List</h1>
-        <span className="server">localhost:54321</span>
+        <span className="server">localhost:5180</span>
       </header>
 
       {error && (

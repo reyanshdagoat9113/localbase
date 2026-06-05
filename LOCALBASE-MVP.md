@@ -125,7 +125,7 @@ localbase db reset     → drop all tables, re-run migrations
 
 ```ts
 import { createClient } from "@localbase/sdk";
-const db = createClient("http://localhost:54321");
+const db = createClient("http://localhost:5180");
 
 await db.from("users").select("*");
 await db.from("users").select("*").eq("id", 1).single();
@@ -148,7 +148,7 @@ await db.from("users").delete().eq("id", 1);
 
 - [x] End-to-end test: `init` → define schema → `dev` → query via SDK → assert results
 - [x] Error handling: clear messages for missing config, bad schema, connection refused
-- [x] Add `--port` flag to `dev` command (default 54321)
+- [x] Add `--port` flag to `dev` command (default 5180)
 - [x] Add `--help` to all CLI commands
 - [x] README with quickstart guide
 
@@ -166,4 +166,4 @@ Auth · Storage · Realtime · Admin Studio · PostgreSQL · DevDesk · GraphQL 
 2. Developer defines tables in config
 3. `localbase dev` starts server with REST API
 4. SDK can CRUD data
-5. `localhost:54321/api/users` returns JSON in browser
+5. `localhost:5180/api/users` returns JSON in browser

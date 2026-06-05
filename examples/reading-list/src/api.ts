@@ -12,7 +12,7 @@ export interface Bookmark {
   created_at: string;
 }
 
-const baseUrl = "http://localhost:54321";
+const baseUrl = "http://localhost:5180";
 export const db = createClient(baseUrl);
 
 export async function listBookmarks(opts: {
