@@ -6,15 +6,77 @@
 
 ## Priority Order
 
-1. **Realtime** — biggest perceived value, hardest to do well
-2. **Scheduled Jobs** — genuinely useful, simpler scope
-3. **Storage** — niche but easy to add
+1. **Auth** — table stakes. Blocks secure storage and realtime RLS.
+2. **Realtime** — biggest perceived value, hardest to do well
+3. **Storage** — needs auth for private buckets
+4. **Admin UI** — differentiator vs dev-only tools
+5. **Scheduled Jobs** — genuinely useful, simpler scope
 
 Edge Functions are **out of scope**. Developers can just write Node scripts.
 
+PostgreSQL support is **out of scope** for post-MVP. See CLI note below.
+
 ---
 
-### Phase 7: Realtime
+### Phase 7: Auth
+
+**Goal:** Secure the platform with user authentication and authorization.
+
+**SDK example:**
+
+```ts
+const db = createClient("http://localhost:5180");
+
+await db.auth.signUp({ email: "rey@example.com", password: "secret" });
+await db.auth.signIn({ email: "rey@example.com", password: "secret" });
+const user = await db.auth.getUser();
+await db.auth.signOut();
+```
+
+**REST API:**
+
+```
+POST /api/auth/signup      → create account
+POST /api/auth/signin      → start session (returns JWT)
+POST /api/auth/signout     → invalidate session
+GET  /api/auth/user        → get current user
+POST /api/auth/refresh     → refresh access token
+```
+
+**Implementation:**
+
+| Component | Where | What it does |
+|---|---|---|
+| Auth router | `packages/core` | Hono routes for signup/signin/signout/user |
+| Password hashing | `packages/core` | Argon2id via `argon2` package |
+| JWT engine | `packages/core` | Issue access + refresh tokens |
+| User table | SQLite | `_users` table (id, email, password_hash, created_at) |
+| Sessions table | SQLite | `_sessions` table (id, user_id, token, expires_at) |
+| Auth middleware | `packages/core` | Verify JWT on protected routes, attach `user` to context |
+| SDK auth namespace | `packages/sdk` | `db.auth.signUp/signIn/getUser/signOut` |
+| Row-level security | `packages/core` | Optional: ` policies` in config to restrict table access per user role |
+
+**Tasks:**
+
+- [ ] Define `AuthConfig` type in `shared` (enable/disable auth, token expiry, etc.)
+- [ ] Create `_users` table with email unique constraint
+- [ ] Create `_sessions` table for refresh tokens
+- [ ] Add `argon2` dependency to `core` for password hashing
+- [ ] Add `jose` or `jsonwebtoken` dependency for JWT handling
+- [ ] Implement `POST /api/auth/signup` (validate email, hash password, create user)
+- [ ] Implement `POST /api/auth/signin` (verify password, issue JWT + refresh token)
+- [ ] Implement `GET /api/auth/user` (validate JWT, return user payload)
+- [ ] Implement `POST /api/auth/signout` (invalidate refresh token)
+- [ ] Implement `POST /api/auth/refresh` (rotate refresh token, issue new JWT)
+- [ ] Add auth middleware to core API (attach `user` to Hono context)
+- [ ] Add `db.auth` namespace to SDK
+- [ ] Add `localbase auth` CLI commands: `create-user`, `list-users`, `reset-password`
+- [ ] Write integration tests: signup flow, signin flow, protected route, token expiry
+- [ ] Update README with auth quickstart
+
+---
+
+### Phase 8: Realtime
 
 **Goal:** Frontend gets notified instantly when data changes — no polling.
 
@@ -57,7 +119,78 @@ db.subscribe("messages", { where: { room_id: 1 } }, (event) => {
 
 ---
 
-### Phase 8: Scheduled Jobs
+### Phase 10: Admin UI
+
+**Goal:** A built-in management dashboard for inspecting and editing data without writing code.
+
+**Why this matters:**
+Every competitor (PocketBase, TrailBase, Supabase, Directus, NocoDB) has an admin UI. It is the first thing non-technical teammates or solo developers use to verify data, debug issues, and make quick edits. Without it, LocalBase feels like a "dev tool" instead of a "platform."
+
+**URL:**
+```
+http://localhost:5180/_/admin
+```
+
+**Features:**
+
+| Feature | Priority | Description |
+|---|---|---|
+| **Table browser** | P0 | List all tables, paginate rows, sort, search |
+| **Row editor** | P0 | Inline edit cells, add new rows, delete rows |
+| **Schema viewer** | P0 | Read-only view of current table schema (columns, types, constraints) |
+| **Auth manager** | P1 | List users, reset passwords, assign roles (requires Phase 7: Auth) |
+| **Storage browser** | P1 | View uploaded files, preview images, delete files (requires Phase 9: Storage) |
+| **Realtime inspector** | P2 | Live log of WebSocket events, active subscriber count (requires Phase 8: Realtime) |
+| **Job logs viewer** | P2 | View `_job_runs` history, status, output (requires Phase 11: Scheduled Jobs) |
+| **API playground** | P2 | Auto-generated docs for all tables, test endpoints inline |
+
+**Implementation:**
+
+| Component | Where | What it does |
+|---|---|---|
+| Admin UI bundle | `packages/core` | A small React app served from a static Hono route (`/_admin/*`) |
+| Admin API | `packages/core` | Protected endpoints: `GET /_api/admin/tables`, `GET /_api/admin/:table/rows`, `POST /_api/admin/:table/rows`, etc. |
+| Auth gate | `packages/core` | Redirect to login if auth is enabled and no valid session (requires Phase 7) |
+| React app | `packages/core` | Build with Vite or Rolldown, output `dist/admin` that Hono serves |
+
+**Tech stack:**
+
+| Layer | Choice |
+|---|---|
+| Framework | React |
+| UI library | shadcn/ui + Tailwind CSS |
+| Data fetching | TanStack Query |
+| Table grid | `ag-grid-community` or `tanstack/react-table` |
+| Build | Rolldown or Vite (bundled at `core` build time) |
+
+**CLI:**
+
+```
+localbase dev          → serves admin UI at /_/admin automatically
+localbase studio       → opens browser directly to admin UI (alias)
+```
+
+**Tasks:**
+
+- [ ] Create `packages/core/admin/` subfolder with React app
+- [ ] Add admin build step to `core` package.json (builds into `dist/admin/`)
+- [ ] Add Hono static file route `/_admin/*` serving `dist/admin/` assets
+- [ ] Add `GET /_api/admin/tables` endpoint (list all tables from schema)
+- [ ] Add `GET /_api/admin/:table/rows` endpoint (list rows with pagination, sort, search)
+- [ ] Add `POST /_api/admin/:table/rows` endpoint (insert row)
+- [ ] Add `PATCH /_api/admin/:table/rows/:id` endpoint (update row)
+- [ ] Add `DELETE /_api/admin/:table/rows/:id` endpoint (delete row)
+- [ ] Add `GET /_api/admin/schema` endpoint (return current schema as JSON)
+- [ ] Build table browser: sidebar table list + data grid
+- [ ] Build inline row editor (double-click cell → edit → save)
+- [ ] Build schema viewer panel (shows column names, types, constraints)
+- [ ] Add `localbase studio` CLI command (opens `http://localhost:5180/_/admin` in default browser)
+- [ ] Write integration tests: load admin, list tables, edit row, delete row
+- [ ] Update README with admin UI screenshot
+
+---
+
+### Phase 11: Scheduled Jobs
 
 **Goal:** Define cron jobs in config, LocalBase runs them automatically.
 
@@ -188,8 +321,10 @@ GET    /api/storage/:bucket              List files in bucket
 
 ## Prerequisites
 
-- Phase 7 requires MVP complete (Database + API + SDK foundation)
-- Phase 8 requires MVP complete
-- Phase 9 is independent, can ship anytime
+- Phase 7 (Auth) requires MVP complete (Database + API + SDK foundation)
+- Phase 8 (Realtime) requires MVP complete
+- Phase 9 (Storage) is independent, can ship anytime
+- Phase 10 (Admin UI) requires MVP complete. Optional: Phase 7 (Auth) for login gate, Phase 9 (Storage) for file browser, Phase 8 (Realtime) for inspector.
+- Phase 11 (Scheduled Jobs) requires MVP complete
 
-Phases 7, 8, 9 are independent — build in any order based on demand.
+Phases 7–11 are independent — build in any order based on demand, except Admin UI benefits from earlier phases.
