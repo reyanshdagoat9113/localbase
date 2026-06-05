@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import type { DatabaseSchema } from "@localbase/shared";
 import type { Database } from "./db.js";
 import type { Filter, FilterOperator, OrderBy, QueryOptions } from "./query.js";
@@ -267,6 +268,9 @@ class HttpError extends Error {
 
 export function createServer(db: Database, schema: DatabaseSchema): Hono {
   const app = new Hono();
+
+  // Allow requests from any origin (dev server consumed by local frontends)
+  app.use("*", cors());
 
   // ── GET /api/:table — list rows ──
   app.get("/api/:table", (c) => {
