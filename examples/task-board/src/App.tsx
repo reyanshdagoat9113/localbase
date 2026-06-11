@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Column, Comment, Label, Priority, Project, Task, TaskWithMeta } from "./types";
 import {
+  clearPersistedSession,
   createColumn,
   createComment,
   createLabel,
@@ -13,34 +14,68 @@ import {
   deleteTask,
   getProject,
   hydrateTasks,
+  isAuthenticated,
   listColumns,
   listComments,
   listLabels,
   listProjects,
   listTasks,
   listUpcomingUrgentTasks,
+  restoreSession,
+  saveSession,
   setTaskLabels,
   updateTask,
 } from "./api";
 
 type View =
+  | { kind: "auth" }
   | { kind: "projects" }
   | { kind: "board"; projectId: number }
   | { kind: "task"; projectId: number; taskId: number };
 
 export default function App() {
-  const [view, setView] = useState<View>({ kind: "projects" });
+  const [view, setView] = useState<View>({ kind: "auth" });
   const [error, setError] = useState<string | null>(null);
+  const [authed, setAuthed] = useState(false);
+
+  // Restore persisted session on mount
+  useEffect(() => {
+    restoreSession();
+    if (isAuthenticated()) {
+      setAuthed(true);
+      setView({ kind: "projects" });
+    }
+  }, []);
 
   const report = useCallback((err: unknown) => {
     setError(err instanceof Error ? err.message : String(err));
+  }, []);
+
+  const handleAuthSuccess = useCallback(() => {
+    saveSession();
+    setAuthed(true);
+    setView({ kind: "projects" });
+  }, []);
+
+  const handleSignOut = useCallback(async () => {
+    await db.auth.signOut();
+    clearPersistedSession();
+    setAuthed(false);
+    setView({ kind: "auth" });
   }, []);
 
   return (
     <div className="app">
       <header className="app-header">
         <h1>📋 Task Board</h1>
-        <span className="server">localhost:5180</span>
+        {authed ? (
+          <div className="header-user">
+            <span className="user-email">{db.auth.getSession()?.user.email}</span>
+            <button className="btn btn-small" onClick={handleSignOut}>Sign out</button>
+          </div>
+        ) : (
+          <span className="server">localhost:5180</span>
+        )}
       </header>
 
       {error && (
@@ -50,6 +85,10 @@ export default function App() {
             dismiss
           </button>
         </div>
+      )}
+
+      {view.kind === "auth" && (
+        <AuthScreen onSuccess={handleAuthSuccess} onError={report} />
       )}
 
       {view.kind === "projects" && (
@@ -73,6 +112,109 @@ export default function App() {
           onBack={() => setView({ kind: "board", projectId: view.projectId })}
         />
       )}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// Auth screen (sign up / sign in)
+// ──────────────────────────────────────────────────────────────
+
+function AuthScreen({
+  onSuccess,
+  onError,
+}: {
+  onSuccess: () => void;
+  onError: (e: unknown) => void;
+}) {
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !password) return;
+
+    setLoading(true);
+    setAuthError(null);
+
+    try {
+      const result = isSignUp
+        ? await db.auth.signUp({ email: email.trim(), password })
+        : await db.auth.signIn({ email: email.trim(), password });
+
+      if (result.error) {
+        setAuthError(result.error);
+      } else {
+        onSuccess();
+      }
+    } catch (err) {
+      onError(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="auth-screen">
+      <div className="auth-card">
+        <h2>{isSignUp ? "Create an account" : "Welcome back"}</h2>
+        <p className="auth-subtitle">
+          {isSignUp
+            ? "Sign up to start managing your projects."
+            : "Sign in to your task board."}
+        </p>
+
+        {authError && (
+          <div className="error-banner">{authError}</div>
+        )}
+
+        <form onSubmit={handleSubmit}>
+          <div className="form-field">
+            <label>Email</label>
+            <input
+              type="email"
+              autoFocus
+              required
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <div className="form-field">
+            <label>Password</label>
+            <input
+              type="password"
+              required
+              placeholder={isSignUp ? "At least 6 characters" : "Your password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+          <button
+            type="submit"
+            className="btn btn-primary auth-submit"
+            disabled={loading}
+          >
+            {loading ? "…" : isSignUp ? "Sign Up" : "Sign In"}
+          </button>
+        </form>
+
+        <p className="auth-toggle">
+          {isSignUp ? "Already have an account?" : "Don't have an account?"}{" "}
+          <button
+            className="btn-link"
+            onClick={() => {
+              setIsSignUp(!isSignUp);
+              setAuthError(null);
+            }}
+          >
+            {isSignUp ? "Sign in" : "Sign up"}
+          </button>
+        </p>
+      </div>
     </div>
   );
 }
@@ -859,25 +1001,32 @@ function CommentForm({
 }: {
   onSubmit: (author: string, body: string) => void;
 }) {
-  const [author, setAuthor] = useState("Anonymous");
+  const session = db.auth.getSession();
+  const author = session?.user.email ?? "Anonymous";
   const [body, setBody] = useState("");
 
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (!author.trim() || !body.trim()) return;
-        onSubmit(author.trim(), body.trim());
+        if (!body.trim()) return;
+        onSubmit(author, body.trim());
         setBody("");
       }}
     >
-      <div className="form-field">
-        <input
-          placeholder="Your name"
-          value={author}
-          onChange={(e) => setAuthor(e.target.value)}
-        />
-      </div>
+      {session ? (
+        <div className="comment-as">
+          Commenting as <strong>{session.user.email}</strong>
+        </div>
+      ) : (
+        <div className="form-field">
+          <input
+            placeholder="Your name"
+            value={author}
+            onChange={() => {}}
+          />
+        </div>
+      )}
       <div className="form-field">
         <textarea
           placeholder="Write a comment…"

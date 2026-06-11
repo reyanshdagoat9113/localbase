@@ -1,4 +1,12 @@
 export default {
+  auth: {
+    enabled: true,
+    jwtSecret: process.env.JWT_SECRET ?? "task-board-dev-secret",
+    accessTokenExpiry: "1h",
+    refreshTokenExpiry: 30 * 24 * 60 * 60, // 30 days
+    minPasswordLength: 6,
+  },
+
   tables: {
     projects: {
       id: { type: "integer", primaryKey: true, autoIncrement: true },

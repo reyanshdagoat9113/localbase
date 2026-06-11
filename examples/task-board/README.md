@@ -10,6 +10,7 @@ A Kanban-style task manager. 6 tables, foreign keys, many-to-many relationship, 
 
 This is a **complex** example that pushes LocalBase harder than the reading-list demo:
 
+- **Authentication** — sign up / sign in with email + password, session persisted in localStorage, Bearer token auto-attached to all API calls
 - **6 tables with foreign keys** — topological dependency order: `projects` → `columns`, `labels` → `tasks` → `task_labels`, `comments`
 - **Many-to-many relationship** — tasks ↔ labels via a junction table (`task_labels`)
 - **Compound filtering** — finds urgent tasks due in the next 7 days using chained `.in()` + `.gte()` + `.lte()`
@@ -70,7 +71,10 @@ Open the URL Vite prints (http://localhost:3001).
 
 ## How to use
 
-### 1. Create a project
+### 1. Sign up or sign in
+When you first open the app, you'll see a login screen. Create an account or sign in — your session persists across page reloads.
+
+### 2. Create a project
 Click **+ New Project**. Pick a name and color.
 
 ### 2. Add columns (kanban stages)
@@ -86,7 +90,7 @@ Inside any column, click **+ Add task**. Set a title and priority.
 Each task card has buttons to move it to any other column.
 
 ### 6. Open a task
-Click any task card to open the detail view. Edit title, description, priority, due date, labels. Add comments.
+Click any task card to open the detail view. Edit title, description, priority, due date, labels. Add comments — they're automatically attributed to your signed-in email.
 
 ### 7. Watch the "urgent tasks" banner
 Tasks with priority `high` or `urgent` AND a `due_date` in the next 7 days trigger a yellow banner at the top of the board.
@@ -145,6 +149,10 @@ examples/task-board/
 
 | Pattern | Where | What it shows |
 |---|---|---|
+| Auth (sign up) | `AuthScreen` | `db.auth.signUp({ email, password })` |
+| Auth (sign in) | `AuthScreen` | `db.auth.signIn({ email, password })` |
+| Session persist | `api.ts` | `db.auth.setSession` + `localStorage` |
+| Auto Bearer token | `api.ts` | Token attached to every `db.from()` call after login |
 | Single-row insert | `createProject` | Plain `.insert({...})` |
 | Filtered list | `listColumns` | `.eq("project_id", id).order("position")` |
 | Get single | `getProject` | `.eq("id", id).single()` |
@@ -179,6 +187,10 @@ Real-world patterns that come up:
 **"No localbase.config.ts found"** — run `localbase dev` from this folder.
 
 **"Failed to fetch"** — make sure `localbase dev` is running on port 5180.
+
+**"Email already registered"** — that account exists. Click "Sign in" on the login screen instead.
+
+**"Invalid email or password"** — wrong password, or no account with that email. Try signing up first.
 
 **"FOREIGN KEY constraint failed"** — you're trying to delete a parent with children. See `deleteProject` for the correct order.
 

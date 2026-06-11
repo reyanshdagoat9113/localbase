@@ -14,6 +14,49 @@ const baseUrl = "http://localhost:5180";
 export const db = createClient(baseUrl);
 
 // ──────────────────────────────────────────────────────────────
+// Session persistence
+// ──────────────────────────────────────────────────────────────
+
+const SESSION_KEY = "taskboard-session";
+
+/** Restore a previously saved session (e.g. on page load). */
+export function restoreSession(): void {
+  const raw = localStorage.getItem(SESSION_KEY);
+  if (raw) {
+    try {
+      db.auth.setSession(JSON.parse(raw));
+    } catch {
+      localStorage.removeItem(SESSION_KEY);
+    }
+  }
+}
+
+/** Save the current session to localStorage. */
+export function saveSession(): void {
+  const session = db.auth.getSession();
+  if (session) {
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  } else {
+    localStorage.removeItem(SESSION_KEY);
+  }
+}
+
+/** Clear the persisted session. */
+export function clearPersistedSession(): void {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+/** Check if the client has an active session. */
+export function isAuthenticated(): boolean {
+  return db.auth.getSession() !== null;
+}
+
+/** Get the current user's email, or null if not signed in. */
+export function currentUserEmail(): string | null {
+  return db.auth.getSession()?.user.email ?? null;
+}
+
+// ──────────────────────────────────────────────────────────────
 // Projects
 // ──────────────────────────────────────────────────────────────
 
@@ -297,7 +340,13 @@ export async function createComment(input: {
   author: string;
   body: string;
 }): Promise<Comment> {
-  const { data, error } = await db.from<Comment>("comments").insert(input);
+  // If the user is signed in, always use their email as the author.
+  // Fall back to the provided author for anonymous / legacy data.
+  const author = currentUserEmail() ?? input.author;
+  const { data, error } = await db.from<Comment>("comments").insert({
+    ...input,
+    author,
+  });
   if (error) throw new Error(error);
   return data as Comment;
 }
