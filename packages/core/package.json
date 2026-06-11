@@ -22,12 +22,14 @@
   },
   "dependencies": {
     "@localbase/shared": "0.1.0",
+    "@node-rs/argon2": "^2.0.2",
     "better-sqlite3": "^12.10.0",
-    "hono": "^4.12.23"
+    "hono": "^4.12.23",
+    "jose": "^6.2.3"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.12",
     "@localbase/sdk": "0.1.0",
+    "@types/better-sqlite3": "^7.6.12",
     "tsup": "^8.0.0",
     "tsx": "^4.22.4",
     "typescript": "^5.7.0"

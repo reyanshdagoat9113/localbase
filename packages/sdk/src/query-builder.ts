@@ -28,10 +28,16 @@ export class QueryBuilder<T = unknown> implements PromiseLike<ResponseShape<T>> 
   private _offset?: number;
   private _single = false;
   private _body?: Record<string, unknown>;
+  private _getToken: () => string | undefined;
 
-  constructor(baseUrl: string, table: string) {
+  constructor(
+    baseUrl: string,
+    table: string,
+    getToken: () => string | undefined = () => undefined
+  ) {
     this._baseUrl = baseUrl;
     this._table = table;
+    this._getToken = getToken;
   }
 
   select(_columns = "*"): this {
@@ -171,8 +177,23 @@ export class QueryBuilder<T = unknown> implements PromiseLike<ResponseShape<T>> 
   private _buildOptions(): RequestInit {
     const init: RequestInit = { method: this._method };
 
+    const headers: Record<string, string> = {};
     if (this._body) {
-      init.headers = { "Content-Type": "application/json" };
+      headers["Content-Type"] = "application/json";
+    }
+
+    // Attach Bearer token if a session is active. The token is read
+    // lazily on every request, so a `signIn` between two `.from(...)`
+    // calls is picked up automatically.
+    const token = this._getToken();
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    if (Object.keys(headers).length > 0) {
+      init.headers = headers;
+    }
+    if (this._body) {
       init.body = JSON.stringify(this._body);
     }
 

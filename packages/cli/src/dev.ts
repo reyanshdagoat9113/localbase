@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { serve } from "@hono/node-server";
-import type { Server } from "node:http";
+import type { ServerType } from "@hono/node-server";
 import { Database, createServer as createApi } from "@localbase/core";
 import { loadConfig, ConfigError } from "./config.js";
 import { log } from "./log.js";
@@ -14,7 +14,7 @@ export interface DevOptions {
 
 export async function devCommand(opts: DevOptions = {}): Promise<void> {
   const port = opts.port ?? DEFAULT_PORT;
-  let currentServer: Server | null = null;
+  let currentServer: ServerType | null = null;
   let currentDb: Database | null = null;
   let reloading = false;
 
@@ -28,13 +28,26 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
     }
 
     // Create database and run migrations
-    const db = new Database({ path: dbPath, schema: config.tables });
+    const db = new Database({
+      path: dbPath,
+      schema: config.tables,
+      auth: config.auth,
+    });
     const applied = db.getAppliedMigrations();
     log.info(`Database: ${path.relative(cwd, dbPath)}`);
     log.info(`Tables: ${[...applied].join(", ")}`);
+    if (config.auth?.enabled) {
+      log.info(
+        `Auth: enabled${
+          config.auth.jwtSecret
+            ? ""
+            : " (random secret — sessions reset on restart)"
+        }`
+      );
+    }
 
     // Create API server
-    const app = createApi(db, config.tables);
+    const app = createApi(db, config.tables, { auth: config.auth });
 
     // Start HTTP server
     const server = serve(

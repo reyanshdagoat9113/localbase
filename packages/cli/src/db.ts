@@ -12,11 +12,18 @@ export async function migrateCommand(): Promise<void> {
     fs.mkdirSync(dbDir, { recursive: true });
   }
 
-  const db = new Database({ path: dbPath, schema: config.tables });
+  const db = new Database({
+    path: dbPath,
+    schema: config.tables,
+    auth: config.auth,
+  });
 
   try {
     const applied = db.getAppliedMigrations();
     const tableNames = Object.keys(config.tables);
+    if (config.auth?.enabled) {
+      tableNames.push("_users", "_sessions");
+    }
 
     log.heading("Migration status:");
     for (const name of tableNames) {
@@ -45,10 +52,14 @@ export async function resetCommand(): Promise<void> {
     fs.mkdirSync(dbDir, { recursive: true });
   }
 
-  const db = new Database({ path: dbPath, schema: config.tables });
+  const db = new Database({
+    path: dbPath,
+    schema: config.tables,
+    auth: config.auth,
+  });
 
   try {
-    log.warn("Dropping all tables and re-running migrations...");
+    log.warn("Dropping all user tables and re-running migrations...");
     const applied = db.reset();
     log.success(`Reset complete. Re-applied ${applied.length} migration(s): ${applied.join(", ")}`);
   } finally {

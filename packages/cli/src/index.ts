@@ -2,6 +2,11 @@ import { Command } from "commander";
 import { initCommand } from "./init.js";
 import { devCommand } from "./dev.js";
 import { migrateCommand, resetCommand } from "./db.js";
+import {
+  createUserCommand,
+  listUsersCommand,
+  resetPasswordCommand,
+} from "./auth.js";
 import { ConfigError } from "./config.js";
 import { log } from "./log.js";
 
@@ -84,6 +89,36 @@ dbCmd
     } catch (err) {
       fail(err);
     }
+  });
+
+// ── localbase auth ... ──
+const authCmd = program
+  .command("auth")
+  .description("Authentication management (requires auth.enabled in config)");
+
+authCmd
+  .command("create-user")
+  .description("Create a new user account")
+  .option("-e, --email <email>", "User email (or set AUTH_EMAIL)")
+  .option("-p, --password <password>", "User password (or set AUTH_PASSWORD)")
+  .action(async (opts: { email?: string; password?: string }) => {
+    await createUserCommand(opts);
+  });
+
+authCmd
+  .command("list-users")
+  .description("List all user accounts")
+  .action(async () => {
+    await listUsersCommand();
+  });
+
+authCmd
+  .command("reset-password")
+  .description("Reset a user's password")
+  .option("-e, --email <email>", "User email (or set AUTH_EMAIL)")
+  .option("-p, --password <password>", "New password (or set AUTH_PASSWORD)")
+  .action(async (opts: { email?: string; password?: string }) => {
+    await resetPasswordCommand(opts);
   });
 
 program.parse(process.argv);

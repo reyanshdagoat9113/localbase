@@ -1,5 +1,5 @@
 import BetterSqlite3 from "better-sqlite3";
-import type { DatabaseSchema } from "@localbase/shared";
+import type { AuthConfig, DatabaseSchema } from "@localbase/shared";
 import { schemaToDDL } from "./ddl.js";
 import { runMigrations, resetDatabase, getAppliedMigrations } from "./migrate.js";
 import {
@@ -11,12 +11,20 @@ import {
   type Filter,
   type QueryOptions,
 } from "./query.js";
+import { AUTH_SCHEMA } from "./auth/index.js";
 
 export interface DatabaseOptions {
   /** Path to the SQLite file. Use ":memory:" for in-memory databases. */
   path?: string;
   /** The schema definition. */
   schema: DatabaseSchema;
+  /**
+   * If provided with `enabled: true`, LocalBase will provision the `_users`
+   * and `_sessions` system tables and prepare for the auth router to mount.
+   * The user never has to declare these tables in their `schema` — they're
+   * added here automatically.
+   */
+  auth?: AuthConfig;
   /** If true, automatically run migrations on open. Default: true. */
   autoMigrate?: boolean;
 }
@@ -24,12 +32,26 @@ export interface DatabaseOptions {
 export class Database {
   private db: BetterSqlite3.Database;
   private schema: DatabaseSchema;
+  /** Effective schema including any auth system tables, used for migrations. */
+  private effectiveSchema: DatabaseSchema;
+  private authConfig?: AuthConfig;
 
   constructor(options: DatabaseOptions) {
-    const { path = ":memory:", schema, autoMigrate = true } = options;
+    const {
+      path = ":memory:",
+      schema,
+      auth,
+      autoMigrate = true,
+    } = options;
 
     this.db = new BetterSqlite3(path);
     this.schema = schema;
+    this.authConfig = auth;
+    // Auth system tables get the `_` prefix, which `resetDatabase` already
+    // filters out, so user resets never wipe the auth subsystem.
+    this.effectiveSchema = auth?.enabled
+      ? { ...schema, ...AUTH_SCHEMA }
+      : schema;
 
     // Enable foreign keys
     this.db.pragma("foreign_keys = ON");
@@ -40,11 +62,38 @@ export class Database {
     }
   }
 
+  /** Returns the effective auth config, or undefined if auth is not enabled. */
+  getAuthConfig(): AuthConfig | undefined {
+    return this.authConfig;
+  }
+
   /**
-   * Run pending migrations. Returns the names of newly applied migrations.
+   * Enable auth on an already-constructed Database. Provisions the
+   * `_users` and `_sessions` system tables if they don't exist. Idempotent
+   * — calling it twice is a no-op.
+   *
+   * This is a convenience for code that constructs the database first and
+   * only later learns auth is needed. The more common pattern is to pass
+   * `auth` to the `Database` constructor.
+   */
+  enableAuth(config: AuthConfig): void {
+    if (this.authConfig?.enabled) return;
+    this.authConfig = config;
+    if (config.enabled) {
+      this.effectiveSchema = {
+        ...this.schema,
+        ...AUTH_SCHEMA,
+      };
+      this.migrate();
+    }
+  }
+
+  /**
+   * Run pending migrations against the effective schema (user tables + auth
+   * tables when enabled). Returns the names of newly applied migrations.
    */
   migrate(): string[] {
-    return runMigrations(this.db, this.schema);
+    return runMigrations(this.db, this.effectiveSchema);
   }
 
   /**

@@ -6,7 +6,7 @@
 
 ## Priority Order
 
-1. **Auth** — table stakes. Blocks secure storage and realtime RLS.
+1. ~~**Auth**~~ — ✅ **Done** (Phase 7)
 2. **Realtime** — biggest perceived value, hardest to do well
 3. **Storage** — needs auth for private buckets
 4. **Admin UI** — differentiator vs dev-only tools
@@ -18,7 +18,7 @@ PostgreSQL support is **out of scope** for post-MVP. See CLI note below.
 
 ---
 
-### Phase 7: Auth
+### Phase 7: Auth ✅ DONE
 
 **Goal:** Secure the platform with user authentication and authorization.
 
@@ -58,21 +58,21 @@ POST /api/auth/refresh     → refresh access token
 
 **Tasks:**
 
-- [ ] Define `AuthConfig` type in `shared` (enable/disable auth, token expiry, etc.)
-- [ ] Create `_users` table with email unique constraint
-- [ ] Create `_sessions` table for refresh tokens
-- [ ] Add `argon2` dependency to `core` for password hashing
-- [ ] Add `jose` or `jsonwebtoken` dependency for JWT handling
-- [ ] Implement `POST /api/auth/signup` (validate email, hash password, create user)
-- [ ] Implement `POST /api/auth/signin` (verify password, issue JWT + refresh token)
-- [ ] Implement `GET /api/auth/user` (validate JWT, return user payload)
-- [ ] Implement `POST /api/auth/signout` (invalidate refresh token)
-- [ ] Implement `POST /api/auth/refresh` (rotate refresh token, issue new JWT)
-- [ ] Add auth middleware to core API (attach `user` to Hono context)
-- [ ] Add `db.auth` namespace to SDK
-- [ ] Add `localbase auth` CLI commands: `create-user`, `list-users`, `reset-password`
-- [ ] Write integration tests: signup flow, signin flow, protected route, token expiry
-- [ ] Update README with auth quickstart
+- [x] Define `AuthConfig` type in `shared` (enable/disable auth, token expiry, etc.)
+- [x] Create `_users` table with email unique constraint
+- [x] Create `_sessions` table for refresh tokens
+- [x] Add `argon2` dependency to `core` for password hashing (`@node-rs/argon2` — precompiled N-API equivalent)
+- [x] Add `jose` or `jsonwebtoken` dependency for JWT handling
+- [x] Implement `POST /api/auth/signup` (validate email, hash password, create user)
+- [x] Implement `POST /api/auth/signin` (verify password, issue JWT + refresh token)
+- [x] Implement `GET /api/auth/user` (validate JWT, return user payload)
+- [x] Implement `POST /api/auth/signout` (invalidate refresh token)
+- [x] Implement `POST /api/auth/refresh` (rotate refresh token, issue new JWT)
+- [x] Add auth middleware to core API (attach `user` to Hono context)
+- [x] Add `db.auth` namespace to SDK
+- [x] Add `localbase auth` CLI commands: `create-user`, `list-users`, `reset-password`
+- [x] Write integration tests: signup flow, signin flow, protected route, token expiry
+- [x] Update README with auth quickstart
 
 ---
 

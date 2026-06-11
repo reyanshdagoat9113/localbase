@@ -1,8 +1,9 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import type { DatabaseSchema } from "@localbase/shared";
+import type { AuthConfig, DatabaseSchema } from "@localbase/shared";
 import type { Database } from "./db.js";
 import type { Filter, FilterOperator, OrderBy, QueryOptions } from "./query.js";
+import { Auth, createAuthRouter, resolveAuthConfig } from "./auth/index.js";
 
 const RESERVED_PARAMS = new Set(["order", "limit", "offset"]);
 const VALID_OPERATORS: FilterOperator[] = [
@@ -266,11 +267,57 @@ class HttpError extends Error {
 
 // ─── Server factory ────────────────────────────────────────────
 
-export function createServer(db: Database, schema: DatabaseSchema): Hono {
+export interface CreateServerOptions {
+  /**
+   * If `auth.enabled` is true, mounts the `/api/auth/*` router. The
+   * `requireAuth` middleware is also exposed via `getAuthMiddleware()`
+   * on the returned app so callers can protect their own routes.
+   */
+  auth?: AuthConfig;
+}
+
+export function createServer(
+  db: Database,
+  schema: DatabaseSchema,
+  options: CreateServerOptions | AuthConfig | undefined = {}
+): Hono {
+  // Accept both `createServer(db, schema, { auth })` and
+  // `createServer(db, schema, authConfig)` for ergonomics. Distinguish
+  // the two by checking for a known auth-only field.
+  const normalized: CreateServerOptions =
+    options && typeof options === "object" && "enabled" in options
+      ? { auth: options as AuthConfig }
+      : (options as CreateServerOptions);
+
   const app = new Hono();
 
   // Allow requests from any origin (dev server consumed by local frontends)
   app.use("*", cors());
+
+  // ── Auth router (optional) ──
+  // Mounted first so its specific paths (`/api/auth/signup`, etc.) take
+  // precedence over the generic `/api/:table/:id` routes below. Without
+  // this, `GET /api/auth/user` would be interpreted as a request for row
+  // `user` of table `auth`.
+  let authRouter: ReturnType<typeof createAuthRouter> | null = null;
+  if (normalized.auth?.enabled) {
+    // Ensure the auth tables exist on this database. This covers the case
+    // where the user passed auth to createServer but not to the Database
+    // constructor (e.g. legacy third-arg form). When both are passed,
+    // this is a no-op.
+    db.enableAuth(normalized.auth);
+    const { config, secretWasGenerated } = resolveAuthConfig(normalized.auth);
+    if (secretWasGenerated) {
+      console.warn(
+        "[localbase] auth.jwtSecret is not set. Generated a random one \u2014 " +
+          "all sessions will be invalidated on the next restart. " +
+          'Set auth.jwtSecret in localbase.config.ts (e.g. process.env.JWT_SECRET).'
+      );
+    }
+    const auth = new Auth(db, config);
+    authRouter = createAuthRouter(auth, config.jwtSecret);
+    app.route("/", authRouter);
+  }
 
   // ── GET /api/:table — list rows ──
   app.get("/api/:table", (c) => {
