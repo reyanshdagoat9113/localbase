@@ -1,10 +1,22 @@
 import { QueryBuilder } from "./query-builder.js";
 import { createAuthClient, type AuthClient } from "./auth-client.js";
+import { RealtimeClient, type RealtimeCallback, type SubscribeOptions } from "./realtime.js";
 import type { StoredSession } from "./auth.js";
+import type { RealtimeConfig } from "@localbase/shared";
 
 export interface LocalBaseClient {
   from<T = unknown>(table: string): QueryBuilder<T>;
   auth: AuthClient;
+  subscribe<T = unknown>(table: string, callback: RealtimeCallback<T>): () => void;
+  subscribe<T = unknown>(
+    table: string,
+    options: SubscribeOptions,
+    callback: RealtimeCallback<T>
+  ): () => void;
+}
+
+export interface CreateClientOptions {
+  realtime?: RealtimeConfig;
 }
 
 /**
@@ -22,7 +34,7 @@ export interface LocalBaseClient {
  * const posts = await db.from("posts").select("*");
  * ```
  */
-export function createClient(url: string): LocalBaseClient {
+export function createClient(url: string, options: CreateClientOptions = {}): LocalBaseClient {
   const baseUrl = url.replace(/\/+$/, "");
 
   // Session state lives in the closure. Both `auth` and the query builder
@@ -34,11 +46,31 @@ export function createClient(url: string): LocalBaseClient {
   };
 
   const auth = createAuthClient(baseUrl, getSession, setSession);
+  const realtime = new RealtimeClient(
+    baseUrl,
+    () => session?.accessToken,
+    options.realtime?.path ?? "/realtime",
+    options.realtime?.enabled ?? true
+  );
 
   return {
     from<T = unknown>(table: string): QueryBuilder<T> {
       return new QueryBuilder<T>(baseUrl, table, () => session?.accessToken);
     },
     auth,
+    subscribe<T = unknown>(
+      table: string,
+      optionsOrCallback: SubscribeOptions | RealtimeCallback<T>,
+      maybeCallback?: RealtimeCallback<T>
+    ): () => void {
+      if (typeof optionsOrCallback === "function") {
+        return realtime.subscribe<T>(table, optionsOrCallback);
+      }
+      return realtime.subscribe<T>(
+        table,
+        optionsOrCallback,
+        maybeCallback as RealtimeCallback<T>
+      );
+    },
   };
 }

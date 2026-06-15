@@ -23,7 +23,7 @@ import {
   listUpcomingUrgentTasks,
   restoreSession,
   saveSession,
-  setTaskLabels,
+  setTaskLabels as saveTaskLabels,
   updateTask,
 } from "./api";
 
@@ -247,6 +247,8 @@ function ProjectsView({
 
   useEffect(() => {
     refresh();
+    // Realtime: refresh the project list whenever projects change.
+    return db.subscribe("projects", () => refresh());
   }, [refresh]);
 
   const handleCreate = async (input: { name: string; description?: string; color?: string }) => {
@@ -418,7 +420,20 @@ function BoardView({
 
   useEffect(() => {
     refresh();
-  }, [refresh]);
+    // Realtime: refresh the board when anything in this project changes.
+    const unsubTasks = db.subscribe("tasks", { where: { project_id: projectId } }, () => refresh());
+    const unsubColumns = db.subscribe("columns", { where: { project_id: projectId } }, () => refresh());
+    const unsubLabels = db.subscribe("labels", { where: { project_id: projectId } }, () => refresh());
+    const unsubTaskLabels = db.subscribe("task_labels", () => refresh());
+    const unsubComments = db.subscribe("comments", () => refresh());
+    return () => {
+      unsubTasks();
+      unsubColumns();
+      unsubLabels();
+      unsubTaskLabels();
+      unsubComments();
+    };
+  }, [refresh, projectId]);
 
   const handleCreateColumn = async (name: string) => {
     try {
@@ -832,7 +847,7 @@ function TaskDetailView({
       if (next.has(labelId)) next.delete(labelId);
       else next.add(labelId);
       setTaskLabels(next);
-      await setTaskLabels(taskId, [...next]);
+      await saveTaskLabels(taskId, [...next]);
     } catch (e) {
       onError(e);
     }

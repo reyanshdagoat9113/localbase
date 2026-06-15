@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { serve } from "@hono/node-server";
 import type { ServerType } from "@hono/node-server";
-import { Database, createServer as createApi } from "@localbase/core";
+import { Database, createServer as createApi, createRealtimeServer } from "@localbase/core";
+import type { RealtimeServer } from "@localbase/core";
 import { loadConfig, ConfigError } from "./config.js";
 import { log } from "./log.js";
 
@@ -15,6 +16,7 @@ export interface DevOptions {
 export async function devCommand(opts: DevOptions = {}): Promise<void> {
   const port = opts.port ?? DEFAULT_PORT;
   let currentServer: ServerType | null = null;
+  let currentRealtime: RealtimeServer | null = null;
   let currentDb: Database | null = null;
   let reloading = false;
 
@@ -57,11 +59,25 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
       },
       (info) => {
         log.success(`Server running at http://localhost:${info.port}`);
+        if (config.realtime?.enabled !== false) {
+          log.success(`Realtime WS at ws://localhost:${info.port}${config.realtime?.path ?? "/realtime"}`);
+        }
         log.info("Press Ctrl+C to stop");
       }
     );
 
+    // Attach realtime WebSocket server to the same HTTP server when enabled.
+    const realtime =
+      config.realtime?.enabled === false
+        ? null
+        : createRealtimeServer({
+            server,
+            database: db,
+            config: config.realtime,
+          });
+
     currentServer = server;
+    currentRealtime = realtime;
     currentDb = db;
 
     // Watch config file for changes
@@ -114,6 +130,10 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
   }
 
   function stop() {
+    if (currentRealtime) {
+      currentRealtime.close();
+      currentRealtime = null;
+    }
     if (currentServer) {
       currentServer.close();
       currentServer = null;

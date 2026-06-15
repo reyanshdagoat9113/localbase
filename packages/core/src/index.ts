@@ -46,6 +46,18 @@ export type {
   ResolvedAuthConfigResult,
 } from "./auth/index.js";
 
+// Realtime subsystem
+export {
+  createRealtimeServer,
+  SubscriptionManager,
+  rowMatchesFilters,
+} from "./realtime/index.js";
+export type {
+  RealtimeServer,
+  RealtimeServerOptions,
+  ClientSubscription,
+} from "./realtime/index.js";
+
 // Re-export shared types
 export type {
   ColumnType,
@@ -55,4 +67,8 @@ export type {
   LocalBaseConfig,
   AuthConfig,
   ApiResponse,
+  RealtimeConfig,
+  RealtimeEvent,
+  RealtimeFilter,
+  ChangeEventType,
 } from "@localbase/shared";

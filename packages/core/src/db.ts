@@ -1,5 +1,6 @@
 import BetterSqlite3 from "better-sqlite3";
-import type { AuthConfig, DatabaseSchema } from "@localbase/shared";
+import { EventEmitter } from "node:events";
+import type { AuthConfig, DatabaseSchema, RealtimeEvent } from "@localbase/shared";
 import { schemaToDDL } from "./ddl.js";
 import { runMigrations, resetDatabase, getAppliedMigrations } from "./migrate.js";
 import {
@@ -29,7 +30,11 @@ export interface DatabaseOptions {
   autoMigrate?: boolean;
 }
 
-export class Database {
+export interface DatabaseEvents {
+  change: [RealtimeEvent];
+}
+
+export class Database extends EventEmitter<DatabaseEvents> {
   private db: BetterSqlite3.Database;
   private schema: DatabaseSchema;
   /** Effective schema including any auth system tables, used for migrations. */
@@ -37,6 +42,7 @@ export class Database {
   private authConfig?: AuthConfig;
 
   constructor(options: DatabaseOptions) {
+    super();
     const {
       path = ":memory:",
       schema,
@@ -132,7 +138,11 @@ export class Database {
     table: string,
     data: Record<string, unknown> | Record<string, unknown>[]
   ): unknown[] {
-    return insert(this.db, table, data);
+    const result = insert(this.db, table, data);
+    for (const row of result) {
+      this.emit("change", { type: "insert", table, row });
+    }
+    return result;
   }
 
   /**
@@ -144,7 +154,11 @@ export class Database {
     data: Record<string, unknown>,
     filters?: Filter[]
   ): unknown[] {
-    return update(this.db, table, data, filters);
+    const result = update(this.db, table, data, filters);
+    for (const row of result) {
+      this.emit("change", { type: "update", table, row });
+    }
+    return result;
   }
 
   /**
@@ -152,7 +166,11 @@ export class Database {
    * Returns the count of deleted rows.
    */
   delete(table: string, filters?: Filter[]): number {
-    return remove(this.db, table, filters);
+    const rows = remove(this.db, table, filters);
+    for (const row of rows) {
+      this.emit("change", { type: "delete", table, row });
+    }
+    return rows.length;
   }
 
   /**

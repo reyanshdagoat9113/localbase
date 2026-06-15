@@ -105,17 +105,18 @@ db.subscribe("messages", { where: { room_id: 1 } }, (event) => {
 
 **Tasks:**
 
-- [ ] Add `EventEmitter` to `Database` class
-- [ ] Emit `insert`/`update`/`delete` events from `query.ts` (include row data)
-- [ ] Create `SubscriptionManager` — tracks subscriptions by table + filter
-- [ ] Set up WebSocket server alongside Hono (use `ws` or `@hono/node-server` WS helper)
-- [ ] Implement subscription message protocol: `{ subscribe: "messages", filter: {...} }`
-- [ ] Send events to subscribed clients with row payload
-- [ ] Handle reconnect + missed events (event log buffer)
-- [ ] Add `db.subscribe(table, filter?, callback)` to SDK
-- [ ] Add subscription filters (where, equals, gt, etc.)
+- [x] Add `EventEmitter` to `Database` class
+- [x] Emit `insert`/`update`/`delete` events from `Database` (include row data)
+- [x] Create `SubscriptionManager` — tracks subscriptions by table + filter
+- [x] Set up WebSocket server alongside Hono (use `ws`)
+- [x] Implement subscription message protocol: `{ type: "subscribe", table: "messages", filters: [...] }`
+- [x] Send events to subscribed clients with row payload
+- [x] Handle reconnect (exponential back-off; resends subscriptions)
+- [ ] Handle missed events (event log buffer) — deferred
+- [x] Add `db.subscribe(table, filter?, callback)` to SDK
+- [x] Add subscription filters (where, equals, gt, etc.)
 - [ ] Add presence support (optional, later)
-- [ ] Write integration tests: emit on insert, verify WS receives
+- [x] Write integration tests: emit on insert, verify WS receives
 
 ---
 

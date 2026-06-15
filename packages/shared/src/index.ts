@@ -42,11 +42,35 @@ export interface AuthConfig {
 export interface LocalBaseConfig {
   tables: DatabaseSchema;
   auth?: AuthConfig;
+  realtime?: RealtimeConfig;
+}
+
+export interface RealtimeConfig {
+  /** Whether realtime subscriptions are enabled. Default: true. */
+  enabled?: boolean;
+  /** Path for the WebSocket endpoint. Default: /realtime */
+  path?: string;
 }
 
 export interface ApiResponse<T = unknown> {
   data: T | null;
   error: string | null;
+}
+
+// ─── Realtime types ────────────────────────────────────────────
+
+export type ChangeEventType = "insert" | "update" | "delete";
+
+export interface RealtimeFilter {
+  column: string;
+  operator: "eq" | "neq" | "gt" | "lt" | "gte" | "lte" | "like" | "in";
+  value: unknown;
+}
+
+export interface RealtimeEvent<T = unknown> {
+  type: ChangeEventType;
+  table: string;
+  row: T;
 }
 
 export const VERSION = "0.1.0";

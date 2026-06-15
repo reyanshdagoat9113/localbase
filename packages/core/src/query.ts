@@ -216,17 +216,16 @@ export function update(
 
 /**
  * DELETE rows from a table matching the given filters.
- * Returns the count of deleted rows.
+ * Returns the deleted rows.
  */
 export function remove(
   db: Database.Database,
   table: string,
   filters: Filter[] = []
-): number {
+): unknown[] {
   assertSafeTable(table);
 
   const { clause, params } = buildWhereClause(filters);
-  const sql = `DELETE FROM "${table}" ${clause}`;
-  const info = db.prepare(sql).run(params);
-  return info.changes;
+  const sql = `DELETE FROM "${table}" ${clause} RETURNING *`;
+  return db.prepare(sql).all(params) as unknown[];
 }
