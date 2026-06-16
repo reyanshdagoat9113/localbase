@@ -70,5 +70,7 @@ export type {
   RealtimeConfig,
   RealtimeEvent,
   RealtimeFilter,
+  PresenceEvent,
+  PresenceState,
   ChangeEventType,
 } from "@localbase/shared";

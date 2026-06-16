@@ -112,15 +112,17 @@ db.subscribe("messages", { where: { room_id: 1 } }, (event) => {
 - [x] Implement subscription message protocol: `{ type: "subscribe", table: "messages", filters: [...] }`
 - [x] Send events to subscribed clients with row payload
 - [x] Handle reconnect (exponential back-off; resends subscriptions)
-- [ ] Handle missed events (event log buffer) — deferred
+- [x] Handle missed events (event log buffer)
 - [x] Add `db.subscribe(table, filter?, callback)` to SDK
 - [x] Add subscription filters (where, equals, gt, etc.)
-- [ ] Add presence support (optional, later)
+- [x] Add presence support
 - [x] Write integration tests: emit on insert, verify WS receives
 
 ---
 
-### Phase 10: Admin UI
+### Phase 10: Admin UI  ➡️  [Dedicated plan](./LOCALBASE-ADMIN-UI.md)
+
+> **Promoted to its own plan.** The Admin UI is the one feature where LocalBase is uniquely absent vs. every competitor (see `COMPETITION.md`), and the single biggest perception/adoption lever. Full design, decision record, and milestone breakdown live in [`LOCALBASE-ADMIN-UI.md`](./LOCALBASE-ADMIN-UI.md). The summary below is kept for context.
 
 **Goal:** A built-in management dashboard for inspecting and editing data without writing code.
 

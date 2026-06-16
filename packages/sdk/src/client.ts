@@ -1,6 +1,11 @@
 import { QueryBuilder } from "./query-builder.js";
 import { createAuthClient, type AuthClient } from "./auth-client.js";
-import { RealtimeClient, type RealtimeCallback, type SubscribeOptions } from "./realtime.js";
+import {
+  RealtimeClient,
+  type PresenceCallback,
+  type RealtimeCallback,
+  type SubscribeOptions,
+} from "./realtime.js";
 import type { StoredSession } from "./auth.js";
 import type { RealtimeConfig } from "@localbase/shared";
 
@@ -13,6 +18,12 @@ export interface LocalBaseClient {
     options: SubscribeOptions,
     callback: RealtimeCallback<T>
   ): () => void;
+  presence<T = unknown>(
+    channel: string,
+    key: string,
+    metadata: T,
+    callback: PresenceCallback<T>
+  ): { update(metadata: T): void; leave(): void };
 }
 
 export interface CreateClientOptions {
@@ -71,6 +82,14 @@ export function createClient(url: string, options: CreateClientOptions = {}): Lo
         optionsOrCallback,
         maybeCallback as RealtimeCallback<T>
       );
+    },
+    presence<T = unknown>(
+      channel: string,
+      key: string,
+      metadata: T,
+      callback: PresenceCallback<T>
+    ): { update(metadata: T): void; leave(): void } {
+      return realtime.presence(channel, key, metadata, callback);
     },
   };
 }

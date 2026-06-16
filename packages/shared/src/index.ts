@@ -50,6 +50,10 @@ export interface RealtimeConfig {
   enabled?: boolean;
   /** Path for the WebSocket endpoint. Default: /realtime */
   path?: string;
+  /** Number of recent events kept for reconnect replay. Default: 1000. */
+  eventLogSize?: number;
+  /** Whether presence messages are accepted. Default: true. */
+  presence?: boolean;
 }
 
 export interface ApiResponse<T = unknown> {
@@ -71,6 +75,26 @@ export interface RealtimeEvent<T = unknown> {
   type: ChangeEventType;
   table: string;
   row: T;
+  /** Monotonic server-assigned id used to replay missed events. */
+  id?: number;
+  /** ISO timestamp assigned by the realtime server. */
+  timestamp?: string;
+}
+
+export interface PresenceState<T = unknown> {
+  channel: string;
+  key: string;
+  metadata?: T;
+  joinedAt: string;
+  updatedAt: string;
+}
+
+export interface PresenceEvent<T = unknown> {
+  type: "sync" | "join" | "update" | "leave";
+  channel: string;
+  key?: string;
+  state?: PresenceState<T>;
+  states?: PresenceState<T>[];
 }
 
 export const VERSION = "0.1.0";

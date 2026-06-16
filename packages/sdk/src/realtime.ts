@@ -1,6 +1,11 @@
-import type { RealtimeEvent, RealtimeFilter } from "@localbase/shared";
+import type {
+  PresenceEvent,
+  RealtimeEvent,
+  RealtimeFilter,
+} from "@localbase/shared";
 
 export type RealtimeCallback<T = unknown> = (event: RealtimeEvent<T>) => void;
+export type PresenceCallback<T = unknown> = (event: PresenceEvent<T>) => void;
 
 export interface SubscribeOptions {
   /** Simple key/value equality filters. */
@@ -16,9 +21,16 @@ interface Subscription {
   callback: RealtimeCallback;
 }
 
+interface PresenceSubscription {
+  channel: string;
+  key: string;
+  metadata?: unknown;
+  callback: PresenceCallback;
+}
+
 interface ServerMessage {
-  type: "event" | "error" | "subscribed" | "unsubscribed";
-  event?: RealtimeEvent;
+  type: "event" | "presence" | "error" | "subscribed" | "unsubscribed";
+  event?: RealtimeEvent | PresenceEvent;
   id?: string;
   message?: string;
 }
@@ -35,9 +47,11 @@ export class RealtimeClient {
   private enabled: boolean;
   private socket: WebSocket | null = null;
   private subscriptions = new Map<string, Subscription>();
+  private presenceSubscriptions = new Map<string, PresenceSubscription>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectDelay = 1000;
   private closed = false;
+  private lastEventId = 0;
   private getToken: () => string | undefined;
 
   constructor(
@@ -122,18 +136,50 @@ export class RealtimeClient {
       if (this.socket?.readyState === WebSocket.OPEN) {
         this.socket.send(JSON.stringify({ type: "unsubscribe", id }));
       }
-      if (this.subscriptions.size === 0) {
-        // Drop the connection but leave the client reusable for future
-        // subscriptions. `closed` is only set by an explicit `close()` call.
-        if (this.socket) {
-          this.socket.close();
-          this.socket = null;
+      this.closeIfIdle();
+    };
+  }
+
+  presence<T = unknown>(
+    channel: string,
+    key: string,
+    metadata: T,
+    callback: PresenceCallback<T>
+  ): { update(metadata: T): void; leave(): void } {
+    const id = `${channel}:${key}`;
+    this.presenceSubscriptions.set(id, {
+      channel,
+      key,
+      metadata,
+      callback: callback as PresenceCallback,
+    });
+
+    if (this.enabled) {
+      this.ensureConnected();
+    }
+
+    if (this.socket?.readyState === WebSocket.OPEN) {
+      this.sendPresenceJoin(channel, key, metadata);
+    }
+
+    return {
+      update: (nextMetadata: T) => {
+        const sub = this.presenceSubscriptions.get(id);
+        if (!sub) return;
+        sub.metadata = nextMetadata;
+        if (this.socket?.readyState === WebSocket.OPEN) {
+          this.sendPresenceJoin(channel, key, nextMetadata);
         }
-        if (this.reconnectTimer) {
-          clearTimeout(this.reconnectTimer);
-          this.reconnectTimer = null;
+      },
+      leave: () => {
+        this.presenceSubscriptions.delete(id);
+        if (this.socket?.readyState === WebSocket.OPEN) {
+          this.socket.send(
+            JSON.stringify({ type: "presence:leave", channel, key })
+          );
         }
-      }
+        this.closeIfIdle();
+      },
     };
   }
 
@@ -150,6 +196,8 @@ export class RealtimeClient {
       this.socket.close();
       this.socket = null;
     }
+    this.subscriptions.clear();
+    this.presenceSubscriptions.clear();
   }
 
   private ensureConnected(): void {
@@ -167,6 +215,9 @@ export class RealtimeClient {
       for (const sub of this.subscriptions.values()) {
         this.sendSubscribe(sub);
       }
+      for (const sub of this.presenceSubscriptions.values()) {
+        this.sendPresenceJoin(sub.channel, sub.key, sub.metadata);
+      }
     });
 
     socket.addEventListener("message", (event) => {
@@ -178,15 +229,26 @@ export class RealtimeClient {
       }
 
       if (message.type === "event" && message.event) {
+        const realtimeEvent = message.event as RealtimeEvent;
+        if (typeof realtimeEvent.id === "number") {
+          this.lastEventId = Math.max(this.lastEventId, realtimeEvent.id);
+        }
         for (const sub of this.subscriptions.values()) {
-          if (sub.table !== message.event.table) continue;
+          if (sub.table !== realtimeEvent.table) continue;
           if (
             sub.filters.length > 0 &&
-            !rowMatchesFilters(message.event.row, sub.filters)
+            !rowMatchesFilters(realtimeEvent.row, sub.filters)
           ) {
             continue;
           }
-          sub.callback(message.event);
+          sub.callback(realtimeEvent);
+        }
+      } else if (message.type === "presence" && message.event) {
+        const presenceEvent = message.event as PresenceEvent;
+        for (const sub of this.presenceSubscriptions.values()) {
+          if (sub.channel === presenceEvent.channel) {
+            sub.callback(presenceEvent);
+          }
         }
       }
     });
@@ -198,7 +260,7 @@ export class RealtimeClient {
       }
       // Only reconnect if there are still active subscriptions. An
       // intentional unsubscribe may have closed the socket.
-      if (this.subscriptions.size > 0) {
+      if (this.hasActiveWork()) {
         this.scheduleReconnect();
       }
     });
@@ -221,6 +283,22 @@ export class RealtimeClient {
         id: sub.id,
         table: sub.table,
         filters: sub.filters,
+        lastEventId: this.lastEventId,
+      })
+    );
+  }
+
+  private sendPresenceJoin(
+    channel: string,
+    key: string,
+    metadata: unknown
+  ): void {
+    this.socket?.send(
+      JSON.stringify({
+        type: "presence:join",
+        channel,
+        key,
+        metadata,
       })
     );
   }
@@ -231,12 +309,31 @@ export class RealtimeClient {
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      if (this.subscriptions.size > 0) {
+      if (this.hasActiveWork()) {
         this.ensureConnected();
       }
     }, this.reconnectDelay);
 
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
+  }
+
+  private closeIfIdle(): void {
+    if (this.hasActiveWork()) return;
+
+    // Drop the connection but leave the client reusable for future work.
+    // `closed` is only set by an explicit `close()` call.
+    if (this.socket) {
+      this.socket.close();
+      this.socket = null;
+    }
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+
+  private hasActiveWork(): boolean {
+    return this.subscriptions.size > 0 || this.presenceSubscriptions.size > 0;
   }
 }
 

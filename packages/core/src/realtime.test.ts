@@ -1,5 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
+import type { Server as HttpServer } from "node:http";
 import { serve } from "@hono/node-server";
 import { Database, createServer, createRealtimeServer } from "./index.js";
 import type { DatabaseSchema } from "@localbase/shared";
@@ -45,6 +46,37 @@ function nextMessage(socket: WebSocket): Promise<unknown> {
       } catch (err) {
         reject(err);
       }
+    };
+    const onClose = () => {
+      cleanup();
+      reject(new Error("Socket closed before message"));
+    };
+    const cleanup = () => {
+      socket.removeEventListener("message", onMessage);
+      socket.removeEventListener("close", onClose);
+    };
+    socket.addEventListener("message", onMessage);
+    socket.addEventListener("close", onClose);
+  });
+}
+
+function waitForMessage(
+  socket: WebSocket,
+  predicate: (message: unknown) => boolean
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const onMessage = (event: MessageEvent) => {
+      let message: unknown;
+      try {
+        message = JSON.parse(event.data as string);
+      } catch (err) {
+        cleanup();
+        reject(err);
+        return;
+      }
+      if (!predicate(message)) return;
+      cleanup();
+      resolve(message);
     };
     const onClose = () => {
       cleanup();
@@ -128,12 +160,14 @@ describe("Realtime", () => {
       app = createServer(db, testSchema);
       server = serve({ fetch: app.fetch, port: 0 });
       port = (server.address() as { port: number }).port;
-      realtime = createRealtimeServer({ server, database: db });
+      realtime = createRealtimeServer({ server: server as HttpServer, database: db });
     });
 
-    after(() => {
-      realtime.close();
-      server.close();
+    after(async () => {
+      await realtime.close();
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      });
       db.close();
     });
 
@@ -218,7 +252,7 @@ describe("Realtime", () => {
       const disabledServer = serve({ fetch: app.fetch, port: 0 });
       const disabledPort = (disabledServer.address() as { port: number }).port;
       const disabledRealtime = createRealtimeServer({
-        server: disabledServer,
+        server: disabledServer as HttpServer,
         database: db,
         config: { enabled: false },
       });
@@ -229,6 +263,106 @@ describe("Realtime", () => {
       socket.close();
       await disabledRealtime.close();
       disabledServer.close();
+    });
+
+    it("replays buffered events missed since the client's last event id", async () => {
+      const firstSocket = new WebSocket(`ws://localhost:${port}/realtime`);
+      await waitForSocket(firstSocket, WebSocket.OPEN);
+
+      firstSocket.send(
+        JSON.stringify({
+          type: "subscribe",
+          id: "replay-1",
+          table: "messages",
+        })
+      );
+      await nextMessage(firstSocket);
+
+      const firstMessagePromise = nextMessage(firstSocket);
+      db.insert("messages", { room_id: 1, body: "before disconnect" });
+      const firstMessage = await firstMessagePromise;
+      const firstEvent = (firstMessage as { event: { id: number } }).event;
+      firstSocket.close();
+
+      db.insert("messages", { room_id: 1, body: "while disconnected" });
+
+      const secondSocket = new WebSocket(`ws://localhost:${port}/realtime`);
+      await waitForSocket(secondSocket, WebSocket.OPEN);
+      const replayPromise = waitForMessage(
+        secondSocket,
+        (message) => (message as { type?: string }).type === "event"
+      );
+      secondSocket.send(
+        JSON.stringify({
+          type: "subscribe",
+          id: "replay-2",
+          table: "messages",
+          lastEventId: firstEvent.id,
+        })
+      );
+      await nextMessage(secondSocket);
+
+      const replay = await replayPromise;
+      const replayEvent = (replay as {
+        event: { type: string; row: Record<string, unknown> };
+      }).event;
+      assert.equal(replayEvent.type, "insert");
+      assert.equal(replayEvent.row.body, "while disconnected");
+
+      secondSocket.close();
+    });
+
+    it("tracks presence join, sync, update, and leave events", async () => {
+      const alice = new WebSocket(`ws://localhost:${port}/realtime`);
+      const bob = new WebSocket(`ws://localhost:${port}/realtime`);
+      await waitForSocket(alice, WebSocket.OPEN);
+      await waitForSocket(bob, WebSocket.OPEN);
+
+      alice.send(
+        JSON.stringify({
+          type: "presence:join",
+          channel: "room:1",
+          key: "alice",
+          metadata: { name: "Alice" },
+        })
+      );
+      const aliceSync = await nextMessage(alice);
+      assert.equal((aliceSync as { event: { type: string } }).event.type, "sync");
+
+      bob.send(
+        JSON.stringify({
+          type: "presence:join",
+          channel: "room:1",
+          key: "bob",
+          metadata: { name: "Bob" },
+        })
+      );
+      const bobSync = await nextMessage(bob);
+      const syncStates = (bobSync as { event: { states: unknown[] } }).event.states;
+      assert.equal(syncStates.length, 2);
+
+      const bobJoin = await nextMessage(alice);
+      assert.equal((bobJoin as { event: { type: string; key: string } }).event.type, "join");
+      assert.equal((bobJoin as { event: { key: string } }).event.key, "bob");
+
+      bob.send(
+        JSON.stringify({
+          type: "presence:join",
+          channel: "room:1",
+          key: "bob",
+          metadata: { name: "Bobby" },
+        })
+      );
+      await nextMessage(bob); // updated sync
+      const update = await nextMessage(alice);
+      assert.equal((update as { event: { type: string; key: string } }).event.type, "update");
+
+      bob.close();
+      const leave = await nextMessage(alice);
+      assert.equal((leave as { event: { type: string; key: string } }).event.type, "leave");
+      assert.equal((leave as { event: { key: string } }).event.key, "bob");
+
+      alice.close();
     });
   });
 });

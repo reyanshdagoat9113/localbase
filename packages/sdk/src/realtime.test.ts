@@ -1,5 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
+import type { Server as HttpServer } from "node:http";
 import { serve } from "@hono/node-server";
 import { Database, createServer, createRealtimeServer } from "@localbase/core";
 import type { DatabaseSchema, RealtimeServer } from "@localbase/core";
@@ -14,6 +15,18 @@ const testSchema: DatabaseSchema = {
   },
 };
 
+async function waitUntil(
+  predicate: () => boolean,
+  timeoutMs = 1000
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.ok(predicate());
+}
+
 describe("SDK realtime", () => {
   let server: ReturnType<typeof serve>;
   let realtime: RealtimeServer;
@@ -26,7 +39,7 @@ describe("SDK realtime", () => {
     const app = createServer(db, testSchema);
     server = serve({ fetch: app.fetch, port: 0 });
     port = (server.address() as { port: number }).port;
-    realtime = createRealtimeServer({ server, database: db });
+    realtime = createRealtimeServer({ server: server as HttpServer, database: db });
     client = createClient(`http://localhost:${port}`);
   });
 
@@ -110,7 +123,7 @@ describe("SDK realtime", () => {
     const customServer = serve({ fetch: customApp.fetch, port: 0 });
     const customPort = (customServer.address() as { port: number }).port;
     const customRealtime = createRealtimeServer({
-      server: customServer,
+      server: customServer as HttpServer,
       database: db,
       config: { path: "/ws" },
     });
@@ -150,5 +163,61 @@ describe("SDK realtime", () => {
 
     assert.equal(events.length, 0);
     unsubscribe();
+  });
+
+  it("receives presence events", async () => {
+    const aliceEvents: unknown[] = [];
+    const bobEvents: unknown[] = [];
+    const aliceClient = createClient(`http://localhost:${port}`);
+    const bobClient = createClient(`http://localhost:${port}`);
+
+    const alice = aliceClient.presence(
+      "room:1",
+      "alice",
+      { name: "Alice" },
+      (event) => aliceEvents.push(event)
+    );
+    let bob: { update(metadata: { name: string }): void; leave(): void } | undefined;
+
+    try {
+      await waitUntil(() =>
+        aliceEvents.some((event) => (event as { type: string }).type === "sync")
+      );
+
+      bob = bobClient.presence(
+        "room:1",
+        "bob",
+        { name: "Bob" },
+        (event) => bobEvents.push(event)
+      );
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      assert.ok(
+        bobEvents.some(
+          (event) =>
+            (event as { type: string; states?: unknown[] }).type === "sync" &&
+            ((event as { states?: unknown[] }).states?.length ?? 0) >= 2
+        )
+      );
+      assert.ok(
+        aliceEvents.some(
+          (event) => (event as { type: string; key?: string }).type === "join"
+        )
+      );
+
+      bob.leave();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      assert.ok(
+        aliceEvents.some(
+          (event) =>
+            (event as { type: string; key?: string }).type === "leave" &&
+            (event as { key?: string }).key === "bob"
+        )
+      );
+    } finally {
+      bob?.leave();
+      alice.leave();
+    }
   });
 });

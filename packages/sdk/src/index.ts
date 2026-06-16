@@ -6,6 +6,7 @@ export { createAuthClient } from "./auth-client.js";
 export type { AuthClient } from "./auth-client.js";
 export { RealtimeClient } from "./realtime.js";
 export type {
+  PresenceCallback,
   RealtimeCallback,
   SubscribeOptions,
 } from "./realtime.js";

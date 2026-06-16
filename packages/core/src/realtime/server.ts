@@ -25,11 +25,25 @@ interface SubscribeMessage {
   id?: string;
   table: string;
   filters?: unknown[];
+  lastEventId?: number;
 }
 
 interface UnsubscribeMessage {
   type: "unsubscribe";
   id: string;
+}
+
+interface PresenceJoinMessage {
+  type: "presence:join";
+  channel: string;
+  key: string;
+  metadata?: unknown;
+}
+
+interface PresenceLeaveMessage {
+  type: "presence:leave";
+  channel: string;
+  key?: string;
 }
 
 /**
@@ -63,13 +77,26 @@ export function createRealtimeServer(
   }
 
   const path = config?.path ?? "/realtime";
+  const eventLogSize = config?.eventLogSize ?? 1000;
+  const presenceEnabled = config?.presence ?? true;
 
   const wss = new WebSocketServer({ server, path });
   const subscriptions = new SubscriptionManager();
+  const eventLog: RealtimeEvent[] = [];
+  let nextEventId = 1;
 
   // Forward database change events to matching subscribers.
   function onDatabaseChange(event: RealtimeEvent) {
-    subscriptions.broadcast(event);
+    const loggedEvent: RealtimeEvent = {
+      ...event,
+      id: nextEventId++,
+      timestamp: new Date().toISOString(),
+    };
+    eventLog.push(loggedEvent);
+    if (eventLog.length > eventLogSize) {
+      eventLog.splice(0, eventLog.length - eventLogSize);
+    }
+    subscriptions.broadcast(loggedEvent);
   }
 
   database.on("change", onDatabaseChange);
@@ -98,18 +125,40 @@ export function createRealtimeServer(
         const filters = normalizeFilters(message.filters);
         subscriptions.subscribe(socket, id, message.table, filters);
         socket.send(JSON.stringify({ type: "subscribed", id, table: message.table }));
+        const lastEventId = message.lastEventId;
+        if (typeof lastEventId === "number") {
+          subscriptions.replay(
+            socket,
+            eventLog.filter((event) => (event.id ?? 0) > lastEventId)
+          );
+        }
       } else if (message.type === "unsubscribe") {
         subscriptions.unsubscribe(socket, message.id);
         socket.send(JSON.stringify({ type: "unsubscribed", id: message.id }));
+      } else if (message.type === "presence:join") {
+        if (!presenceEnabled) {
+          socket.send(JSON.stringify({ type: "error", message: "Presence disabled" }));
+          return;
+        }
+        subscriptions.joinPresence(
+          socket,
+          message.channel,
+          message.key,
+          message.metadata
+        );
+      } else if (message.type === "presence:leave") {
+        subscriptions.leavePresence(socket, message.channel, message.key);
       }
     });
 
     socket.on("close", () => {
+      subscriptions.leaveAllPresence(socket);
       subscriptions.unsubscribeAll(socket);
       subscriptions.removeClient(socket);
     });
 
     socket.on("error", () => {
+      subscriptions.leaveAllPresence(socket);
       subscriptions.unsubscribeAll(socket);
       subscriptions.removeClient(socket);
     });
@@ -135,7 +184,9 @@ export function createRealtimeServer(
   };
 }
 
-function isRealtimeMessage(msg: unknown): msg is SubscribeMessage | UnsubscribeMessage {
+function isRealtimeMessage(
+  msg: unknown
+): msg is SubscribeMessage | UnsubscribeMessage | PresenceJoinMessage | PresenceLeaveMessage {
   if (typeof msg !== "object" || msg === null) return false;
   const m = msg as Record<string, unknown>;
   if (m.type === "subscribe") {
@@ -143,6 +194,15 @@ function isRealtimeMessage(msg: unknown): msg is SubscribeMessage | UnsubscribeM
   }
   if (m.type === "unsubscribe") {
     return typeof m.id === "string";
+  }
+  if (m.type === "presence:join") {
+    return typeof m.channel === "string" && typeof m.key === "string";
+  }
+  if (m.type === "presence:leave") {
+    return (
+      typeof m.channel === "string" &&
+      (m.key === undefined || typeof m.key === "string")
+    );
   }
   return false;
 }
