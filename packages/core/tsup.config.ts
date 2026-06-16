@@ -6,5 +6,12 @@ export default defineConfig({
   dts: true,
   clean: true,
   sourcemap: true,
-  external: ["@localbase/shared", "better-sqlite3"],
+  external: [
+    "@localbase/shared",
+    "@hono/node-server",
+    "better-sqlite3",
+    "node:fs",
+    "node:path",
+    "node:url",
+  ],
 });

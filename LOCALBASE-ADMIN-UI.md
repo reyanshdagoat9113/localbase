@@ -119,6 +119,8 @@ _users: {
 
 All gated by `requireAdmin`. All return `{ data } | { error }` to match the existing API convention.
 
+**Generic row-write constraints:** `POST/PATCH/DELETE /tables/:table/rows...` are for user data tables only. M1 intentionally rejects direct writes to `_`-prefixed system tables (`_users`, `_sessions`, later `_files`, etc.); those resources must be mutated through dedicated admin endpoints so auth/storage invariants are preserved. `PATCH` and `DELETE` require the target table to have exactly one primary key column because the route identifies rows as `:id`.
+
 ---
 
 ## 🎨 Frontend Architecture (`packages/admin`)
@@ -150,12 +152,15 @@ Each milestone is independently shippable and verifiable.
 **Files:**
 - `packages/core/src/db.ts` — add `introspect(): IntrospectedSchema` (PRAGMA `table_info` + `foreign_key_list` + `index_list`).
 - `packages/core/src/admin/router.ts` — schema + rows CRUD endpoints, writing through `Database`.
+- `packages/core/src/admin/system-tables.ts` — classify `_`-prefixed system tables and block generic row writes to them.
 - `packages/core/src/admin/static.ts` — `serveStatic` mount at `/admin/*` + SPA fallback to `index.html`.
 - `packages/core/src/index.ts` — export `createAdminRouter`, `introspect`.
 - `packages/core/src/api.ts` — accept an `admin` option; mount admin router + static.
 - `packages/cli/src/dev.ts` — pass `admin: { enabled: true }` through.
 
-**Done when:** `curl http://localhost:5180/_api/admin/schema` returns JSON; `/admin/` serves a placeholder `index.html`.
+**M1 security posture:** the admin API is not role-gated until M2, so `localbase dev` should bind to localhost during M1. Even before role auth exists, generic writes to system tables are blocked.
+
+**Done when:** `curl http://localhost:5180/_api/admin/schema` returns JSON; `/admin/` serves a placeholder `index.html`; user-table row CRUD works through `Database`; direct writes to `_users`/`_sessions` return `403`.
 
 ### M2 — Role-based admin auth + gate
 **Goal:** only admins can reach `/_api/admin/*`.

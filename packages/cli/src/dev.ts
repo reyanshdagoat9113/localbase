@@ -49,7 +49,10 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
     }
 
     // Create API server
-    const app = createApi(db, config.tables, { auth: config.auth });
+    const app = createApi(db, config.tables, {
+      auth: config.auth,
+      admin: { enabled: true },
+    });
 
     // Start HTTP server
     const server = serve(
@@ -59,6 +62,7 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
       },
       (info) => {
         log.success(`Server running at http://localhost:${info.port}`);
+        log.success(`Admin UI at http://localhost:${info.port}/admin`);
         if (config.realtime?.enabled !== false) {
           log.success(`Realtime WS at ws://localhost:${info.port}${config.realtime?.path ?? "/realtime"}`);
         }

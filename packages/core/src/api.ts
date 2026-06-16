@@ -1,9 +1,11 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import type { AuthConfig, DatabaseSchema } from "@localbase/shared";
+import type { AdminConfig, AuthConfig, DatabaseSchema } from "@localbase/shared";
 import type { Database } from "./db.js";
 import type { Filter, FilterOperator, OrderBy, QueryOptions } from "./query.js";
 import { Auth, createAuthRouter, resolveAuthConfig } from "./auth/index.js";
+import { createAdminRouter } from "./admin/router.js";
+import { mountAdminStatic } from "./admin/static.js";
 
 const RESERVED_PARAMS = new Set(["order", "limit", "offset"]);
 const VALID_OPERATORS: FilterOperator[] = [
@@ -274,6 +276,17 @@ export interface CreateServerOptions {
    * on the returned app so callers can protect their own routes.
    */
   auth?: AuthConfig;
+  /**
+   * If `admin.enabled` is true, mounts the built-in admin UI:
+   *   - `/_api/admin/*` — admin JSON API (rows CRUD, schema introspection)
+   *   - `/admin/*`      — admin SPA static files (with SPA fallback)
+   *
+   * **M1 note:** the admin API is ungated. The `requireAdmin` middleware
+   * ships in M2. Until then, callers should bind the dev server to
+   * `127.0.0.1`. `createServer` will log a one-time warning when both
+   * `admin.enabled` is true and auth is disabled.
+   */
+  admin?: AdminConfig;
 }
 
 export function createServer(
@@ -317,6 +330,29 @@ export function createServer(
     const auth = new Auth(db, config);
     authRouter = createAuthRouter(auth, config.jwtSecret);
     app.route("/", authRouter);
+  }
+
+  // ── Admin (optional, M1) ──
+  // Mounts both the admin JSON API and the SPA static files. See
+  // LOCALBASE-ADMIN-UI.md for the full plan; M1 ships an ungated API
+  // and a placeholder HTML — the React SPA lands in M3.
+  if (normalized.admin?.enabled) {
+    if (!normalized.auth?.enabled) {
+      console.warn(
+        "[localbase] Admin UI is enabled with auth disabled. The admin " +
+          "API is currently ungated (the role gate ships in M2). Bind the " +
+          "dev server to 127.0.0.1 (e.g. `localbase dev --host 127.0.0.1`) " +
+          "until the gate lands."
+      );
+    }
+    const adminRouter = createAdminRouter(db);
+    app.route("/", adminRouter);
+    const { servingPlaceholder } = mountAdminStatic(app, { enabled: true });
+    if (servingPlaceholder) {
+      console.info(
+        "[localbase] Admin SPA bundle not found — serving placeholder at /admin."
+      );
+    }
   }
 
   // ── GET /api/:table — list rows ──

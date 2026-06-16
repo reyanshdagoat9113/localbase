@@ -58,6 +58,12 @@ export type {
   ClientSubscription,
 } from "./realtime/index.js";
 
+// Admin subsystem (M1)
+export { createAdminRouter } from "./admin/router.js";
+export { mountAdminStatic, findAdminDistPath } from "./admin/static.js";
+export { introspect } from "./admin/introspect.js";
+export { SYSTEM_TABLES, isSystemTable, assertNotSystemTable } from "./admin/system-tables.js";
+
 // Re-export shared types
 export type {
   ColumnType,
@@ -66,6 +72,12 @@ export type {
   DatabaseSchema,
   LocalBaseConfig,
   AuthConfig,
+  AdminConfig,
+  IntrospectedColumn,
+  IntrospectedTable,
+  IntrospectedSchema,
+  IntrospectedIndex,
+  IntrospectedForeignKey,
   ApiResponse,
   RealtimeConfig,
   RealtimeEvent,

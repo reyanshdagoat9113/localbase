@@ -1,6 +1,11 @@
 import BetterSqlite3 from "better-sqlite3";
 import { EventEmitter } from "node:events";
-import type { AuthConfig, DatabaseSchema, RealtimeEvent } from "@localbase/shared";
+import type {
+  AuthConfig,
+  DatabaseSchema,
+  IntrospectedSchema,
+  RealtimeEvent,
+} from "@localbase/shared";
 import { schemaToDDL } from "./ddl.js";
 import { runMigrations, resetDatabase, getAppliedMigrations } from "./migrate.js";
 import {
@@ -12,6 +17,7 @@ import {
   type Filter,
   type QueryOptions,
 } from "./query.js";
+import { introspect as runIntrospect } from "./admin/introspect.js";
 import { AUTH_SCHEMA } from "./auth/index.js";
 
 export interface DatabaseOptions {
@@ -178,6 +184,18 @@ export class Database extends EventEmitter<DatabaseEvents> {
    */
   raw(): BetterSqlite3.Database {
     return this.db;
+  }
+
+  /**
+   * Introspect the actual schema of the database.
+   *
+   * This is the truth — what SQLite itself reports — not a reflection of
+   * the `DatabaseSchema` passed to the constructor. The admin UI uses
+   * this to surface schema drift, the column viewer, and to drive
+   * server-side validation of admin row writes.
+   */
+  introspect(): IntrospectedSchema {
+    return runIntrospect(this.db);
   }
 
   /**

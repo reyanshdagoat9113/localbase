@@ -98,3 +98,81 @@ export interface PresenceEvent<T = unknown> {
 }
 
 export const VERSION = "0.1.0";
+
+// ─── Admin UI types (M1) ──────────────────────────────────────
+
+/**
+ * Configuration for the optional built-in Admin UI.
+ *
+ * When `enabled: true`, `createServer` mounts:
+ *   - `/_api/admin/*` — admin JSON API (rows CRUD, schema introspection)
+ *   - `/admin/*`      — admin SPA static files (with SPA fallback to index.html)
+ *
+ * In M1 the API is **ungated** — the `requireAdmin` middleware lands in M2
+ * alongside the `role` column on `_users`. The plan calls out a warning
+ * when served this way; the recommended posture is to bind the dev server
+ * to `127.0.0.1` until the gate lands.
+ */
+export interface AdminConfig {
+  enabled: boolean;
+}
+
+/**
+ * A column as it actually exists in SQLite, surfaced by `Database.introspect()`.
+ * Distinct from `ColumnSchema` (which is the user's *declared* shape) — this
+ * is the truth the DBMS reports.
+ */
+export interface IntrospectedColumn {
+  name: string;
+  /** SQLite type affinity: INTEGER | TEXT | REAL | BLOB. */
+  type: string;
+  notNull: boolean;
+  /** True when this column is the table's primary key. */
+  primaryKey: boolean;
+  /** True when INTEGER PRIMARY KEY (rowid alias) — auto-incrementing. */
+  autoIncrement: boolean;
+  defaultValue: string | null;
+}
+
+/**
+ * A foreign key relationship on a table.
+ */
+export interface IntrospectedForeignKey {
+  fromColumn: string;
+  toTable: string;
+  toColumn: string;
+}
+
+/**
+ * An index on a table (excluding auto-created internal indexes).
+ */
+export interface IntrospectedIndex {
+  name: string;
+  unique: boolean;
+  columns: string[];
+}
+
+/**
+ * A table as it actually exists in SQLite.
+ *
+ * `system` is true for tables that LocalBase owns internally (prefixed with
+ * `_`, e.g. `_users`, `_sessions`). The admin API uses this to gate writes
+ * — modifying a system table must go through the typed Auth/Storage
+ * helpers so invariants (password hashing, claim refresh) are preserved.
+ */
+export interface IntrospectedTable {
+  name: string;
+  columns: IntrospectedColumn[];
+  primaryKey: string[];
+  foreignKeys: IntrospectedForeignKey[];
+  indexes: IntrospectedIndex[];
+  rowCount: number;
+  system: boolean;
+}
+
+/**
+ * Full introspection result for a database, keyed by table name.
+ */
+export interface IntrospectedSchema {
+  tables: IntrospectedTable[];
+}
