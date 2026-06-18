@@ -13,6 +13,11 @@ import {
 export interface AuthUser {
   id: number;
   email: string;
+  /**
+   * `"user"` or `"admin"`. Surfaced to clients (the admin SPA uses it to
+   * decide what to render) and embedded in the access-token claim.
+   */
+  role: string;
   created_at?: string;
 }
 
@@ -83,6 +88,24 @@ function validatePassword(
 }
 
 /**
+ * The only two roles LocalBase knows about. Kept as a closed set so a typo
+ * like `"adminn"` can't silently create an un-assignable role.
+ */
+const VALID_ROLES = new Set(["user", "admin"]);
+
+function validateRole(raw: unknown): string {
+  if (typeof raw !== "string" || !VALID_ROLES.has(raw)) {
+    throw new AuthError(
+      400,
+      `Invalid role "${String(raw)}". Must be one of: ${[...VALID_ROLES].join(
+        ", "
+      )}.`
+    );
+  }
+  return raw;
+}
+
+/**
  * Auth subsystem. Owns all reads/writes against the `_users` and
  * `_sessions` tables, and issues JWT access tokens plus rotating
  * refresh tokens. The router is a thin transport layer over this class.
@@ -116,7 +139,12 @@ export class Auth {
   }
 
   publicUser(row: UserRowWithHash): AuthUser {
-    return { id: row.id, email: row.email, created_at: row.created_at };
+    return {
+      id: row.id,
+      email: row.email,
+      role: row.role,
+      created_at: row.created_at,
+    };
   }
 
   // ─── Session issuance ───────────────────────────────────────
@@ -153,19 +181,59 @@ export class Auth {
       input.password,
       this.config.minPasswordLength
     );
+    const passwordHash = await hashPassword(password);
 
-    // Pre-check to surface a clean 409 instead of leaking the SQLite
-    // constraint error. The UNIQUE index is still a backstop.
-    if (this.findUserByEmail(email)) {
-      throw new AuthError(409, "Email already registered");
+    // Race-safe first-user bootstrap.
+    //
+    // "First user becomes admin" is fundamentally a check-then-act: count
+    // `_users`, and if 0, grant admin. Two concurrent first signups (two
+    // different emails, two near-simultaneous requests) could both observe
+    // an empty table and both end up admin if the check isn't atomic with
+    // the insert.
+    //
+    // We close that window by running the count-check and the insert
+    // inside a single IMMEDIATE transaction. `BEGIN IMMEDIATE` acquires a
+    // write lock *before* the read, so the second signer's transaction
+    // blocks until the first commits — by which point the table is no
+    // longer empty and `countUsers()` returns 1. better-sqlite3 exposes
+    // this via `transaction(fn).immediate(...)`.
+    //
+    // Hashing is done *outside* the transaction so the (slow) argon2 call
+    // doesn't hold the write lock.
+    const insertFirstUser = this.db.raw().transaction((): AuthUser => {
+      // Pre-check inside the lock for a clean 409 on duplicate email.
+      // The UNIQUE index is still the ultimate backstop.
+      if (this.findUserByEmail(email)) {
+        throw new AuthError(409, "Email already registered");
+      }
+      const isFirstUser = this.countUsers() === 0;
+      const role: string = isFirstUser ? "admin" : "user";
+      const inserted = this.db.insert("_users", {
+        email,
+        password_hash: passwordHash,
+        role,
+      });
+      return this.publicUser(inserted[0] as UserRowWithHash);
+    });
+
+    let user: AuthUser;
+    try {
+      user = insertFirstUser.immediate();
+    } catch (err) {
+      // The transaction surfaces the email-duplicate AuthError directly;
+      // a UNIQUE-index collision from a concurrent insert also becomes a
+      // clean 409.
+      if (err instanceof AuthError) throw err;
+      if (
+        err instanceof Error &&
+        "code" in err &&
+        (err as Error & { code: string }).code === "SQLITE_CONSTRAINT_UNIQUE"
+      ) {
+        throw new AuthError(409, "Email already registered");
+      }
+      throw err;
     }
 
-    const passwordHash = await hashPassword(password);
-    const inserted = this.db.insert("_users", {
-      email,
-      password_hash: passwordHash,
-    });
-    const user = this.publicUser(inserted[0] as UserRowWithHash);
     return this.issueSession(user);
   }
 
@@ -268,6 +336,9 @@ export class Auth {
     const inserted = this.db.insert("_users", {
       email,
       password_hash: passwordHash,
+      // CLI-created users are regular users by default; promote via
+      // `localbase admin:promote`.
+      role: "user",
     });
     return this.publicUser(inserted[0] as UserRowWithHash);
   }
@@ -302,5 +373,83 @@ export class Auth {
       { password_hash: passwordHash },
       [{ column: "email", operator: "eq", value: email }]
     );
+  }
+
+  // ─── Role management (admin:promote / admin:demote) ────────
+
+  /** Total number of users. Used by the first-user bootstrap. */
+  countUsers(): number {
+    const row = this.db
+      .raw()
+      .prepare(`SELECT COUNT(*) AS n FROM "_users"`)
+      .get() as { n: number } | undefined;
+    return row?.n ?? 0;
+  }
+
+  /** Number of admins. Used by the last-admin lockout. */
+  countAdmins(): number {
+    const row = this.db
+      .raw()
+      .prepare(`SELECT COUNT(*) AS n FROM "_users" WHERE "role" = 'admin'`)
+      .get() as { n: number } | undefined;
+    return row?.n ?? 0;
+  }
+
+  /**
+   * Promote or demote a user. Enforces the last-admin lockout: a demotion
+   * that would leave zero admins is refused with 409. The `actorEmail`
+   * (when provided) is included in the error so the UI/CLI can warn about
+   * self-demotion specifically; the hard safety is the lockout itself.
+   *
+   * Returns the updated public user. No-op (returns the user unchanged)
+   * when the role is already the requested value.
+   */
+  setRole(emailRaw: unknown, roleRaw: unknown, actorEmail?: string): AuthUser {
+    const email = validateEmail(emailRaw);
+    const role = validateRole(roleRaw);
+
+    const updateRole = this.db.raw().transaction((): AuthUser => {
+      const user = this.findUserByEmail(email);
+      if (!user) {
+        throw new AuthError(404, `No user found with email "${email}"`);
+      }
+
+      if (user.role === role) {
+        // Idempotent — nothing to do.
+        return this.publicUser(user);
+      }
+
+      if (role === "user") {
+        // Demoting an admin. Block if it would leave the system with no
+        // admins at all — that's an unrecoverable lockout (no one can ever
+        // promote again without direct DB access). The actorEmail is
+        // surfaced so callers can distinguish "you're demoting yourself" in
+        // a confirmation prompt; enforcement of that confirmation is a UI
+        // concern (M5), the backend just guarantees the invariant.
+        if (this.countAdmins() <= 1) {
+          const self =
+            actorEmail !== undefined &&
+            actorEmail.toLowerCase() === email.toLowerCase();
+          throw new AuthError(
+            409,
+            self
+              ? `Cannot demote "${email}": they are the last admin. Promote another user first.`
+              : `Cannot demote "${email}": they are the last admin. Promote another user first.`
+          );
+        }
+      }
+
+      this.db.update(
+        "_users",
+        { role },
+        [{ column: "email", operator: "eq", value: email }]
+      );
+
+      // Re-read to return the post-update row.
+      const updated = this.findUserByEmail(email);
+      return this.publicUser(updated!);
+    });
+
+    return updateRole.immediate();
   }
 }

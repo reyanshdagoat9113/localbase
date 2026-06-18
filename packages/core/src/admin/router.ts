@@ -11,13 +11,33 @@ import {
   type FilterOperator,
   type OrderBy,
 } from "../query.js";
+import { requireAdmin } from "../auth/middleware.js";
 import {
   assertNotSystemTable,
   AdminError,
 } from "./system-tables.js";
 
 /**
- * Hono router exposing the M1 admin API at `/_api/admin/*`.
+ * Options for {@link createAdminRouter}.
+ */
+export interface AdminRouterOptions {
+  /**
+   * When set, **every** `/_api/admin/*` route is gated by `requireAdmin`.
+   *
+   * This is the production posture: admin auth is on, and the gate
+   * re-reads the live role from `_users` on each request so a demotion
+   * takes effect immediately.
+   *
+   * When omitted (the no-auth-mode posture), routes are served ungated.
+   * The host (`createServer` / the CLI) is then responsible for
+   * guaranteeing the server is bound to localhost — exposing an ungated
+   * admin API on a public interface is a hard startup error there.
+   */
+  requireAdminSecret?: string;
+}
+
+/**
+ * Hono router exposing the admin API at `/_api/admin/*`.
  *
  * Endpoints (all paths absolute — the host mounts this at root with
  * `app.route("/", createAdminRouter(...))`):
@@ -29,25 +49,40 @@ import {
  *   PATCH  /_api/admin/tables/:t/rows/:id → update row (through Database)
  *   DELETE /_api/admin/tables/:t/rows/:id → delete row (through Database)
  *
- * M1 invariants:
+ * Invariants:
  *   - Reads are allowed on every table (including system tables).
  *   - Writes are refused on system tables (`_users`, `_sessions`, ...).
- *     M5 will add dedicated `/_api/admin/users/*` endpoints that go
- *     through `Auth` and preserve password hashing / role invariants.
+ *     Dedicated `/_api/admin/users/*` endpoints go through `Auth` and
+ *     preserve password hashing / role invariants.
  *   - All mutations go through `Database.insert/update/delete`, so they
  *     emit `change` events the realtime server broadcasts for free.
  *   - Validation is against the **introspected** schema, not the
  *     declared config — admin edits validate against what the database
- *     actually has, so a user who ran a raw SQL migration gets
- *     schema-truth in the editor.
+ *     actually has.
  *
- * M1 security:
- *   - No auth gate. The `requireAdmin` middleware is M2's job. Until
- *     then, `createServer` logs a startup warning and recommends
- *     binding to `127.0.0.1`.
+ * Security:
+ *   - When `options.requireAdminSecret` is provided, all routes are gated
+ *     by `requireAdmin`, which re-verifies the caller's live `role` from
+ *     `_users`. This is the only mode in which a production server should
+ *     serve admin mutations.
+ *   - When the secret is omitted (auth disabled), routes are ungated and
+ *     the caller guarantees a localhost binding.
  */
-export function createAdminRouter(db: Database): Hono {
+export function createAdminRouter(
+  db: Database,
+  options: AdminRouterOptions = {}
+): Hono {
   const router = new Hono();
+
+  // ── Auth gate (optional, but strongly recommended) ──
+  // Applied as a wildcard middleware so it runs before every route below.
+  // Per Decision #6 of the admin plan: "Never ship working admin mutations
+  // without admin auth." When the secret is present, both reads AND writes
+  // are gated — the schema/tables endpoints expose real data, not just
+  // row counts, so they're sensitive too.
+  if (options.requireAdminSecret) {
+    router.use("/_api/admin/*", requireAdmin(options.requireAdminSecret, db));
+  }
 
   // ── GET /_api/admin/schema ─────────────────────────────────
   // Introspected schema for all tables (including system tables,

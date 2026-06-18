@@ -7,6 +7,7 @@ import {
   listUsersCommand,
   resetPasswordCommand,
 } from "./auth.js";
+import { promoteCommand, demoteCommand } from "./admin.js";
 import { ConfigError } from "./config.js";
 import { log } from "./log.js";
 
@@ -51,13 +52,28 @@ program
     "Port to run the server on (default: 5180)",
     "5180"
   )
-  .action(async (opts: { port: string }) => {
+  .option(
+    "-H, --host <address>",
+    "Bind address (default: 127.0.0.1). Use 0.0.0.0 for LAN access.",
+    "127.0.0.1"
+  )
+  .option(
+    "--admin-unsafe-public",
+    "Allow an UNGATED admin API on a non-local interface when auth is disabled. " +
+      "Dangerous: anyone who can reach the port has full admin access.",
+    false
+  )
+  .action(async (opts: { port: string; host: string; adminUnsafePublic?: boolean }) => {
     const port = Number.parseInt(opts.port, 10);
     if (!Number.isFinite(port) || port < 1 || port > 65535) {
       fail(new Error(`Invalid port: "${opts.port}". Must be between 1 and 65535.`));
     }
     try {
-      await devCommand({ port });
+      await devCommand({
+        port,
+        host: opts.host,
+        adminUnsafePublic: opts.adminUnsafePublic === true,
+      });
     } catch (err) {
       fail(err);
     }
@@ -119,6 +135,29 @@ authCmd
   .option("-p, --password <password>", "New password (or set AUTH_PASSWORD)")
   .action(async (opts: { email?: string; password?: string }) => {
     await resetPasswordCommand(opts);
+  });
+
+// ── localbase admin ... ──
+const adminCmd = program
+  .command("admin")
+  .description(
+    "Admin role management (requires auth.enabled in config). The first " +
+      "user to sign up is automatically an admin; these commands manage the rest."
+  );
+
+adminCmd
+  .command("promote <email>")
+  .description("Grant admin rights to a user")
+  .action(async (email: string) => {
+    await promoteCommand({ email });
+  });
+
+adminCmd
+  .command("demote <email>")
+  .description("Revoke admin rights from a user (refuses to demote the last admin)")
+  .option("-f, --force", "Skip the confirmation prompt")
+  .action(async (email: string, opts: { force?: boolean }) => {
+    await demoteCommand({ email, force: opts.force === true });
   });
 
 program.parse(process.argv);

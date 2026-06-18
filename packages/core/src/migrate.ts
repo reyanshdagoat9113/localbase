@@ -1,8 +1,21 @@
 import type Database from "better-sqlite3";
 import type { DatabaseSchema } from "@localbase/shared";
-import { schemaToDDL } from "./ddl.js";
+import {
+  schemaToDDL,
+  tableToDDL,
+  topologicalSort,
+  columnToAddDDL,
+  AdditiveMigrationError,
+} from "./ddl.js";
 
 const MIGRATIONS_TABLE = "_migrations";
+
+/**
+ * Separator used in column-level migration names: `<table>::<column>`.
+ * Chosen because `::` cannot appear in a SQL identifier, so there's no
+ * collision risk with real table or column names.
+ */
+const COLUMN_MIGRATION_SEPARATOR = "::";
 
 /**
  * Ensures the _migrations tracking table exists.
@@ -29,10 +42,39 @@ export function getAppliedMigrations(db: Database.Database): Set<string> {
 }
 
 /**
+ * Returns the names of columns currently present on a table, by introspecting
+ * `sqlite_master` metadata (via PRAGMA table_info). Used by the additive
+ * migration pass to decide which declared columns still need ADD COLUMN.
+ */
+function existingColumns(
+  db: Database.Database,
+  table: string
+): Set<string> {
+  const rows = db.prepare(`PRAGMA table_info("${table}")`).all() as {
+    name: string;
+  }[];
+  return new Set(rows.map((r) => r.name));
+}
+
+/**
  * Runs pending migrations for the given schema.
- * Each table in the schema is treated as one migration.
- * Already-applied tables are skipped.
- * Everything runs inside a single transaction.
+ *
+ * Two phases, both inside a single transaction:
+ *
+ *   Phase 1 — CREATE: for each table not yet recorded in `_migrations`,
+ *            run its `CREATE TABLE` and record the table name.
+ *
+ *   Phase 2 — ADD COLUMN (additive): for each table that already exists,
+ *            compare declared columns against the columns the DB actually
+ *            has. For every declared column missing from the DB, run
+ *            `ALTER TABLE ... ADD COLUMN` and record `<table>::<column>`.
+ *            This is how a new column on an existing table (e.g. `role` on
+ *            `_users`) lands without dropping or recreating the table.
+ *
+ * Non-additive changes (dropping a column, changing a type, adding a
+ * PRIMARY KEY / UNIQUE / FK to an existing table) are NOT supported and
+ * will throw — they require table recreation, which is intentionally out
+ * of scope. Config-first philosophy: change the schema, then reset in dev.
  *
  * Returns the list of newly applied migration names.
  */
@@ -43,28 +85,60 @@ export function runMigrations(
   ensureMigrationsTable(db);
   const applied = getAppliedMigrations(db);
 
-  const allDDL = schemaToDDL(schema);
-  const tableNames = Object.keys(schema);
+  // Sort once so that the CREATE order (referenced tables first) is the same
+  // order we iterate in both phases. Iterating the sorted entries directly
+  // (rather than indexing Object.keys against schemaToDDL's output) keeps
+  // each migration name aligned with the DDL that was actually run.
+  const sortedEntries = topologicalSort(schema);
   const appliedNames: string[] = [];
 
   const migrate = db.transaction(() => {
-    for (let i = 0; i < tableNames.length; i++) {
-      const name = tableNames[i];
+    // ── Phase 1: create new tables (referenced tables first) ──
+    for (const [name, tableSchema] of sortedEntries) {
       if (applied.has(name)) continue;
 
-      // Run the CREATE TABLE statement
-      db.exec(allDDL[i]);
+      db.exec(tableToDDL(name, tableSchema));
 
-      // Record the migration
       db.prepare(
         `INSERT INTO "${MIGRATIONS_TABLE}" ("name") VALUES (?)`
       ).run(name);
 
+      applied.add(name);
       appliedNames.push(name);
+    }
+
+    // ── Phase 2: add missing columns to existing tables (additive) ──
+    for (const [tableName, tableSchema] of sortedEntries) {
+      if (!applied.has(tableName)) continue; // created in phase 1 — already current
+
+      const present = existingColumns(db, tableName);
+      for (const [colName, colDef] of Object.entries(tableSchema)) {
+        if (present.has(colName)) continue;
+
+        const migrationKey = `${tableName}${COLUMN_MIGRATION_SEPARATOR}${colName}`;
+        if (applied.has(migrationKey)) continue; // defensive — shouldn't happen
+
+        const ddl = columnToAddDDL(tableName, colName, colDef);
+        db.exec(ddl);
+
+        db.prepare(
+          `INSERT INTO "${MIGRATIONS_TABLE}" ("name") VALUES (?)`
+        ).run(migrationKey);
+
+        applied.add(migrationKey);
+        appliedNames.push(migrationKey);
+      }
     }
   });
 
-  migrate();
+  try {
+    migrate();
+  } catch (err) {
+    // Surface additive-migration programmer errors with their clear message
+    // rather than wrapping them in a generic transaction failure.
+    if (err instanceof AdditiveMigrationError) throw err;
+    throw err;
+  }
   return appliedNames;
 }
 

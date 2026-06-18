@@ -10,6 +10,17 @@ export interface AccessTokenClaims {
   sub: string;
   /** User email at issuance time. */
   email: string;
+  /**
+   * User role at issuance time (`"user"` | `"admin"`).
+   *
+   * ⚠️ This is a *snapshot* for convenience only. `requireAdmin` does NOT
+   * trust it for authorization — it re-reads the current role from `_users`
+   * on every request so a demotion takes effect immediately instead of
+   * waiting for the token to expire. The claim exists so the SPA can render
+   * admin-only UI without an extra round-trip, and so logs/telemetry carry
+   * the role at issue time.
+   */
+  role: string;
   /** Issued-at (seconds since epoch). */
   iat: number;
   /** Expiration (seconds since epoch). */
@@ -41,13 +52,16 @@ function toKey(secret: string): Uint8Array {
  * Sign a short-lived access token for the given user.
  *
  * `expiresIn` is a string shorthand accepted by `jose` (e.g. "1h", "15m", "7d").
+ *
+ * `user.role` is embedded as a claim but is NOT authoritative for admin
+ * authorization — see {@link AccessTokenClaims.role}.
  */
 export async function signAccessToken(
-  user: { id: number; email: string },
+  user: { id: number; email: string; role: string },
   secret: string,
   expiresIn: string
 ): Promise<string> {
-  return new SignJWT({ email: user.email })
+  return new SignJWT({ email: user.email, role: user.role })
     .setProtectedHeader({ alg: ACCESS_TOKEN_ALG })
     .setSubject(String(user.id))
     // jti is required so two tokens issued in the same second for the

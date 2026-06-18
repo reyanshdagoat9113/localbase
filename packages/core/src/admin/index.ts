@@ -1,4 +1,4 @@
-// Admin subsystem (M1).
+// Admin subsystem.
 //
 // Re-exports the public surface of the admin package: the JSON API router,
 // the static SPA mount, schema introspection, and the system-tables policy.

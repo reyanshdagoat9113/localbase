@@ -281,10 +281,12 @@ export interface CreateServerOptions {
    *   - `/_api/admin/*` — admin JSON API (rows CRUD, schema introspection)
    *   - `/admin/*`      — admin SPA static files (with SPA fallback)
    *
-   * **M1 note:** the admin API is ungated. The `requireAdmin` middleware
-   * ships in M2. Until then, callers should bind the dev server to
-   * `127.0.0.1`. `createServer` will log a one-time warning when both
-   * `admin.enabled` is true and auth is disabled.
+   * When `auth.enabled` is also true, every `/_api/admin/*` route is gated
+   * by `requireAdmin`, which re-reads the caller's live role from `_users`
+   * on each request (so demotions take effect immediately). When auth is
+   * disabled, the admin API is ungated and the host is responsible for
+   * binding to localhost — the CLI refuses public exposure unless the
+   * user passes an explicit `--admin-unsafe-public` flag.
    */
   admin?: AdminConfig;
 }
@@ -313,6 +315,9 @@ export function createServer(
   // this, `GET /api/auth/user` would be interpreted as a request for row
   // `user` of table `auth`.
   let authRouter: ReturnType<typeof createAuthRouter> | null = null;
+  // `resolvedSecret` is hoisted out so the admin block can reuse it to gate
+  // `/_api/admin/*` with `requireAdmin`. It's only set when auth is enabled.
+  let resolvedSecret: string | undefined;
   if (normalized.auth?.enabled) {
     // Ensure the auth tables exist on this database. This covers the case
     // where the user passed auth to createServer but not to the Database
@@ -320,6 +325,7 @@ export function createServer(
     // this is a no-op.
     db.enableAuth(normalized.auth);
     const { config, secretWasGenerated } = resolveAuthConfig(normalized.auth);
+    resolvedSecret = config.jwtSecret;
     if (secretWasGenerated) {
       console.warn(
         "[localbase] auth.jwtSecret is not set. Generated a random one \u2014 " +
@@ -332,20 +338,28 @@ export function createServer(
     app.route("/", authRouter);
   }
 
-  // ── Admin (optional, M1) ──
-  // Mounts both the admin JSON API and the SPA static files. See
-  // LOCALBASE-ADMIN-UI.md for the full plan; M1 ships an ungated API
-  // and a placeholder HTML — the React SPA lands in M3.
+  // ── Admin (optional) ──
+  // Mounts both the admin JSON API and the SPA static files.
+  //
+  // Gating policy (Decision #6 / #10 of the admin plan):
+  //   - When auth is enabled, every /_api/admin/* route is gated by
+  //     requireAdmin(secret), which re-reads the live role from _users.
+  //   - When auth is disabled, the admin API mounts UNGATED. Core cannot
+  //     know the network binding, so it logs a warning; the CLI enforces
+  //     the localhost-only policy and refuses public exposure unless the
+  //     user passes an explicit `--admin-unsafe-public` flag.
   if (normalized.admin?.enabled) {
     if (!normalized.auth?.enabled) {
       console.warn(
         "[localbase] Admin UI is enabled with auth disabled. The admin " +
-          "API is currently ungated (the role gate ships in M2). Bind the " +
-          "dev server to 127.0.0.1 (e.g. `localbase dev --host 127.0.0.1`) " +
-          "until the gate lands."
+          "API is therefore UNGATED — anyone who can reach this port has " +
+          "full admin access. Ensure the server is bound to 127.0.0.1 (the " +
+          "CLI enforces this unless --admin-unsafe-public is passed)."
       );
     }
-    const adminRouter = createAdminRouter(db);
+    const adminRouter = createAdminRouter(db, {
+      requireAdminSecret: resolvedSecret,
+    });
     app.route("/", adminRouter);
     const { servingPlaceholder } = mountAdminStatic(app, { enabled: true });
     if (servingPlaceholder) {

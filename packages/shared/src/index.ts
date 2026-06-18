@@ -99,7 +99,7 @@ export interface PresenceEvent<T = unknown> {
 
 export const VERSION = "0.1.0";
 
-// ─── Admin UI types (M1) ──────────────────────────────────────
+// ─── Admin UI types ───────────────────────────────────────────
 
 /**
  * Configuration for the optional built-in Admin UI.
@@ -108,10 +108,10 @@ export const VERSION = "0.1.0";
  *   - `/_api/admin/*` — admin JSON API (rows CRUD, schema introspection)
  *   - `/admin/*`      — admin SPA static files (with SPA fallback to index.html)
  *
- * In M1 the API is **ungated** — the `requireAdmin` middleware lands in M2
- * alongside the `role` column on `_users`. The plan calls out a warning
- * when served this way; the recommended posture is to bind the dev server
- * to `127.0.0.1` until the gate lands.
+ * When auth is enabled, the admin API is gated by `requireAdmin`, which
+ * re-reads the caller's live role from `_users` on every request. When auth
+ * is disabled, the API is ungated and must only be exposed on localhost
+ * unless the host explicitly opts into unsafe public serving.
  */
 export interface AdminConfig {
   enabled: boolean;

@@ -7,7 +7,14 @@ export { createServer } from "./api.js";
 export type { CreateServerOptions } from "./api.js";
 
 // DDL compiler
-export { schemaToDDL, tableToDDL, columnToDDL } from "./ddl.js";
+export {
+  schemaToDDL,
+  tableToDDL,
+  columnToDDL,
+  columnToAddDDL,
+  topologicalSort,
+  AdditiveMigrationError,
+} from "./ddl.js";
 
 // Migrations
 export { runMigrations, resetDatabase, getAppliedMigrations } from "./migrate.js";
@@ -58,7 +65,7 @@ export type {
   ClientSubscription,
 } from "./realtime/index.js";
 
-// Admin subsystem (M1)
+// Admin subsystem
 export { createAdminRouter } from "./admin/router.js";
 export { mountAdminStatic, findAdminDistPath } from "./admin/static.js";
 export { introspect } from "./admin/introspect.js";

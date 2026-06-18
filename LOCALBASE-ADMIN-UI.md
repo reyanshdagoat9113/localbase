@@ -34,10 +34,12 @@ Ship a built-in dashboard at `http://localhost:5180/admin` that lets you browse 
 | 3 | **Package layout** | New `packages/admin`; built `dist/` embedded into `@localbase/core/dist/admin` at publish | Keeps `@localbase/core` lean (no React/Vite/Tailwind in its deps); `npm i @localbase/core` stays self-contained. |
 | 4 | **Table grid** | `@tanstack/react-table` (headless) | ~10% the bundle of ag-grid; styles match shadcn/ui exactly; no visual clash. |
 | 5 | **First cut scope** | P0 (table browser + inline row editor + schema viewer) **+ Auth Manager** | Auth Manager is nearly free — `Auth.createUser / listUsers / setPassword` already exist. |
-| 6 | Admin API | Dedicated `/_api/admin/*`, gated by `requireAdmin`, writes through `Database` | Admin needs elevated rights (list tables, counts, real schema); writing through `Database` keeps realtime firing. |
+| 6 | Admin API | Dedicated `/_api/admin/*`, gated by `requireAdmin` from the first backend milestone, writes through `Database` | Admin needs elevated rights (list tables, counts, real schema); writing through `Database` keeps realtime firing. Never ship working admin mutations without admin auth. |
 | 7 | Schema source | Introspect via `PRAGMA` through `db.raw()` → new `db.introspect()` | Shows the *actual* DB (catches drift, reveals `_users`/`_sessions`), not just declared config. |
 | 8 | Stack | React + Vite + Tailwind + shadcn/ui + TanStack Query | Matches master vision stack. |
 | 9 | URL path | `/admin` (SPA + index.html fallback) | Cleanest; the post-MVP doc's `/_/admin` vs `/_admin/*` is contradictory, so we pick one. |
+| 10 | No-auth mode | Admin API is localhost-only unless explicitly started with an unsafe public flag | `auth.enabled === false` must never accidentally expose an ungated admin API on the LAN/internet. |
+| 11 | Production exposure | Admin UI is enabled by default in `localbase dev`; deployed/public serving requires explicit config | Keeps the local-first workflow simple while avoiding accidental public admin surfaces. |
 
 ---
 
@@ -79,6 +81,8 @@ Ship a built-in dashboard at `http://localhost:5180/admin` that lets you browse 
 
 An admin is just a user whose JWT carries `role: "admin"`. No second auth system.
 
+`requireAdmin` must not trust only the JWT role claim. It should verify the session/user still exists and read the current role from `_users` before allowing access, so demotion takes effect immediately even if an old access token still contains `role: "admin"`.
+
 **Schema change** (`auth/schema.ts`):
 ```ts
 _users: {
@@ -93,12 +97,16 @@ _users: {
 **What changes:**
 - `tokens.ts` — `signAccessToken` embeds `role`; `verifyAccessToken` exposes it in claims.
 - `auth.ts` — `signUp` grants `admin` **only when `_users` is empty** (first-user bootstrap); `publicUser` surfaces `role`.
-- `auth/middleware.ts` — new `requireAdmin(secret)` factory, parallels `requireAuth`, checks `claims.role === "admin"` → 403 otherwise.
+- `auth/middleware.ts` — new `requireAdmin(secret)` factory, parallels `requireAuth`, validates token/session, loads current user role from DB, checks `role === "admin"` → 403 otherwise.
 - CLI — `localbase admin:promote <email>` / `admin:demote <email>` (reuses `Auth` class).
 
-**Fallback when auth is disabled:** if `auth.enabled === false`, the admin API is ungated but we log a warning and recommend binding to `127.0.0.1`. (Open sub-decision: force localhost binding in this mode. See Risks.)
+**Fallback when auth is disabled:** if `auth.enabled === false`, the admin API is ungated **only when the server is bound to `127.0.0.1` / `localhost`**. Starting an ungated admin API on `0.0.0.0` or another public interface must fail unless the user passes an explicit unsafe flag such as `--admin-unsafe-public`.
 
-> ⚠️ **Verify before coding:** confirm `runMigrations` (in `migrate.ts`) handles additive `ALTER TABLE ... ADD COLUMN` for `_users`. It likely does (it diffs schema → DDL), but the first M2 task is to confirm and, if needed, add an additive-column path.
+**Token storage / CSRF decision:** first cut uses `Authorization: Bearer <token>` from the admin SPA, not ambient cookies. This avoids CSRF for admin mutations. Keep the access token short-lived, avoid injecting user content as HTML, and treat any future switch to cookies as requiring CSRF tokens.
+
+**Admin lockout rules:** both UI and CLI must prevent deleting/demoting the last admin. Self-demotion should require an explicit confirmation in the UI and should still be blocked if it would leave zero admins.
+
+> ⚠️ **Verify before coding:** confirm `runMigrations` (in `migrate.ts`) handles additive `ALTER TABLE ... ADD COLUMN` for `_users`. It likely does (it diffs schema → DDL), but the first M1 task is to confirm and, if needed, add an additive-column path before any role/auth changes ship.
 
 ---
 
@@ -121,6 +129,19 @@ All gated by `requireAdmin`. All return `{ data } | { error }` to match the exis
 
 **Generic row-write constraints:** `POST/PATCH/DELETE /tables/:table/rows...` are for user data tables only. M1 intentionally rejects direct writes to `_`-prefixed system tables (`_users`, `_sessions`, later `_files`, etc.); those resources must be mutated through dedicated admin endpoints so auth/storage invariants are preserved. `PATCH` and `DELETE` require the target table to have exactly one primary key column because the route identifies rows as `:id`.
 
+**SQLite/query safety rules:**
+- Table names, column names, sort columns, and filter columns must be validated against `db.introspect()` before any SQL is generated. Never interpolate unchecked identifiers.
+- Identifier quoting must be centralized and used for every validated table/column name.
+- Values must always be bound parameters, including filters/search and primary key values.
+- Sort direction is allowlisted to `asc` / `desc`; `limit` and `offset` are numeric, bounded, and defaulted.
+- `sqlite_%` internal tables, views, virtual tables, and `_`-prefixed system tables are read-only unless a dedicated endpoint explicitly supports them.
+- Tables without a primary key are browse-only. Composite primary keys are browse-only in M1. Single text/integer primary keys are editable; other primary key shapes need an explicit support decision.
+
+**Operational safety rules:**
+- Admin routes should set `Cache-Control: no-store` for API responses and avoid caching `index.html` aggressively during dev.
+- Failed admin auth attempts should return generic errors and be safe to rate-limit later.
+- Login brute-force/rate limiting belongs to the shared auth roadmap, but admin launch should at least document the risk and keep public exposure opt-in.
+
 ---
 
 ## 🎨 Frontend Architecture (`packages/admin`)
@@ -138,6 +159,8 @@ All gated by `requireAdmin`. All return `{ data } | { error }` to match the exis
 
 **Data layer:** TanStack Query against `/_api/admin/*`. Invalidates the relevant query key after each mutation so the grid refreshes.
 
+**Editor UX constraints:** distinguish `null` from empty string, render booleans/dates/numbers with type-aware inputs where obvious, show backend validation errors inline, and keep large text/JSON values editable without breaking the grid. Unsupported column/table shapes should be clearly marked read-only instead of failing late.
+
 **Dev workflow:** `pnpm --filter admin dev` runs Vite on `:5173`, proxying `/api` + `/_api` + `/realtime` → `:5180` for HMR. No rebuild-and-refresh loop.
 
 ---
@@ -146,10 +169,14 @@ All gated by `requireAdmin`. All return `{ data } | { error }` to match the exis
 
 Each milestone is independently shippable and verifiable.
 
-### M1 — Backend foundation (no UI)
-**Goal:** the admin API and static mount exist and respond.
+### M1 — Backend + auth foundation (no UI)
+**Goal:** the admin API and static mount exist and respond, with admin auth enforced before any row CRUD is enabled.
 
 **Files:**
+- `packages/core/src/auth/schema.ts` — add `role` column to `_users` after confirming additive migration safety.
+- `packages/core/src/auth/tokens.ts` — include `role` in access-token claims.
+- `packages/core/src/auth/auth.ts` — first-user admin bootstrap; expose `role` in `publicUser`.
+- `packages/core/src/auth/middleware.ts` — add `requireAdmin(secret)` and verify current DB role, not only JWT claims.
 - `packages/core/src/db.ts` — add `introspect(): IntrospectedSchema` (PRAGMA `table_info` + `foreign_key_list` + `index_list`).
 - `packages/core/src/admin/router.ts` — schema + rows CRUD endpoints, writing through `Database`.
 - `packages/core/src/admin/system-tables.ts` — classify `_`-prefixed system tables and block generic row writes to them.
@@ -158,23 +185,31 @@ Each milestone is independently shippable and verifiable.
 - `packages/core/src/api.ts` — accept an `admin` option; mount admin router + static.
 - `packages/cli/src/dev.ts` — pass `admin: { enabled: true }` through.
 
-**M1 security posture:** the admin API is not role-gated until M2, so `localbase dev` should bind to localhost during M1. Even before role auth exists, generic writes to system tables are blocked.
+**M1 security posture:** no working admin mutation route exists without `requireAdmin`. If role support or safe `_users` migration is not ready yet, M1 may expose only static `/admin/` and read-only placeholder/health endpoints. Generic writes to system tables are blocked regardless.
 
-**Done when:** `curl http://localhost:5180/_api/admin/schema` returns JSON; `/admin/` serves a placeholder `index.html`; user-table row CRUD works through `Database`; direct writes to `_users`/`_sessions` return `403`.
+**Done when:** an admin token can call `/_api/admin/schema`; a non-admin token gets `403`; `/admin/` serves a placeholder `index.html`; user-table row CRUD works through `Database`; direct writes to `_users`/`_sessions` return `403`; unsafe public no-auth startup is rejected unless explicitly opted in.
 
-### M2 — Role-based admin auth + gate
-**Goal:** only admins can reach `/_api/admin/*`.
+### M2 — Admin auth completion
+**Goal:** finish role management, CLI promotion, and lockout protections.
 
 **Tasks:**
-- [ ] Confirm `runMigrations` handles additive `ALTER TABLE ADD COLUMN` for `_users` (or add that path).
-- [ ] Add `role` column to `AUTH_SCHEMA._users`.
-- [ ] `tokens.ts`: `role` in access-token claims; surfaced on verify.
-- [ ] `auth.ts`: first-user → admin bootstrap; `publicUser` includes `role`; add `setRole(email, role)`.
-- [ ] `auth/middleware.ts`: `requireAdmin(secret)`.
-- [ ] Admin router wired with `requireAdmin`.
+- [ ] Add `Auth.setRole(email, role)` / equivalent internal role update method.
+- [ ] Ensure admin router wiring cannot be constructed without `requireAdmin` when mutations are enabled.
+- [ ] Prevent deleting/demoting the last admin; require confirmation for self-demotion.
 - [ ] CLI `localbase admin:promote <email>` + `admin:demote <email>`.
 
-**Done when:** first signup is admin; promote/demote works; a non-admin token gets `403` on `/_api/admin/*`; an admin token gets `200`.
+**Done when:** first signup is admin; promote/demote works; demotion takes effect immediately for existing tokens; a non-admin token gets `403` on `/_api/admin/*`; an admin token gets `200`; last-admin lockout is enforced.
+
+### M2.5 — Admin API hardening tests
+**Goal:** lock down the dangerous generic API surface before building UI on top of it.
+
+**Tasks:**
+- [ ] Tests for table/column/sort/filter allowlisting and identifier quoting.
+- [ ] Tests for bounded pagination and parameterized search/filter values.
+- [ ] Tests for blocking `_`-prefixed, `sqlite_%`, views, virtual tables, no-PK tables, and composite-PK mutations.
+- [ ] Tests for auth failures, stale demoted tokens, no-auth localhost behavior, and unsafe public binding rejection.
+
+**Done when:** backend admin tests cover the SQL-injection and authorization surfaces independently of the React UI.
 
 ### M3 — `packages/admin` scaffold
 **Goal:** a live app shell talking to the real admin API.
@@ -212,6 +247,7 @@ Each milestone is independently shippable and verifiable.
 
 **Tasks:**
 - [ ] Build step copies `packages/admin/dist` → `packages/core/dist/admin` on publish.
+- [ ] Package verification test confirms the published/tarball artifact contains `dist/admin/index.html` and assets.
 - [ ] `localbase studio` command → opens `http://localhost:5180/admin` in the default browser (alias of dev + open).
 - [ ] README quickstart + screenshot.
 - [ ] Integration tests: load admin, list tables, edit a row, delete a row.
@@ -222,11 +258,13 @@ Each milestone is independently shippable and verifiable.
 
 ## ⚠️ Risks & Open Questions
 
-1. **Additive migration for `_users`.** Must confirm `runMigrations` does `ALTER TABLE ADD COLUMN` (vs. drop+recreate). If it recreates, existing user data is at risk — must add a safe additive path first. *(First task in M2.)*
+1. **Additive migration for `_users`.** Must confirm `runMigrations` does `ALTER TABLE ADD COLUMN` (vs. drop+recreate). If it recreates, existing user data is at risk — must add a safe additive path first. *(First task in M1.)*
 2. **Existing installs already have users.** First-user bootstrap won't fire for them. Mitigation: `localbase admin:promote <email>` is the documented path; print a hint on first admin route hit when no admin exists.
-3. **No-auth mode.** When `auth.enabled === false`, the admin API is ungated. Open decision: force `127.0.0.1` binding in this mode? (Recommended.)
+3. **No-auth mode.** When `auth.enabled === false`, the admin API is ungated only on localhost. Public binding must fail unless an explicit unsafe flag is passed.
 4. **Bundle bloat at publish.** Embedding the React bundle increases `@localbase/core` install size. Acceptable for a self-contained platform; revisit if it exceeds ~1.5 MB gzipped.
 5. **Schema drift (config vs. actual DB).** Introspection surfaces the truth; the UI should flag when declared config ≠ actual schema. (Nice-to-have for M4; not blocking.)
+6. **Audit trail.** Admin mutations are high-impact. Not required for first cut, but a P1 follow-up should add an `_audit_log` or equivalent with actor, action, resource, row id, timestamp, and optional before/after metadata.
+7. **Large tables.** Exact row counts and broad search can become slow. M1 should bound pagination and keep search simple; later versions can add approximate counts/index hints if needed.
 
 ---
 
@@ -236,6 +274,7 @@ Each milestone is independently shippable and verifiable.
 - GraphQL.
 - Storage browser, Jobs viewer — gated on Phases 9 and 11. The **Realtime inspector** is *not* blocked (Phase 8 is done) but is a P2 stretch for after M5.
 - Multi-process WebSocket scale.
+- Full audit log UI. Backend audit logging is a P1 hardening follow-up.
 
 ---
 

@@ -10,8 +10,11 @@ export {
 export type { AccessTokenClaims, RefreshTokenClaims } from "./tokens.js";
 export {
   requireAuth,
+  requireAdmin,
   type AuthVariables,
   type AuthenticatedUser,
+  type AdminVariables,
+  type AdminAuthenticatedUser,
 } from "./middleware.js";
 export {
   resolveAuthConfig,

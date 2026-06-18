@@ -59,6 +59,94 @@ export function foreignKeyClause(name: string, col: ColumnSchema): string | null
 }
 
 /**
+ * Error thrown when an additive migration cannot be performed because the
+ * column shape is unsupported by SQLite's `ALTER TABLE ADD COLUMN`.
+ *
+ * SQLite restrictions (https://www.sqlite.org/lang_altertable.html):
+ *   - The column cannot have a PRIMARY KEY or UNIQUE constraint.
+ *   - The column cannot have a foreign-key constraint.
+ *   - The column cannot be `NOT NULL` unless it also has a non-NULL DEFAULT
+ *     (existing rows need a value).
+ *   - If the column has a `DEFAULT` of CURRENT_TIME / CURRENT_DATE /
+ *     CURRENT_TIMESTAMP, the value is applied at the time of the ALTER,
+ *     not per-row insert later — fine, but noted for completeness.
+ *
+ * These restrictions are why this function exists separately from
+ * `columnToDDL`: additive changes can only express a *subset* of what a
+ * fresh CREATE TABLE can. Calling this on an unsupported shape is a
+ * programmer error (the declared schema asks for something SQLite can't
+ * add after the fact) and should surface loudly, not silently degrade.
+ */
+export class AdditiveMigrationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AdditiveMigrationError";
+  }
+}
+
+/**
+ * Generates an `ALTER TABLE ... ADD COLUMN` statement for an additive
+ * migration. Only emits the subset of column attributes SQLite allows in
+ * an ADD COLUMN: type, NOT NULL (only when a DEFAULT is present), and
+ * DEFAULT.
+ *
+ * Throws `AdditiveMigrationError` for shapes SQLite cannot add after the
+ * table exists (PRIMARY KEY, UNIQUE, AUTOINCREMENT, foreign keys, NOT NULL
+ * without a default). Those require table recreation, which is out of scope
+ * for the additive-only migration path.
+ *
+ * Example output: `ALTER TABLE "_users" ADD COLUMN "role" TEXT NOT NULL DEFAULT 'user'`
+ */
+export function columnToAddDDL(
+  tableName: string,
+  colName: string,
+  col: ColumnSchema
+): string {
+  if (col.primaryKey) {
+    throw new AdditiveMigrationError(
+      `Cannot add column "${colName}" to "${tableName}": SQLite does not ` +
+        `allow ADD COLUMN with a PRIMARY KEY constraint. Recreate the table instead.`
+    );
+  }
+  if (col.autoIncrement) {
+    throw new AdditiveMigrationError(
+      `Cannot add column "${colName}" to "${tableName}": AUTOINCREMENT requires ` +
+        `an INTEGER PRIMARY KEY, which cannot be added after table creation.`
+    );
+  }
+  if (col.unique) {
+    throw new AdditiveMigrationError(
+      `Cannot add column "${colName}" to "${tableName}": SQLite does not ` +
+        `allow ADD COLUMN with a UNIQUE constraint.`
+    );
+  }
+  if (col.references) {
+    throw new AdditiveMigrationError(
+      `Cannot add column "${colName}" to "${tableName}": SQLite does not ` +
+        `allow ADD COLUMN with a FOREIGN KEY constraint.`
+    );
+  }
+
+  const notNull = col.nullable === false;
+  if (notNull && col.default === undefined) {
+    throw new AdditiveMigrationError(
+      `Cannot add NOT NULL column "${colName}" to "${tableName}" without a ` +
+        `DEFAULT: existing rows would have no value. Provide a default or make ` +
+        `the column nullable.`
+    );
+  }
+
+  const parts: string[] = [
+    `ALTER TABLE "${tableName}" ADD COLUMN "${colName}"`,
+    sqliteType(col),
+  ];
+  if (notNull) parts.push("NOT NULL");
+  if (col.default !== undefined) parts.push(`DEFAULT ${col.default}`);
+
+  return parts.join(" ");
+}
+
+/**
  * Generates a CREATE TABLE statement for a single table.
  */
 export function tableToDDL(tableName: string, schema: TableSchema): string {
@@ -90,7 +178,7 @@ export function schemaToDDL(schema: DatabaseSchema): string[] {
  * Sorts tables so that any table referenced via foreign keys is created before
  * the table that references it. Throws on circular dependencies.
  */
-function topologicalSort(schema: DatabaseSchema): [string, TableSchema][] {
+export function topologicalSort(schema: DatabaseSchema): [string, TableSchema][] {
   const tableNames = Object.keys(schema);
   const visited = new Set<string>();
   const visiting = new Set<string>();

@@ -121,14 +121,15 @@ describe("GET /_api/admin/schema", () => {
   });
 
   it("flags `_users` (when auth is enabled) as system", async () => {
-    // Spin up a fresh app with auth enabled so `_users` exists.
+    // Spin up a fresh app with auth enabled so `_users` exists, but query
+    // via an UNGATED admin server so this test isolates the system-table
+    // classification. The gated flow is covered by the M2 admin-auth tests.
     const db2 = new Database({
       schema: { messages: testSchema.users }, // a user table
       auth: { enabled: true, jwtSecret: "test-secret" },
     });
     try {
-      const app2 = createServer(db2, testSchema, {
-        auth: { enabled: true, jwtSecret: "test-secret" },
+      const app2 = createServer(db2, { messages: testSchema.users }, {
         admin: { enabled: true },
       });
       const res = await app2.request("/_api/admin/schema");
@@ -355,7 +356,14 @@ describe("Rows CRUD (/_api/admin/tables/:table/rows)", () => {
 
 // ─── System-table write protection ─────────────────────────────
 
-describe("System-table write protection (M1 security gate)", () => {
+describe("System-table write protection (defense-in-depth gate)", () => {
+  // These tests isolate the system-table gate by running the admin API
+  // UNGATED (createServer has no `auth` option, so admin mounts without
+  // requireAdmin). The Database still provisions `_users`/`_sessions` so the
+  // tables exist. The system-table block is a second layer of defense that
+  // must hold even if an admin token reaches it — the M2 admin-auth tests
+  // cover the auth layer.
+
   it("POST to _users returns 403 with a helpful error", async () => {
     const db = new Database({
       schema: authSchema,
@@ -363,7 +371,6 @@ describe("System-table write protection (M1 security gate)", () => {
     });
     try {
       const app = createServer(db, authSchema, {
-        auth: { enabled: true, jwtSecret: "test-secret" },
         admin: { enabled: true },
       });
       const res = await app.request("/_api/admin/tables/_users/rows", {
@@ -389,9 +396,12 @@ describe("System-table write protection (M1 security gate)", () => {
       auth: { enabled: true, jwtSecret: "test-secret" },
     });
     try {
-      db.insert("_users", { email: "u@x.com", password_hash: "h" });
+      db.insert("_users", {
+        email: "u@x.com",
+        password_hash: "h",
+        role: "user",
+      });
       const app = createServer(db, authSchema, {
-        auth: { enabled: true, jwtSecret: "test-secret" },
         admin: { enabled: true },
       });
       const res = await app.request("/_api/admin/tables/_users/rows/1", {
@@ -413,7 +423,6 @@ describe("System-table write protection (M1 security gate)", () => {
     });
     try {
       const app = createServer(db, authSchema, {
-        auth: { enabled: true, jwtSecret: "test-secret" },
         admin: { enabled: true },
       });
       const res = await app.request("/_api/admin/tables/_sessions/rows/1", {
@@ -432,9 +441,12 @@ describe("System-table write protection (M1 security gate)", () => {
       auth: { enabled: true, jwtSecret: "test-secret" },
     });
     try {
-      db.insert("_users", { email: "u@x.com", password_hash: "h" });
+      db.insert("_users", {
+        email: "u@x.com",
+        password_hash: "h",
+        role: "user",
+      });
       const app = createServer(db, authSchema, {
-        auth: { enabled: true, jwtSecret: "test-secret" },
         admin: { enabled: true },
       });
       const res = await app.request("/_api/admin/tables/_users/rows");
