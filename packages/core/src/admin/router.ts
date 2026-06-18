@@ -14,6 +14,7 @@ import {
 import { requireAdmin } from "../auth/middleware.js";
 import {
   assertNotSystemTable,
+  assertNotVirtualTable,
   AdminError,
 } from "./system-tables.js";
 
@@ -125,15 +126,11 @@ export function createAdminRouter(
       const filters = parseFilters(url, table);
 
       // Total count is computed with the same WHERE clause (no LIMIT)
-      // so the grid's "X of Y" indicator is correct under filters.
-      const { clause, params } = buildWhere(filters);
-      const totalRow = db
-        .raw()
-        .prepare(
-          `SELECT COUNT(*) AS n FROM "${tableName}" ${clause}`
-        )
-        .get(params) as { n: number } | undefined;
-      const total = totalRow?.n ?? 0;
+      // so the grid's "X of Y" indicator is correct under filters. Routed
+      // through Database.count (not a hand-rolled `FROM "${table}"`) so the
+      // table name and every filter column are validated and values stay
+      // bound — never interpolate an unchecked identifier.
+      const total = db.count(tableName, filters);
 
       const rows = select(
         db.raw(),
@@ -158,6 +155,7 @@ export function createAdminRouter(
       assertNotSystemTable(tableName); // security gate
       const body = await readJson(c);
       const table = findTable(db, tableName);
+      assertNotVirtualTable(table); // virtual tables are read-only
       const validated = validateBody(body, table, false);
       const inserted = db.insert(tableName, validated);
       return c.json({ data: inserted[0] ?? null }, 201);
@@ -178,6 +176,7 @@ export function createAdminRouter(
       assertNotSystemTable(tableName); // security gate
       const body = await readJson(c);
       const table = findTable(db, tableName);
+      assertNotVirtualTable(table); // virtual tables are read-only
       const validated = validateBody(body, table, true);
       const pkCol = getSinglePrimaryKey(table);
       const result = db.update(
@@ -205,6 +204,7 @@ export function createAdminRouter(
     try {
       assertNotSystemTable(tableName); // security gate
       const table = findTable(db, tableName);
+      assertNotVirtualTable(table); // virtual tables are read-only
       const pkCol = getSinglePrimaryKey(table);
       const count = db.delete(tableName, [
         { column: pkCol, operator: "eq", value: id },
@@ -492,50 +492,6 @@ function adminErrorResponse(
   }
   console.error("Admin error:", err);
   return c.json({ error: "Internal server error" }, 500);
-}
-
-// Filter helpers used to run a COUNT(*) with the same WHERE clause that
-// powers the filtered rows endpoint. We could expose `buildWhereClause`
-// from query.ts, but keeping it local lets the admin evolve independently
-// of the public CRUD API.
-function buildWhere(
-  filters: Filter[]
-): { clause: string; params: Record<string, unknown> } {
-  if (filters.length === 0) return { clause: "", params: {} };
-  const parts: string[] = [];
-  const params: Record<string, unknown> = {};
-  for (let i = 0; i < filters.length; i++) {
-    const f = filters[i];
-    if (f.operator === "in") {
-      if (!Array.isArray(f.value)) {
-        throw new AdminError(400, `"in" operator requires an array value`);
-      }
-      const placeholders = f.value
-        .map((_, j) => `@__a${i}_${j}`)
-        .join(", ");
-      parts.push(`"${f.column}" IN (${placeholders})`);
-      f.value.forEach((v, j) => {
-        params[`__a${i}_${j}`] = v;
-      });
-    } else {
-      parts.push(`"${f.column}" ${opSql(f.operator)} @__a${i}`);
-      params[`__a${i}`] = f.value;
-    }
-  }
-  return { clause: `WHERE ${parts.join(" AND ")}`, params };
-}
-
-function opSql(op: FilterOperator): string {
-  switch (op) {
-    case "eq": return "=";
-    case "neq": return "!=";
-    case "gt": return ">";
-    case "lt": return "<";
-    case "gte": return ">=";
-    case "lte": return "<=";
-    case "like": return "LIKE";
-    case "in": return "IN";
-  }
 }
 
 // Re-export the config type so the host server can pass it through.

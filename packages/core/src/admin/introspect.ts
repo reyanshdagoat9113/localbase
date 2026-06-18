@@ -73,19 +73,76 @@ interface PragmaTableCountRow {
  * the admin SPA can cache the result in TanStack Query.
  */
 export function introspect(db: Database.Database): IntrospectedSchema {
-  const tables = listUserVisibleTables(db);
-  const introspected: IntrospectedTable[] = [];
+  const rows = listUserVisibleTableRows(db);
 
-  for (const name of tables) {
-    introspected.push(introspectTable(db, name));
-  }
+  // Tables that are virtual (a CREATE VIRTUAL TABLE parent) or a virtual
+  // module's shadow table (fts5's ft_content/ft_data/...). Both are
+  // read-only through the admin row API — writing to them corrupts the index
+  // or bypasses the module's invariants.
+  const virtualNames = virtualAndShadowNames(db, rows);
+
+  const introspected: IntrospectedTable[] = rows.map((r) =>
+    introspectTable(db, r.name, virtualNames.has(r.name))
+  );
 
   return { tables: introspected };
 }
 
+/**
+ * The set of virtual + shadow table names.
+ *
+ * Preferred source: `PRAGMA table_list` (SQLite >= 3.37), whose `type` column
+ * classifies each row exactly as 'virtual' or 'shadow'. This is precise — it
+ * never flags a real user table that merely shares a name prefix with a vtab
+ * (e.g. a user `ft_archive` alongside an fts5 `ft`).
+ *
+ * Fallback (SQLite < 3.37, no PRAGMA table_list): derive virtual parents from
+ * their `sqlite_master.sql` (begins with CREATE VIRTUAL) and shadows by name
+ * prefix `<parent>_`. That heuristic can over-block a same-prefix user table,
+ * but old SQLite without table_list is rare.
+ */
+function virtualAndShadowNames(
+  db: Database.Database,
+  visible: { name: string; sql: string | null }[]
+): Set<string> {
+  try {
+    const listed = db.prepare("PRAGMA table_list").all() as {
+      name: string;
+      type: string;
+    }[];
+    const set = new Set<string>();
+    for (const r of listed) {
+      if (r.type === "virtual" || r.type === "shadow") set.add(r.name);
+    }
+    return set;
+  } catch {
+    const parents = new Set(
+      visible
+        .filter((r) => VIRTUAL_TABLE_RE.test(r.sql ?? ""))
+        .map((r) => r.name)
+    );
+    const set = new Set(parents);
+    for (const r of visible) {
+      for (const p of parents) {
+        if (r.name.startsWith(p + "_")) set.add(r.name);
+      }
+    }
+    return set;
+  }
+}
+
+/**
+ * Matches the `sql` of a virtual-table parent. SQLite stores it verbatim,
+ * e.g. `CREATE VIRTUAL TABLE "ft" USING fts5(content)`. Tolerates leading
+ * whitespace and `IF NOT EXISTS` (both still begin with CREATE VIRTUAL).
+ * Only used in the pre-table_list fallback path.
+ */
+const VIRTUAL_TABLE_RE = /^\s*CREATE\s+VIRTUAL\s+/i;
+
 function introspectTable(
   db: Database.Database,
-  name: string
+  name: string,
+  virtual: boolean
 ): IntrospectedTable {
   const cols = db
     .prepare(`PRAGMA table_info("${name}")`)
@@ -172,21 +229,26 @@ function introspectTable(
     indexes,
     rowCount,
     system: isSystemTable(name),
+    virtual,
   };
 }
 
 /**
- * Returns the names of all tables the admin should surface. This includes
- * LocalBase's own `_`-prefixed tables (so the schema viewer can show them
- * with the `system: true` flag) and skips SQLite's own bookkeeping tables.
+ * Returns every table the admin should surface, with its `sql` so callers can
+ * detect virtual tables. This includes LocalBase's own `_`-prefixed tables
+ * (so the schema viewer can show them with the `system: true` flag) and skips
+ * SQLite's own `sqlite_%` bookkeeping tables. Virtual-table shadow tables
+ * (e.g. `ft_content`) are type='table' and so are returned here too — they get
+ * flagged `virtual: true` by the caller.
  */
-function listUserVisibleTables(db: Database.Database): string[] {
-  const rows = db
+function listUserVisibleTableRows(
+  db: Database.Database
+): { name: string; sql: string | null }[] {
+  return db
     .prepare(
-      `SELECT "name" FROM sqlite_master
+      `SELECT "name", "sql" FROM sqlite_master
        WHERE type = 'table'
          AND name NOT LIKE 'sqlite_%'`
     )
-    .all() as { name: string }[];
-  return rows.map((r) => r.name);
+    .all() as { name: string; sql: string | null }[];
 }

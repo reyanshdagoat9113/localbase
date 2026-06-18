@@ -6,6 +6,7 @@ import type { Filter, FilterOperator, OrderBy, QueryOptions } from "./query.js";
 import { Auth, createAuthRouter, resolveAuthConfig } from "./auth/index.js";
 import { createAdminRouter } from "./admin/router.js";
 import { mountAdminStatic } from "./admin/static.js";
+import { AdminError } from "./admin/system-tables.js";
 
 const RESERVED_PARAMS = new Set(["order", "limit", "offset"]);
 const VALID_OPERATORS: FilterOperator[] = [
@@ -484,6 +485,16 @@ export function createServer(
 function handleError(c: any, err: unknown) {
   if (err instanceof HttpError) {
     return c.json({ error: err.message }, err.status as 400 | 404 | 409 | 500);
+  }
+
+  // AdminError is the shared client-error type thrown by the query layer
+  // (e.g. assertSafeColumn/assertSafeTable on a regex-failing identifier).
+  // Mapping it here keeps the PUBLIC /api/* surface returning a clean 400
+  // (instead of a 500 + stderr stack trace) for a declared column whose name
+  // fails the identifier regex. Without this, a filter like ?a%20b=eq.x on a
+  // table with a column "a b" would 500.
+  if (err instanceof AdminError) {
+    return c.json({ error: err.message }, err.status as 400 | 403 | 404 | 409);
   }
 
   // Catch SQLite constraint violations and return 409 Conflict

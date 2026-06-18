@@ -1,3 +1,5 @@
+import type { IntrospectedTable } from "@localbase/shared";
+
 /**
  * System tables — tables that LocalBase owns internally and that the admin
  * row-CRUD endpoints must refuse to write to directly.
@@ -78,6 +80,23 @@ export function assertNotSystemTable(tableName: string): void {
       `Direct writes to "${tableName}" are not allowed through the admin row ` +
         `API. Use the dedicated admin endpoint for this resource ` +
         `(e.g. /_api/admin/users for _users, /_api/admin/files for _files).`
+    );
+  }
+}
+
+/**
+ * Throws an `AdminError` (403) when the given table is a virtual table or one
+ * of its shadow tables. Virtual tables (`CREATE VIRTUAL TABLE`, e.g. fts5) and
+ * their backing shadow tables (`ft_content`, `ft_data`, ...) are read-only
+ * through the admin row API: writing to them directly corrupts the index and
+ * sidesteps the module's own update path. Reads stay allowed.
+ */
+export function assertNotVirtualTable(table: IntrospectedTable): void {
+  if (table.virtual) {
+    throw new AdminError(
+      403,
+      `"${table.name}" is a virtual table and is read-only through the admin ` +
+        `row API.`
     );
   }
 }

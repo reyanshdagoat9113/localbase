@@ -168,6 +168,15 @@ export interface IntrospectedTable {
   indexes: IntrospectedIndex[];
   rowCount: number;
   system: boolean;
+  /**
+   * True for virtual tables (`CREATE VIRTUAL TABLE`, e.g. fts5) and the
+   * "shadow" tables a virtual module creates to back itself
+   * (e.g. `ft_content`, `ft_data`). The admin row API treats virtual tables
+   * as read-only — direct INSERT/UPDATE/DELETE would corrupt the index or
+   * bypass the module's invariants — so it blocks writes to them. Reads
+   * remain allowed so the schema viewer can surface them.
+   */
+  virtual: boolean;
 }
 
 /**

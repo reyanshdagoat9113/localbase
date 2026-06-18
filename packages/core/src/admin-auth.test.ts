@@ -5,6 +5,7 @@ import { createServer } from "./api.js";
 import { Auth } from "./auth/auth.js";
 import { resolveAuthConfig } from "./auth/config.js";
 import { signAccessToken } from "./auth/tokens.js";
+import { SignJWT, jwtVerify } from "jose";
 import { requireAdmin } from "./auth/middleware.js";
 import type { DatabaseSchema } from "@localbase/shared";
 import type { Hono } from "hono";
@@ -74,15 +75,13 @@ describe("First-user bootstrap", () => {
     const { db, auth } = newAuthDb();
     try {
       const session = await signUp(auth, "first@test.com");
-      // Re-sign a token directly to assert the claim is there.
-      const token = await signAccessToken(
-        { id: 1, email: "first@test.com", role: "admin" },
-        SECRET,
-        "1h"
+      // Decode + verify the real session token and assert the role claim is
+      // present (not just that a token string exists).
+      const { payload } = await jwtVerify(
+        session.accessToken,
+        new TextEncoder().encode(SECRET)
       );
-      // We can't decode without verify, but the requireAdmin tests below
-      // exercise the round-trip. Here we just assert the session has a token.
-      assert.ok(token.length > session.accessToken.length / 2);
+      assert.equal(payload.role, "admin");
     } finally {
       db.close();
     }
@@ -285,6 +284,10 @@ describe("requireAdmin middleware", () => {
         headers: bearer(session.accessToken),
       });
       assert.equal(res.status, 401);
+      // The 401 is generic by design — it must not reveal that the account
+      // was deleted (no existence oracle for valid-signature-but-gone-user).
+      const body = await res.json();
+      assert.doesNotMatch(body.error, /delete|not found|no longer|removed/i);
     } finally {
       db.close();
     }
@@ -308,6 +311,134 @@ describe("requireAdmin middleware", () => {
         headers: bearer(forged),
       });
       assert.equal(res.status, 401);
+    } finally {
+      db.close();
+    }
+  });
+
+  // ── M2.5: the admin gate must not trust the JWT role claim ──
+
+  it("returns 403 for a FORGED role claim (valid signature, role:user in DB)", async () => {
+    // The headline property: requireAdmin re-reads the live role from _users.
+    // A token that claims role:"admin" but whose user is role:"user" — even
+    // though signed with the correct secret — must be rejected with 403, not
+    // honored (and not a 401: the signature verifies).
+    const { app, db, auth } = gatedApp();
+    try {
+      await signUp(auth, "admin@test.com"); // bootstrap admin
+      const victim = db.insert("_users", {
+        email: "victim@test.com",
+        password_hash: "x",
+        role: "user",
+      })[0] as { id: number };
+      const forged = await signAccessToken(
+        { id: victim.id, email: "victim@test.com", role: "admin" },
+        SECRET,
+        "1h"
+      );
+      const res = await app.request("/_test/admin-only", {
+        headers: bearer(forged),
+      });
+      assert.equal(res.status, 403);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("returns 401 for an EXPIRED access token", async () => {
+    // signAccessToken cannot mint a past expiry, so forge one directly with
+    // jose. Pins the JWTExpired branch in requireAdmin.
+    const { app, db, auth } = gatedApp();
+    try {
+      const s = await signUp(auth, "admin@test.com");
+      const now = Math.floor(Date.now() / 1000);
+      const expired = await new SignJWT({ email: s.user.email, role: "admin" })
+        .setProtectedHeader({ alg: "HS256" })
+        .setSubject(String(s.user.id))
+        .setIssuedAt(now - 3600)
+        .setExpirationTime(now - 60)
+        .sign(new TextEncoder().encode(SECRET));
+      const res = await app.request("/_test/admin-only", {
+        headers: bearer(expired),
+      });
+      assert.equal(res.status, 401);
+      const body = await res.json();
+      assert.match(body.error, /expired/i);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("returns 401 for a TAMPERED token (signature changed)", async () => {
+    const { app, db, auth } = gatedApp();
+    try {
+      const s = await signUp(auth, "admin@test.com");
+      // Flip a MIDDLE character of the signature segment. The trailing
+      // base64url char is frequently padding-tolerant, so flipping only the
+      // last char is non-deterministic; corrupting the middle reliably
+      // breaks signature verification regardless of the exact bytes.
+      const [header, payloadSeg, sig] = s.accessToken.split(".");
+      const mid = Math.floor(sig.length / 2);
+      const flip = sig[mid] === "A" ? "B" : "A";
+      const tampered = `${header}.${payloadSeg}.${sig.slice(
+        0,
+        mid
+      )}${flip}${sig.slice(mid + 1)}`;
+      const res = await app.request("/_test/admin-only", {
+        headers: bearer(tampered),
+      });
+      assert.equal(res.status, 401);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("returns 403 for a user whose role is an unexpected value (superuser)", async () => {
+    // Guards against a future refactor that swaps strict-equality for
+    // "anything but 'user' is admin". Only role === "admin" is admin.
+    const { app, db, auth } = gatedApp();
+    try {
+      await signUp(auth, "admin@test.com");
+      const weird = db.insert("_users", {
+        email: "super@test.com",
+        password_hash: "x",
+        role: "superuser",
+      })[0] as { id: number };
+      const token = await signAccessToken(
+        { id: weird.id, email: "super@test.com", role: "superuser" },
+        SECRET,
+        "1h"
+      );
+      const res = await app.request("/_test/admin-only", {
+        headers: bearer(token),
+      });
+      assert.equal(res.status, 403);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("rejects assorted malformed Authorization header forms; lowercase 'bearer' still works", async () => {
+    const { app, db, auth } = gatedApp();
+    try {
+      const s = await signUp(auth, "admin@test.com");
+
+      const emptyToken = await app.request("/_test/admin-only", {
+        headers: { Authorization: "Bearer " },
+      });
+      assert.equal(emptyToken.status, 401);
+
+      const wrongScheme = await app.request("/_test/admin-only", {
+        headers: { Authorization: "Basic xxx" },
+      });
+      assert.equal(wrongScheme.status, 401);
+
+      // The scheme check is case-insensitive: a lowercase 'bearer' with a
+      // valid token must authenticate.
+      const lower = await app.request("/_test/admin-only", {
+        headers: { Authorization: "bearer " + s.accessToken },
+      });
+      assert.equal(lower.status, 200);
     } finally {
       db.close();
     }
@@ -421,6 +552,59 @@ describe("Admin API gating (end-to-end)", () => {
       db.close();
     }
   });
+
+  it("a demoted admin is blocked on WRITE verbs too (POST/PATCH/DELETE)", async () => {
+    // The live-role re-read is the headline authz property. The GET test
+    // above pins it for reads; this pins it for MUTATIONS — the dangerous
+    // half. A stale role:'admin' token must not reach any write handler.
+    const { app, db, auth } = makeApp();
+    try {
+      await signUp(auth, "first@test.com"); // admin
+      await signUp(auth, "second@test.com");
+      auth.setRole("second@test.com", "admin"); // now 2 admins
+      const second = await auth.signIn({
+        email: "second@test.com",
+        password: "password123",
+      });
+      const token = second.accessToken;
+
+      // Seed a row as the (still-admin) second user — a PATCH/DELETE target.
+      const insert = await app.request("/_api/admin/tables/tasks/rows", {
+        method: "POST",
+        headers: { ...bearer(token), "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "seed" }),
+      });
+      assert.equal(insert.status, 201);
+      const id = (await insert.json()).data.id;
+
+      // Demote second (first remains admin, so this is allowed).
+      auth.setRole("second@test.com", "user");
+
+      const post = await app.request("/_api/admin/tables/tasks/rows", {
+        method: "POST",
+        headers: { ...bearer(token), "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "after-demote" }),
+      });
+      assert.equal(post.status, 403);
+      const patch = await app.request(`/_api/admin/tables/tasks/rows/${id}`, {
+        method: "PATCH",
+        headers: { ...bearer(token), "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "mutated" }),
+      });
+      assert.equal(patch.status, 403);
+      const del = await app.request(`/_api/admin/tables/tasks/rows/${id}`, {
+        method: "DELETE",
+        headers: bearer(token),
+      });
+      assert.equal(del.status, 403);
+
+      // Only the seeded row remains — no second insert, no mutation, no delete.
+      const tasks = db.select("tasks") as Array<{ title: string }>;
+      assert.deepEqual(tasks.map((t) => t.title), ["seed"]);
+    } finally {
+      db.close();
+    }
+  });
 });
 
 // ─── addUser requires auth in the CLI path (createUser) ────────
@@ -436,6 +620,37 @@ describe("createUser (CLI path) defaults to role=user", () => {
       });
       assert.equal(created.role, "user");
       assert.equal(auth.countAdmins(), 1);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+// ─── No-auth mode: admin API is ungated ─────────────────────────
+
+describe("No-auth mode (admin API ungated — the posture the CLI gate protects)", () => {
+  it("GET schema and POST rows succeed with NO Authorization header", async () => {
+    // When auth is disabled, createServer mounts the admin API ungated. This
+    // is the exact contract the CLI's unsafeAdminBinding gate exists to keep
+    // on localhost — pinning it here catches a future default-deny change
+    // that would silently break the no-auth dev workflow.
+    const db = new Database({ schema: testSchema });
+    try {
+      const app = createServer(db, testSchema, { admin: { enabled: true } });
+
+      const get = await app.request("/_api/admin/schema");
+      assert.equal(get.status, 200);
+      const getBody = await get.json();
+      assert.ok(Array.isArray(getBody.data.tables));
+
+      const post = await app.request("/_api/admin/tables/tasks/rows", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "ungated-insert" }),
+      });
+      assert.equal(post.status, 201);
+      const postBody = await post.json();
+      assert.equal(postBody.data.title, "ungated-insert");
     } finally {
       db.close();
     }

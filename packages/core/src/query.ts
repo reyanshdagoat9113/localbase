@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { AdminError } from "./admin/system-tables.js";
 
 // ─── Filter types ──────────────────────────────────────────────
 
@@ -34,13 +35,18 @@ export interface QueryOptions {
 
 function assertSafeColumn(name: string): void {
   if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
-    throw new Error(`Invalid column name: "${name}"`);
+    // Throwing AdminError (not a plain Error) lets both the admin router's
+    // adminErrorResponse and the public-API handleError map this to a clean
+    // 400. A plain Error would surface as a 500 + stderr stack trace — the
+    // single source of truth for identifier validity should fail loudly but
+    // politely. See the admin plan: "Identifier quoting must be centralized."
+    throw new AdminError(400, `Invalid column name: "${name}"`);
   }
 }
 
 function assertSafeTable(name: string): void {
   if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
-    throw new Error(`Invalid table name: "${name}"`);
+    throw new AdminError(400, `Invalid table name: "${name}"`);
   }
 }
 
@@ -71,7 +77,7 @@ function buildWhereClause(
     if (f.operator === "in") {
       // IN requires an array
       if (!Array.isArray(f.value)) {
-        throw new Error(`"in" operator requires an array value`);
+        throw new AdminError(400, `"in" operator requires an array value`);
       }
       const placeholders = f.value.map((_, j) => `@${paramKey}_${j}`);
       conditions.push(`"${f.column}" IN (${placeholders.join(", ")})`);
@@ -132,6 +138,27 @@ export function select(
 }
 
 /**
+ * COUNT rows in a table, optionally filtered by the SAME WHERE clause
+ * {@link select} uses. Centralizing this here (rather than each caller
+ * string-interpolating `FROM "<table>"`) guarantees the table name and every
+ * filter column pass through {@link assertSafeTable}/{@link assertSafeColumn}
+ * and that filter values stay bound parameters. The admin rows endpoint uses
+ * this to compute the unfiltered-by-LIMIT total for its `X of Y` indicator.
+ */
+export function count(
+  db: Database.Database,
+  table: string,
+  filters: Filter[] = []
+): number {
+  assertSafeTable(table);
+  const { clause, params } = buildWhereClause(filters);
+  const row = db
+    .prepare(`SELECT COUNT(*) AS n FROM "${table}" ${clause}`)
+    .get(params) as { n: number } | undefined;
+  return row?.n ?? 0;
+}
+
+/**
  * SELECT a single row by primary key (id).
  */
 export function selectById(
@@ -163,19 +190,22 @@ export function insert(
 
   const colList = columns.map((c) => `"${c}"`).join(", ");
   const placeholders = columns.map((c) => `@${c}`).join(", ");
-  const sql = `INSERT INTO "${table}" (${colList}) VALUES (${placeholders})`;
+  // RETURNING * fetches the inserted row in the same statement, which is
+  // correct for EVERY table shape: ordinary rowid tables, no-PK tables,
+  // composite-PK tables, single text/integer-PK tables, AND WITHOUT ROWID
+  // tables (which have no `rowid`, so a `WHERE rowid = lastInsertRowid`
+  // refetch would throw "no such column: rowid"). SQLite >= 3.35 supports
+  // RETURNING; better-sqlite3 returns the rows via .get()/.all().
+  const sql = `INSERT INTO "${table}" (${colList}) VALUES (${placeholders}) RETURNING *`;
 
+  // For INSERT...RETURNING, .get() returns the returned row and still throws
+  // on a constraint violation (rolling back the surrounding transaction).
   const stmt = db.prepare(sql);
   const inserted: unknown[] = [];
 
   const runInsert = db.transaction(() => {
     for (const row of rows) {
-      const info = stmt.run(row);
-      // Fetch the inserted row by its last insert rowid
-      const insertedRow = db
-        .prepare(`SELECT * FROM "${table}" WHERE "id" = ?`)
-        .get(info.lastInsertRowid);
-      inserted.push(insertedRow);
+      inserted.push(stmt.get(row));
     }
   });
 

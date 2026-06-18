@@ -14,6 +14,7 @@ import {
   insert,
   update,
   remove,
+  count,
   type Filter,
   type QueryOptions,
 } from "./query.js";
@@ -127,6 +128,15 @@ export class Database extends EventEmitter<DatabaseEvents> {
    */
   select(table: string, options?: QueryOptions): unknown[] {
     return select(this.db, table, options);
+  }
+
+  /**
+   * COUNT rows in a table, optionally filtered. Uses the same safe WHERE
+   * builder as {@link select} so identifiers are validated and values are
+   * bound. Used by the admin rows endpoint to report the filtered total.
+   */
+  count(table: string, filters?: Filter[]): number {
+    return count(this.db, table, filters);
   }
 
   /**

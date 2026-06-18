@@ -20,7 +20,8 @@
   ],
   "scripts": {
     "build": "tsup",
-    "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\""
+    "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
+    "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.4",
@@ -32,6 +33,7 @@
   },
   "devDependencies": {
     "tsup": "^8.0.0",
+    "tsx": "^4.22.4",
     "typescript": "^5.7.0"
   }
 }

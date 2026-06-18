@@ -6,6 +6,7 @@ import { Database, createServer as createApi, createRealtimeServer } from "@loca
 import type { RealtimeServer } from "@localbase/core";
 import { loadConfig, ConfigError } from "./config.js";
 import { log } from "./log.js";
+import { unsafeAdminBinding } from "./admin-bind-policy.js";
 
 const DEFAULT_PORT = 5180;
 /**
@@ -17,13 +18,6 @@ const DEFAULT_PORT = 5180;
  */
 const DEFAULT_HOST = "127.0.0.1";
 
-/** Addresses that count as "local" for the ungated-admin safety policy. */
-const LOCALHOST_HOSTS = new Set([
-  "127.0.0.1",
-  "localhost",
-  "::1",
-]);
-
 export interface DevOptions {
   port?: number;
   /** Bind address. Defaults to `127.0.0.1` for safety (see DEFAULT_HOST). */
@@ -34,32 +28,6 @@ export interface DevOptions {
    * that combination on a public `--host` is a hard startup error.
    */
   adminUnsafePublic?: boolean;
-}
-
-/**
- * Implements Decision #10 of the admin plan: an ungated admin API must never
- * be exposed on a public interface by accident. Returns an error message if
- * the configuration is unsafe, or `null` if it's fine.
- */
-function unsafeAdminBinding(
-  host: string,
-  authEnabled: boolean,
-  adminEnabled: boolean,
-  optedInUnsafe: boolean
-): string | null {
-  if (authEnabled || !adminEnabled) return null; // gated, or admin off
-  if (optedInUnsafe) return null; // explicit opt-in
-  const isLocal = LOCALHOST_HOSTS.has(host.toLowerCase());
-  if (isLocal) return null;
-  return (
-    `Admin UI is enabled and auth is disabled, which leaves the admin API ` +
-    `UNGATED (full read/write access to every table). Refusing to bind to ` +
-    `"${host}" because that would expose it beyond this machine.\n` +
-    `To proceed, choose one of:\n` +
-    `  • Enable auth in localbase.config.ts (recommended)\n` +
-    `  • Bind to loopback: --host 127.0.0.1\n` +
-    `  • Acknowledge the risk and continue: --admin-unsafe-public`
-  );
 }
 
 export async function devCommand(opts: DevOptions = {}): Promise<void> {
