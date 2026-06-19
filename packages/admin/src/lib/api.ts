@@ -214,3 +214,64 @@ export function getSchema(): Promise<IntrospectedSchema> {
 export function getTables(): Promise<TableSummary[]> {
   return request<TableSummary[]>("/_api/admin/tables");
 }
+
+export interface RowsResponse {
+  rows: Record<string, unknown>[];
+  total: number;
+}
+
+export interface GetRowsParams {
+  limit?: number;
+  offset?: number;
+  order?: string;
+  search?: string;
+  searchColumn?: string;
+}
+
+export function getRows(
+  table: string,
+  params: GetRowsParams = {}
+): Promise<RowsResponse> {
+  const qs = new URLSearchParams();
+  if (params.limit !== undefined) qs.set("limit", String(params.limit));
+  if (params.offset !== undefined) qs.set("offset", String(params.offset));
+  if (params.order) qs.set("order", params.order);
+  if (params.search && params.searchColumn) {
+    qs.set(params.searchColumn, `like.${params.search}`);
+  }
+  const query = qs.toString();
+  return request<RowsResponse>(
+    `/_api/admin/tables/${encodeURIComponent(table)}/rows${query ? `?${query}` : ""}`
+  );
+}
+
+export function createRow(
+  table: string,
+  data: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(
+    `/_api/admin/tables/${encodeURIComponent(table)}/rows`,
+    { method: "POST", body: JSON.stringify(data) }
+  );
+}
+
+export function updateRow(
+  table: string,
+  id: string | number,
+  data: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  return request<Record<string, unknown>>(
+    `/_api/admin/tables/${encodeURIComponent(table)}/rows/${encodeURIComponent(String(id))}`,
+    { method: "PATCH", body: JSON.stringify(data) }
+  );
+}
+
+export function deleteRow(
+  table: string,
+  id: string | number
+): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>(
+    `/_api/admin/tables/${encodeURIComponent(table)}/rows/${encodeURIComponent(String(id))}`,
+    { method: "DELETE" }
+  );
+}

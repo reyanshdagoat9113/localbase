@@ -193,10 +193,10 @@ Each milestone is independently shippable and verifiable.
 **Goal:** finish role management, CLI promotion, and lockout protections.
 
 **Tasks:**
-- [ ] Add `Auth.setRole(email, role)` / equivalent internal role update method.
-- [ ] Ensure admin router wiring cannot be constructed without `requireAdmin` when mutations are enabled.
-- [ ] Prevent deleting/demoting the last admin; require confirmation for self-demotion.
-- [ ] CLI `localbase admin:promote <email>` + `admin:demote <email>`.
+- [x] Add `Auth.setRole(email, role)` / equivalent internal role update method.
+- [x] Ensure admin router wiring cannot be constructed without `requireAdmin` when mutations are enabled.
+- [x] Prevent deleting/demoting the last admin; require confirmation for self-demotion.
+- [x] CLI `localbase admin:promote <email>` + `admin:demote <email>`.
 
 **Done when:** first signup is admin; promote/demote works; demotion takes effect immediately for existing tokens; a non-admin token gets `403` on `/_api/admin/*`; an admin token gets `200`; last-admin lockout is enforced.
 
@@ -204,10 +204,10 @@ Each milestone is independently shippable and verifiable.
 **Goal:** lock down the dangerous generic API surface before building UI on top of it.
 
 **Tasks:**
-- [ ] Tests for table/column/sort/filter allowlisting and identifier quoting.
-- [ ] Tests for bounded pagination and parameterized search/filter values.
-- [ ] Tests for blocking `_`-prefixed, `sqlite_%`, views, virtual tables, no-PK tables, and composite-PK mutations.
-- [ ] Tests for auth failures, stale demoted tokens, no-auth localhost behavior, and unsafe public binding rejection.
+- [x] Tests for table/column/sort/filter allowlisting and identifier quoting.
+- [x] Tests for bounded pagination and parameterized search/filter values.
+- [x] Tests for blocking `_`-prefixed, `sqlite_%`, views, virtual tables, no-PK tables, and composite-PK mutations.
+- [x] Tests for auth failures, stale demoted tokens, no-auth localhost behavior, and unsafe public binding rejection.
 
 **Done when:** backend admin tests cover the SQL-injection and authorization surfaces independently of the React UI.
 
@@ -215,10 +215,10 @@ Each milestone is independently shippable and verifiable.
 **Goal:** a live app shell talking to the real admin API.
 
 **Tasks:**
-- [ ] `packages/admin/package.json` (React, Vite, Tailwind, shadcn/ui, TanStack Query, react-table).
-- [ ] `vite.config.ts` proxying `/api`, `/_api`, `/realtime` → `:5180`.
-- [ ] App shell: sidebar nav, login view, token storage, auth redirect.
-- [ ] Root layout + routing skeleton (table-browser, schema, users).
+- [x] `packages/admin/package.json` (React, Vite, Tailwind, shadcn/ui, TanStack Query, react-table).
+- [x] `vite.config.ts` proxying `/api`, `/_api`, `/realtime` → `:5180`.
+- [x] App shell: sidebar nav, login view, token storage, auth redirect.
+- [x] Root layout + routing skeleton (table-browser, schema, users).
 
 **Done when:** `pnpm --filter admin dev` shows the shell and renders data fetched from live `/_api/admin/schema`.
 
@@ -226,11 +226,11 @@ Each milestone is independently shippable and verifiable.
 **Goal:** a usable dashboard.
 
 **Tasks:**
-- [ ] Table browser: sidebar (tables + counts) + data grid (sort, paginate, search).
-- [ ] Inline cell editor → PATCH via `Database`.
-- [ ] Add-row / delete-row actions.
-- [ ] Schema viewer panel.
-- [ ] Wire TanStack Query cache invalidation on every mutation.
+- [x] Table browser: sidebar (tables + counts) + data grid (sort, paginate, search).
+- [x] Inline cell editor → PATCH via `Database`.
+- [x] Add-row / delete-row actions.
+- [x] Schema viewer panel.
+- [x] Wire TanStack Query cache invalidation on every mutation.
 
 **Done when:** a developer can view, create, edit, delete rows in the browser, and the edits propagate to realtime subscribers (verify with the Phase 8 WS).
 
