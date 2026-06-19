@@ -424,7 +424,7 @@ export function createServer(
     if (!policy) return { userId: null, reject: false };
     const user = await authenticate(c, resolvedSecret!);
     if (!user) return { userId: null, reject: true };
-    if (policy.adminBypass && user.role === "admin") {
+    if (policy.adminBypass && hasLiveAdminRole(db, user.id)) {
       return { userId: null, reject: false };
     }
     return { userId: user.id, reject: false };
@@ -613,6 +613,21 @@ export function createServer(
   app.get("/", (c) => c.json({ status: "ok", version: "0.1.0" }));
 
   return app;
+}
+
+// ─── Admin bypass helper ───────────────────────────────────────
+
+/**
+ * `adminBypass` must not trust the JWT role claim: that claim is only a
+ * snapshot from token issue time. Re-read `_users.role` so demoting/deleting an
+ * admin revokes bypass immediately, matching the admin API's authorization
+ * semantics. Missing/deleted users simply do not bypass and remain scoped.
+ */
+function hasLiveAdminRole(db: Database, userId: number): boolean {
+  const row = db.selectById("_users", userId) as
+    | { role?: unknown }
+    | undefined;
+  return row?.role === "admin";
 }
 
 // ─── Error handler ─────────────────────────────────────────────

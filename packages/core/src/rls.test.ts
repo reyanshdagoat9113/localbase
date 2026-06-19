@@ -4,8 +4,8 @@
  * Covers the public REST API (`/api/:table`) behavior when a table has an owner
  * policy: insert stamps the owner, reads/writes are scoped to the owner, and
  * tables without a policy stay open. Uses signed access tokens directly — RLS
- * only consumes the token's `sub` (user id) and `role`, so we don't need real
- * `_users` rows or the signup flow.
+ * consumes the token's `sub` (user id) and uses live `_users.role` only for
+ * `adminBypass`, so the tests seed minimal users and sign tokens directly.
  */
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -75,6 +75,7 @@ async function setup(policies?: PoliciesConfig): Promise<{
   bobToken: string;
 }> {
   const db = new Database({ schema, auth: authConfig });
+  seedAuthUsers(db);
   const app = createServer(db, schema, { auth: authConfig, policies });
   const aliceToken = await signAccessToken(
     { id: 1, email: "alice@x.com", role: "admin" },
@@ -87,6 +88,14 @@ async function setup(policies?: PoliciesConfig): Promise<{
     "1h"
   );
   return { db, app, aliceToken, bobToken };
+}
+
+function seedAuthUsers(db: Database): void {
+  const insert = db.raw().prepare(
+    `INSERT INTO "_users" ("id", "email", "password_hash", "role") VALUES (?, ?, ?, ?)`
+  );
+  insert.run(1, "alice@x.com", "unused", "admin");
+  insert.run(2, "bob@x.com", "unused", "user");
 }
 
 const POLICY: PoliciesConfig = { posts: { ownerColumn: "owner_id" } };
@@ -295,6 +304,41 @@ describe("RLS adminBypass", () => {
     const res = await app.request("/api/posts", { headers: bearer(bobToken) });
     const { body } = await readJson(res);
     assert.equal((body.data as Row[]).length, 1);
+  });
+});
+
+describe("RLS adminBypass uses live roles", () => {
+  let db: Database;
+  let app: Hono;
+  let aliceToken: string;
+  let bobToken: string;
+
+  before(async () => {
+    ({ db, app, aliceToken, bobToken } = await setup({
+      posts: { ownerColumn: "owner_id", adminBypass: true },
+    }));
+    await app.request(
+      "/api/posts",
+      jsonReq("POST", { title: "a1", owner_id: 1 }, bearer(aliceToken))
+    );
+    await app.request("/api/posts", jsonReq("POST", { title: "b1" }, bearer(bobToken)));
+  });
+  after(() => db.close());
+
+  it("does not bypass with a stale admin token after demotion", async () => {
+    db.raw().prepare(`UPDATE "_users" SET "role" = 'user' WHERE "id" = 1`).run();
+
+    const list = await readJson(
+      await app.request("/api/posts", { headers: bearer(aliceToken) })
+    );
+    assert.equal(list.status, 200);
+    assert.deepEqual(
+      (list.body.data as Row[]).map((row) => row.title),
+      ["a1"]
+    );
+
+    const bobRow = await app.request("/api/posts/2", { headers: bearer(aliceToken) });
+    assert.equal(bobRow.status, 404);
   });
 });
 
