@@ -1,6 +1,24 @@
-import { spawn } from "node:child_process";
+import { spawn as defaultSpawn } from "node:child_process";
 import process from "node:process";
 import { log } from "./log.js";
+
+type SpawnedBrowserProcess = {
+  unref?: () => void;
+  on?: (event: "error", listener: (err: Error) => void) => unknown;
+};
+
+type SpawnBrowser = (
+  command: string,
+  args: string[],
+  options: { detached: true; stdio: "ignore" }
+) => SpawnedBrowserProcess;
+
+export interface OpenBrowserOptions {
+  /** Test seam: avoids launching a real browser in unit tests. */
+  spawn?: SpawnBrowser;
+  /** Test seam: lets tests cover command selection without monkey-patching process.platform. */
+  platform?: NodeJS.Platform;
+}
 
 /**
  * Open a URL in the user's default browser. Pure helper, no I/O state —
@@ -35,12 +53,16 @@ export interface OpenResult {
   args: string[];
 }
 
-export function openBrowser(url: string): OpenResult {
+export function openBrowser(
+  url: string,
+  options: OpenBrowserOptions = {}
+): OpenResult {
   if (!url || typeof url !== "string") {
     throw new Error("openBrowser: url is required");
   }
 
-  const platform = process.platform;
+  const platform = options.platform ?? process.platform;
+  const spawn = options.spawn ?? defaultSpawn;
 
   let cmd: string;
   let args: string[];
@@ -63,6 +85,16 @@ export function openBrowser(url: string): OpenResult {
     const child = spawn(cmd, args, {
       detached: true,
       stdio: "ignore",
+    });
+    // Node reports common launch failures (for example ENOENT for a missing
+    // opener) through the child process "error" event, not via a synchronous
+    // throw. Handle it so `localbase studio` never crashes just because the
+    // machine has no GUI/opener installed.
+    child.on?.("error", (err) => {
+      log.warn(
+        `Could not open your browser automatically (${err instanceof Error ? err.message : err}).`
+      );
+      log.hint(`Open this URL manually: ${url}`);
     });
     // Unref so the CLI can exit independently of the browser process.
     if (typeof child.unref === "function") child.unref();

@@ -52,6 +52,7 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
   let currentRealtime: RealtimeServer | null = null;
   let currentDb: Database | null = null;
   let reloading = false;
+  let didOpenBrowser = false;
 
   async function start() {
     const cwd = process.cwd();
@@ -138,7 +139,8 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
           }
         }
 
-        if (opts.openBrowser === true) {
+        if (opts.openBrowser === true && !didOpenBrowser) {
+          didOpenBrowser = true;
           const url = adminUrl(host, info.port);
           const result = openBrowser(url);
           if (result.opened) {

@@ -39,33 +39,85 @@ describe("openBrowser", () => {
     assert.throws(() => openBrowser(null as unknown as string));
   });
 
-  it("spawns the platform-correct command with detached stdio", () => {
-    // We can't observe the actual browser launching on a headless test
-    // runner, so we assert the *shape* of the call. openBrowser is a
-    // pure function over the (platform, url) inputs, and the spawn
-    // options are an internal contract we want to lock down:
-    //   - detached: true  (don't keep the CLI alive)
-    //   - stdio: 'ignore' (the browser owns its own window; the CLI
-    //     must not pipe the browser's output to its own TTY)
-    //
-    // The function returns `{ opened, command, args }` so the test
-    // can verify what it would have done without requiring a real
-    // browser to be present.
-    const result = openBrowser("http://localhost:5180/admin/");
-    if (process.platform === "darwin") {
-      assert.equal(result.command, "open");
-      assert.deepEqual(result.args, ["http://localhost:5180/admin/"]);
-    } else if (process.platform === "win32") {
-      assert.equal(result.command, "cmd");
-      assert.deepEqual(result.args, ["/c", "start", "", "http://localhost:5180/admin/"]);
-    } else {
-      assert.equal(result.command, "xdg-open");
-      assert.deepEqual(result.args, ["http://localhost:5180/admin/"]);
+  it("selects the platform-correct command with detached stdio", () => {
+    const cases: Array<{
+      platform: NodeJS.Platform;
+      command: string;
+      args: string[];
+    }> = [
+      { platform: "darwin", command: "open", args: ["http://localhost:5180/admin/"] },
+      {
+        platform: "win32",
+        command: "cmd",
+        args: ["/c", "start", "", "http://localhost:5180/admin/"],
+      },
+      { platform: "linux", command: "xdg-open", args: ["http://localhost:5180/admin/"] },
+    ];
+
+    for (const expected of cases) {
+      let unrefCalled = false;
+      let errorHandler: ((err: Error) => void) | undefined;
+      const calls: Array<{ command: string; args: string[]; options: unknown }> = [];
+
+      const result = openBrowser("http://localhost:5180/admin/", {
+        platform: expected.platform,
+        spawn(command, args, options) {
+          calls.push({ command, args, options });
+          return {
+            unref() {
+              unrefCalled = true;
+            },
+            on(event, listener) {
+              if (event === "error") errorHandler = listener;
+              return this;
+            },
+          };
+        },
+      });
+
+      assert.equal(result.opened, true);
+      assert.equal(result.command, expected.command);
+      assert.deepEqual(result.args, expected.args);
+      assert.deepEqual(calls, [
+        {
+          command: expected.command,
+          args: expected.args,
+          options: { detached: true, stdio: "ignore" },
+        },
+      ]);
+      assert.equal(unrefCalled, true);
+      assert.equal(typeof errorHandler, "function");
     }
-    // `opened` is best-effort — on a machine without xdg-open the
-    // spawn() will throw and we'll fall back to the warn path. We
-    // accept either result on Linux/Windows; we just want the function
-    // to be safe to call.
-    assert.ok(typeof result.opened === "boolean");
+  });
+
+  it("handles async spawn failures without throwing", () => {
+    let errorHandler: ((err: Error) => void) | undefined;
+    const result = openBrowser("http://localhost:5180/admin/", {
+      platform: "linux",
+      spawn() {
+        return {
+          on(event, listener) {
+            if (event === "error") errorHandler = listener;
+            return this;
+          },
+        };
+      },
+    });
+
+    assert.equal(result.opened, true);
+    assert.doesNotThrow(() => errorHandler?.(new Error("spawn xdg-open ENOENT")));
+  });
+
+  it("returns opened=false when spawn throws synchronously", () => {
+    const result = openBrowser("http://localhost:5180/admin/", {
+      platform: "linux",
+      spawn() {
+        throw new Error("boom");
+      },
+    });
+
+    assert.equal(result.opened, false);
+    assert.equal(result.command, "xdg-open");
+    assert.deepEqual(result.args, ["http://localhost:5180/admin/"]);
   });
 });

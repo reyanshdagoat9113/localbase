@@ -246,8 +246,8 @@ Each milestone is independently shippable and verifiable.
 **Goal:** zero-config for end users.
 
 **Tasks:**
-- [x] Build step copies `packages/admin/dist` → `packages/core/dist/admin` on publish. (Wired via `prebuild`/`postbuild`/`prepublishOnly` scripts in `@localbase/core`; the actual copy lives in `packages/core/scripts/copy-admin-bundle.mjs`.)
-- [x] Package verification test confirms the published/tarball artifact contains `dist/admin/index.html` and assets. (`packages/core/scripts/verify-admin-bundle.mjs` runs `npm pack --dry-run --json` and asserts the file list; the matching in-test suite is `src/admin/static-bundle.test.ts`.)
+- [x] Build step copies `packages/admin/dist` → `packages/core/dist/admin` on publish. (Wired via `prebuild`/`postbuild`/`prepublishOnly` scripts in `@localbase/core`; the actual copy lives in `packages/core/build/copy-admin-bundle.mjs`.)
+- [x] Package verification test confirms the published/tarball artifact contains `dist/admin/index.html` and assets. (`packages/core/build/verify-admin-bundle.mjs` runs `npm pack --dry-run --json` and asserts the file list; the matching in-test suite is `src/admin/static-bundle.test.ts`.)
 - [x] `localbase studio` command → opens `http://localhost:5180/admin` in the default browser (alias of dev + open). (`packages/cli/src/studio.ts`; `localbase dev --open` works too.)
 - [x] README quickstart + screenshot. (Quickstart in the root `README.md`; screenshot slot is reserved in this doc — drop a `docs/admin-ui.png` reference when one is captured.)
 - [x] Integration tests: load admin, list tables, edit a row, delete a row. (`packages/core/src/admin/static-bundle.test.ts` — the `M6 — end-to-end admin flow` describe block.)
