@@ -298,6 +298,17 @@ describe("Rows CRUD (/_api/admin/tables/:table/rows)", () => {
     assert.equal(body.data.name, "Alice Updated");
   });
 
+  it("PATCH rejects empty strings for numeric columns", async () => {
+    const res = await app.request("/_api/admin/tables/users/rows/1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ age: "" }),
+    });
+    const { status, body } = await parseResponse(res);
+    assert.equal(status, 400);
+    assert.match(body.error, /expected a number/);
+  });
+
   it("PATCH returns 404 for non-existent id", async () => {
     const res = await app.request("/_api/admin/tables/users/rows/9999", {
       method: "PATCH",

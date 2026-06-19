@@ -60,9 +60,10 @@ function formatCellValue(value: unknown): string {
 
 function parseInputValue(
   value: string,
-  col: IntrospectedColumn
+  col: IntrospectedColumn,
+  isNull = false
 ): string | number | boolean | null {
-  if (value === "" && !col.notNull) return null;
+  if (isNull) return null;
   const t = col.type.toUpperCase();
   if (t === "INTEGER" || t === "BIGINT") {
     const n = Number(value);
@@ -198,10 +199,12 @@ function DataTab({
     column: string;
   } | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [editIsNull, setEditIsNull] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [addForm, setAddForm] = useState<Record<string, string>>({});
+  const [addNulls, setAddNulls] = useState<Record<string, boolean>>({});
   const [addError, setAddError] = useState<string | null>(null);
 
   const [deletingId, setDeletingId] = useState<string | number | null>(null);
@@ -234,7 +237,11 @@ function DataTab({
                 onSubmit={async () => {
                   try {
                     setEditError(null);
-                    const parsed = parseInputValue(editValue, colMeta);
+                    const parsed = parseInputValue(
+                      editValue,
+                      colMeta,
+                      editIsNull
+                    );
                     await updateRow.mutateAsync({
                       id: row.original[pkColumn!] as string | number,
                       data: { [column.id]: parsed },
@@ -249,8 +256,12 @@ function DataTab({
                 onCancel={() => {
                   setEditingCell(null);
                   setEditError(null);
+                  setEditIsNull(false);
                 }}
                 error={editError}
+                nullable={!colMeta.notNull}
+                isNull={editIsNull}
+                onNullChange={setEditIsNull}
                 inputType={
                   colMeta.type.toUpperCase() === "INTEGER" ||
                   colMeta.type.toUpperCase() === "BIGINT" ||
@@ -273,7 +284,10 @@ function DataTab({
               onDoubleClick={() => {
                 if (!editable) return;
                 setEditError(null);
-                setEditValue(formatCellValue(value));
+                setEditIsNull(value === null);
+                setEditValue(
+                  value === null || value === undefined ? "" : String(value)
+                );
                 setEditingCell({
                   rowId: row.original[pkColumn!] as string | number,
                   column: column.id,
@@ -286,7 +300,15 @@ function DataTab({
           );
         },
       })),
-    [table.columns, pkColumn, editingCell, editValue, editable, updateRow]
+    [
+      table.columns,
+      pkColumn,
+      editingCell,
+      editValue,
+      editIsNull,
+      editable,
+      updateRow,
+    ]
   );
 
   const reactTable = useReactTable({
@@ -310,11 +332,18 @@ function DataTab({
       for (const col of table.columns) {
         if (col.primaryKey && col.autoIncrement) continue;
         const val = addForm[col.name];
+        if (addNulls[col.name]) {
+          if (col.notNull) {
+            throw new Error(`Column "${col.name}" cannot be null`);
+          }
+          body[col.name] = null;
+          continue;
+        }
         if (val === undefined || val === "") {
           if (col.notNull && col.defaultValue === null) {
             throw new Error(`Column "${col.name}" is required`);
           }
-          if (!col.notNull) body[col.name] = null;
+          if (!col.notNull && col.defaultValue === null) body[col.name] = "";
           continue;
         }
         body[col.name] = parseInputValue(val, col);
@@ -322,6 +351,7 @@ function DataTab({
       await createRow.mutateAsync(body);
       setShowAddDialog(false);
       setAddForm({});
+      setAddNulls({});
     } catch (err) {
       setAddError(err instanceof Error ? err.message : "Create failed");
     }
@@ -352,6 +382,7 @@ function DataTab({
               type="button"
               onClick={() => {
                 setAddForm({});
+                setAddNulls({});
                 setAddError(null);
                 setShowAddDialog(true);
               }}
@@ -489,6 +520,8 @@ function DataTab({
           table={table}
           form={addForm}
           setForm={setAddForm}
+          nulls={addNulls}
+          setNulls={setAddNulls}
           error={addError}
           onSubmit={handleAddSubmit}
           onClose={() => setShowAddDialog(false)}
@@ -515,6 +548,9 @@ function CellEditor({
   onCancel,
   error,
   inputType,
+  nullable,
+  isNull,
+  onNullChange,
 }: {
   value: string;
   onChange: (v: string) => void;
@@ -522,6 +558,9 @@ function CellEditor({
   onCancel: () => void;
   error: string | null;
   inputType: string;
+  nullable: boolean;
+  isNull: boolean;
+  onNullChange: (v: boolean) => void;
 }) {
   useEffect(() => {
     const el = document.getElementById("cell-editor-input") as HTMLInputElement | null;
@@ -532,17 +571,23 @@ function CellEditor({
   }, []);
 
   return (
-    <div className="relative">
+    <div
+      className="relative"
+      onBlur={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget)) return;
+        onSubmit();
+      }}
+    >
       <input
         id="cell-editor-input"
         type={inputType}
         value={value}
+        disabled={isNull}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter") onSubmit();
           if (e.key === "Escape") onCancel();
         }}
-        onBlur={onSubmit}
         className={cn(
           "w-full rounded border px-1 py-0.5 text-sm outline-none",
           error
@@ -550,6 +595,16 @@ function CellEditor({
             : "border-primary bg-background"
         )}
       />
+      {nullable ? (
+        <label className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={isNull}
+            onChange={(e) => onNullChange(e.target.checked)}
+          />
+          NULL
+        </label>
+      ) : null}
       {error ? (
         <span className="absolute left-0 top-full z-10 mt-1 whitespace-nowrap rounded bg-destructive px-2 py-1 text-xs text-destructive-foreground">
           {error}
@@ -563,6 +618,8 @@ function AddRowDialog({
   table,
   form,
   setForm,
+  nulls,
+  setNulls,
   error,
   onSubmit,
   onClose,
@@ -571,6 +628,8 @@ function AddRowDialog({
   table: IntrospectedTable;
   form: Record<string, string>;
   setForm: (f: Record<string, string>) => void;
+  nulls: Record<string, boolean>;
+  setNulls: (f: Record<string, boolean>) => void;
   error: string | null;
   onSubmit: () => void;
   onClose: () => void;
@@ -587,6 +646,7 @@ function AddRowDialog({
           {table.columns.map((col) => {
             if (col.primaryKey && col.autoIncrement) return null;
             const val = form[col.name] ?? "";
+            const isNull = !!nulls[col.name];
             return (
               <div key={col.name}>
                 <label className="block text-xs font-medium text-muted-foreground">
@@ -604,6 +664,7 @@ function AddRowDialog({
                       : "text"
                   }
                   value={val}
+                  disabled={isNull}
                   placeholder={
                     col.defaultValue !== null
                       ? `default: ${col.defaultValue}`
@@ -616,6 +677,18 @@ function AddRowDialog({
                   }
                   className="mt-1 w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm outline-none focus:border-primary"
                 />
+                {!col.notNull ? (
+                  <label className="mt-1 flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={isNull}
+                      onChange={(e) =>
+                        setNulls({ ...nulls, [col.name]: e.target.checked })
+                      }
+                    />
+                    Insert NULL instead of an empty string
+                  </label>
+                ) : null}
               </div>
             );
           })}

@@ -391,6 +391,9 @@ function coerceBodyValue(
     case "BIGINT": {
       if (typeof value === "number") return Math.trunc(value);
       if (typeof value === "string") {
+        if (value.trim() === "") {
+          throw new AdminError(400, `Column "${column}": expected a number`);
+        }
         const n = Number(value);
         if (!Number.isFinite(n)) {
           throw new AdminError(
@@ -406,6 +409,9 @@ function coerceBodyValue(
     case "REAL": {
       if (typeof value === "number") return value;
       if (typeof value === "string") {
+        if (value.trim() === "") {
+          throw new AdminError(400, `Column "${column}": expected a number`);
+        }
         const n = Number(value);
         if (!Number.isFinite(n)) {
           throw new AdminError(
