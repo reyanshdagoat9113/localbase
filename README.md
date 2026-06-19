@@ -13,11 +13,13 @@
 # Scaffold a new project
 npx @localbase/cli init
 
-# Start the dev server
-localbase dev
+# Start the dev server (and open the admin UI in your browser)
+localbase studio
 ```
 
-That's it. You now have a REST API running at `http://localhost:5180`.
+That's it. You now have a REST API running at `http://localhost:5180`
+and a built-in admin dashboard at `http://localhost:5180/admin/`
+where you can browse and edit your data without writing code.
 
 ---
 
@@ -26,6 +28,8 @@ That's it. You now have a REST API running at `http://localhost:5180`.
 - **SQLite database** with auto-migrations
 - **REST API** auto-generated from your schema
 - **TypeScript SDK** with a Supabase-style query builder
+- **Built-in admin UI** at `/admin/` — browse tables, edit rows, manage users
+- **Realtime subscriptions** — `db.from('x').subscribe(...)` over WebSockets
 - **Optional auth** — JWT sessions, Argon2id passwords, refresh-token rotation
 - **Hot-reload** on schema changes
 - **Zero config** — define tables, everything else is automatic
@@ -65,13 +69,63 @@ Save the file — the dev server hot-reloads automatically.
 localbase init                          Scaffold a new project (creates .localbase/ + config file)
 localbase dev                           Start dev server (port 5180, hot-reload on schema change)
 localbase dev --port 4000               Start on a custom port
+localbase dev --open                    Start the dev server and open the admin UI
+localbase studio                        Alias for `localbase dev --open` (opens the admin UI)
 localbase db migrate                    Run pending migrations + show status
 localbase db reset                      Drop all tables, re-run migrations from scratch
 localbase auth create-user              Create a user (requires auth.enabled in config)
 localbase auth list-users               List all users
 localbase auth reset-password           Reset a user's password
+localbase admin promote <email>         Grant admin rights to a user
+localbase admin demote <email>          Revoke admin rights from a user
 localbase --help                        Show all commands
 ```
+
+---
+
+## 🎨 Admin UI (LocalBase Studio)
+
+LocalBase ships a built-in admin dashboard at `http://localhost:5180/admin/`
+that lets you browse tables, edit rows inline, inspect your schema, and
+manage users — without writing a line of code. It's served by core itself,
+so `localbase dev` (or `localbase studio`) is all you need.
+
+```bash
+# Start the server AND open the dashboard in your default browser.
+localbase studio
+
+# Or: start the server manually and open the URL yourself.
+localbase dev
+# → http://localhost:5180/admin/
+```
+
+**What you get on first run:**
+
+- **Table browser** — sidebar lists every table (including system tables)
+  with live row counts; click to see rows in a sortable, filterable grid.
+- **Inline row editor** — double-click any cell, edit, hit Enter; the
+  change propagates to every realtime subscriber.
+- **Add / delete rows** — no SQL required.
+- **Schema viewer** — see columns, types, primary keys, foreign keys,
+  and indexes for every table.
+- **Auth Manager** — list users, create users, reset passwords, promote
+  or demote admins (only available when `auth.enabled` is on).
+- **First-user bootstrap** — the first account to sign up is
+  automatically an admin; everyone else starts as `user` and needs a
+  promote from an existing admin (or via `localbase admin promote`).
+
+**Behind the scenes:** the admin UI is a React + Vite SPA built into
+`@localbase/core` at publish time. All edits go through the same
+`Database` class your SDK calls, so any change you make in the dashboard
+fires a realtime event that subscribed clients see instantly. See
+[`LOCALBASE-ADMIN-UI.md`](LOCALBASE-ADMIN-UI.md) for the full design.
+
+**Safety:** when auth is enabled, every admin route is gated by a JWT
+admin claim that is *re-read from the database on every request* — so
+demoting a user takes effect on their very next admin call, even with
+a still-valid access token. When auth is *disabled*, the admin API is
+ungated and LocalBase refuses to bind it to a non-loopback interface
+unless you pass `--admin-unsafe-public`.
 
 ---
 

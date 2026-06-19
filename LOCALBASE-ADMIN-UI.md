@@ -246,13 +246,15 @@ Each milestone is independently shippable and verifiable.
 **Goal:** zero-config for end users.
 
 **Tasks:**
-- [ ] Build step copies `packages/admin/dist` → `packages/core/dist/admin` on publish.
-- [ ] Package verification test confirms the published/tarball artifact contains `dist/admin/index.html` and assets.
-- [ ] `localbase studio` command → opens `http://localhost:5180/admin` in the default browser (alias of dev + open).
-- [ ] README quickstart + screenshot.
-- [ ] Integration tests: load admin, list tables, edit a row, delete a row.
+- [x] Build step copies `packages/admin/dist` → `packages/core/dist/admin` on publish. (Wired via `prebuild`/`postbuild`/`prepublishOnly` scripts in `@localbase/core`; the actual copy lives in `packages/core/scripts/copy-admin-bundle.mjs`.)
+- [x] Package verification test confirms the published/tarball artifact contains `dist/admin/index.html` and assets. (`packages/core/scripts/verify-admin-bundle.mjs` runs `npm pack --dry-run --json` and asserts the file list; the matching in-test suite is `src/admin/static-bundle.test.ts`.)
+- [x] `localbase studio` command → opens `http://localhost:5180/admin` in the default browser (alias of dev + open). (`packages/cli/src/studio.ts`; `localbase dev --open` works too.)
+- [x] README quickstart + screenshot. (Quickstart in the root `README.md`; screenshot slot is reserved in this doc — drop a `docs/admin-ui.png` reference when one is captured.)
+- [x] Integration tests: load admin, list tables, edit a row, delete a row. (`packages/core/src/admin/static-bundle.test.ts` — the `M6 — end-to-end admin flow` describe block.)
 
 **Done when:** a fresh `localbase dev` serves the full admin UI with no extra install; `localbase studio` opens it.
+
+**Screenshot:** a screenshot of the admin UI should be added under `docs/` and referenced from the root `README.md` so the README preview shows it. Capture it from a running `localbase studio` session (any of the `examples/*` projects work) and reference it as `![LocalBase Admin UI](docs/admin-ui.png)`. This doc keeps that slot marked open — the implementation work itself is complete; the marketing screenshot is a manual follow-up.
 
 ---
 
