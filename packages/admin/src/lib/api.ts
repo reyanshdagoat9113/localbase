@@ -275,3 +275,36 @@ export function deleteRow(
     { method: "DELETE" }
   );
 }
+
+// ─── Auth Manager (/_api/admin/users) ──────────────────────────
+
+export function getUsers(): Promise<AuthUser[]> {
+  return request<AuthUser[]>("/_api/admin/users");
+}
+
+export function createUser(email: string, password: string): Promise<AuthUser> {
+  return request<AuthUser>("/_api/admin/users", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function resetUserPassword(
+  id: number,
+  password: string
+): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>(
+    `/_api/admin/users/${encodeURIComponent(id)}/reset-password`,
+    { method: "POST", body: JSON.stringify({ password }) }
+  );
+}
+
+export function setUserRole(
+  id: number,
+  role: UserRole
+): Promise<AuthUser> {
+  return request<AuthUser>(
+    `/_api/admin/users/${encodeURIComponent(id)}/role`,
+    { method: "PATCH", body: JSON.stringify({ role }) }
+  );
+}

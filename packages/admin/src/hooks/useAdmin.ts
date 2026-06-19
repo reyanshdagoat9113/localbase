@@ -10,6 +10,12 @@ import {
   createRow,
   updateRow,
   deleteRow,
+  getUsers,
+  createUser,
+  resetUserPassword,
+  setUserRole,
+  type AuthUser,
+  type UserRole,
   type GetRowsParams,
 } from "@/lib/api";
 
@@ -67,3 +73,47 @@ export function useDeleteRow(table: string) {
     },
   });
 }
+
+// ─── Auth Manager ──────────────────────────────────────────────
+//
+// Mutations also invalidate the tables/schema queries because `_users` shows
+// up there (row count, system flag) — promoting or creating users changes it.
+
+export function useUsers() {
+  return useQuery({ queryKey: ["admin", "users"], queryFn: getUsers });
+}
+
+export function useCreateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ email, password }: { email: string; password: string }) =>
+      createUser(email, password),
+    onSuccess: () => invalidateUserData(qc),
+  });
+}
+
+export function useResetUserPassword() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, password }: { id: number; password: string }) =>
+      resetUserPassword(id, password),
+    onSuccess: () => invalidateUserData(qc),
+  });
+}
+
+export function useSetUserRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, role }: { id: number; role: UserRole }) =>
+      setUserRole(id, role),
+    onSuccess: () => invalidateUserData(qc),
+  });
+}
+
+function invalidateUserData(qc: ReturnType<typeof useQueryClient>) {
+  qc.invalidateQueries({ queryKey: ["admin", "users"] });
+  qc.invalidateQueries({ queryKey: ["admin", "tables"] });
+  qc.invalidateQueries({ queryKey: ["admin", "schema"] });
+}
+
+export type { AuthUser, UserRole };

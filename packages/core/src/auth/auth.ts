@@ -106,6 +106,20 @@ function validateRole(raw: unknown): string {
 }
 
 /**
+ * Parse a route param into a positive integer user id. The admin user
+ * endpoints are keyed by `:id` (the `_users.id` primary key), so callers hand
+ * us a string; reject anything that isn't a positive integer with a 400 before
+ * it reaches the DB layer.
+ */
+function parseUserId(raw: unknown): number {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new AuthError(400, `Invalid user id: "${String(raw)}"`);
+  }
+  return n;
+}
+
+/**
  * Auth subsystem. Owns all reads/writes against the `_users` and
  * `_sessions` tables, and issues JWT access tokens plus rotating
  * refresh tokens. The router is a thin transport layer over this class.
@@ -375,6 +389,24 @@ export class Auth {
     );
   }
 
+  /**
+   * Reset a user's password by id. The admin API identifies users by `:id`
+   * (the `_users.id` primary key), but the password logic is email-keyed; this
+   * resolves id → email and delegates to {@link setPassword} so the hashing,
+   * min-length, and not-found semantics stay in one place.
+   */
+  async setPasswordById(
+    idRaw: unknown,
+    newPasswordRaw: unknown
+  ): Promise<void> {
+    const id = parseUserId(idRaw);
+    const user = this.findUserById(id);
+    if (!user) {
+      throw new AuthError(404, `No user found with id ${id}`);
+    }
+    await this.setPassword(user.email, newPasswordRaw);
+  }
+
   // ─── Role management (admin:promote / admin:demote) ────────
 
   /** Total number of users. Used by the first-user bootstrap. */
@@ -451,5 +483,24 @@ export class Auth {
     });
 
     return updateRole.immediate();
+  }
+
+  /**
+   * Promote or demote a user by id. Like {@link setPasswordById}, this resolves
+   * id → email and delegates to {@link setRole}, so the last-admin lockout,
+   * idempotency, and `actorEmail` (self-demotion messaging) semantics are
+   * shared with the CLI path.
+   */
+  setRoleById(
+    idRaw: unknown,
+    roleRaw: unknown,
+    actorEmail?: string
+  ): AuthUser {
+    const id = parseUserId(idRaw);
+    const user = this.findUserById(id);
+    if (!user) {
+      throw new AuthError(404, `No user found with id ${id}`);
+    }
+    return this.setRole(user.email, roleRaw, actorEmail);
   }
 }

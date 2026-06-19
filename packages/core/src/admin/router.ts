@@ -11,7 +11,8 @@ import {
   type FilterOperator,
   type OrderBy,
 } from "../query.js";
-import { requireAdmin } from "../auth/middleware.js";
+import { requireAdmin, type AdminVariables } from "../auth/middleware.js";
+import type { Auth } from "../auth/index.js";
 import {
   assertNotSystemTable,
   assertNotVirtualTable,
@@ -35,6 +36,18 @@ export interface AdminRouterOptions {
    * admin API on a public interface is a hard startup error there.
    */
   requireAdminSecret?: string;
+
+  /**
+   * The auth subsystem. When provided, the Auth Manager endpoints
+   * (`/_api/admin/users/*`) are mounted. They go through the typed `Auth`
+   * helpers so password hashing and the last-admin lockout are preserved —
+   * never through the generic row endpoints, which refuse `_users` writes.
+   *
+   * Only mountable alongside `requireAdminSecret`: there are no users to
+   * manage when auth is disabled, so `createServer` omits this in no-auth
+   * mode and the user endpoints simply aren't registered.
+   */
+  auth?: Auth;
 }
 
 /**
@@ -72,8 +85,16 @@ export interface AdminRouterOptions {
 export function createAdminRouter(
   db: Database,
   options: AdminRouterOptions = {}
-): Hono {
-  const router = new Hono();
+): Hono<{ Variables: AdminVariables }> {
+  if (options.auth && !options.requireAdminSecret) {
+    throw new Error("Auth Manager routes require admin auth");
+  }
+
+  // Typed with `AdminVariables` so the user-management handlers can read the
+  // admin principal that `requireAdmin` attaches (used for self-demotion
+  // messaging). The variable is only populated when the gate runs, which is
+  // exactly when these handlers are reachable.
+  const router = new Hono<{ Variables: AdminVariables }>();
 
   // ── Auth gate (optional, but strongly recommended) ──
   // Applied as a wildcard middleware so it runs before every route below.
@@ -217,6 +238,64 @@ export function createAdminRouter(
       return adminErrorResponse(c, err);
     }
   });
+
+  // ── Auth Manager: /_api/admin/users/* ──────────────────────
+  // Mounted only when an `Auth` instance is wired in. These endpoints are the
+  // *only* way to mutate `_users` through the admin API — the generic row
+  // endpoints refuse `_users` writes (assertNotSystemTable) precisely so that
+  // password hashing and the last-admin lockout can't be bypassed. All four go
+  // through the typed `Auth` methods.
+  if (options.auth) {
+    const auth = options.auth;
+
+    // GET /_api/admin/users — list users, oldest first. Hashes are never
+    // returned (Auth.publicUser strips them).
+    router.get("/_api/admin/users", (c) => {
+      return c.json({ data: auth.listUsers() });
+    });
+
+    // POST /_api/admin/users — create a user. New users are role=user; promote
+    // via the role endpoint below. Matches the CLI (`createUser`) default.
+    router.post("/_api/admin/users", async (c) => {
+      try {
+        const body = await readJson(c);
+        const user = await auth.createUser(body);
+        return c.json({ data: user }, 201);
+      } catch (err) {
+        return adminErrorResponse(c, err);
+      }
+    });
+
+    // POST /_api/admin/users/:id/reset-password — set a new password.
+    router.post("/_api/admin/users/:id/reset-password", async (c) => {
+      try {
+        const body = await readJson(c);
+        await auth.setPasswordById(c.req.param("id"), body.password);
+        return c.json({ data: { success: true } });
+      } catch (err) {
+        return adminErrorResponse(c, err);
+      }
+    });
+
+    // PATCH /_api/admin/users/:id/role — promote/demote. The actor email comes
+    // from the admin principal so `setRole` can phrase the last-admin lockout
+    // error for self-demotion specifically. Enforcement of the lockout is in
+    // `Auth.setRole`; the UI adds a confirmation prompt for self-demotion.
+    router.patch("/_api/admin/users/:id/role", async (c) => {
+      try {
+        const body = await readJson(c);
+        const actorEmail = c.get("adminUser")?.email;
+        const user = auth.setRoleById(
+          c.req.param("id"),
+          body.role,
+          actorEmail
+        );
+        return c.json({ data: user });
+      } catch (err) {
+        return adminErrorResponse(c, err);
+      }
+    });
+  }
 
   return router;
 }
@@ -478,8 +557,15 @@ function adminErrorResponse(
   c: any,
   err: unknown
 ) {
-  if (err instanceof AdminError) {
-    return c.json({ error: err.message }, err.status as 400 | 403 | 404 | 409);
+  // Both AdminError (query / system-table layer) and AuthError (the Auth class
+  // behind the user endpoints) are HTTP-shaped errors — an Error with a
+  // numeric `status`. Treat any such error as a client error so both surfaces
+  // map cleanly without the router needing to know each concrete class.
+  if (err instanceof Error) {
+    const status = (err as { status?: unknown }).status;
+    if (typeof status === "number") {
+      return c.json({ error: err.message }, status as 400 | 401 | 403 | 404 | 409);
+    }
   }
   if (err instanceof Error && "code" in err) {
     const sqliteErr = err as Error & { code: string };

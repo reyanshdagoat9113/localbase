@@ -484,7 +484,7 @@ describe("password hashing", () => {
 describe("access tokens (jose)", () => {
   it("signs and verifies a token round trip", async () => {
     const token = await signAccessToken(
-      { id: 42, email: "alice@test.com" },
+      { id: 42, email: "alice@test.com", role: "user" },
       TEST_SECRET,
       "1h"
     );
@@ -495,7 +495,7 @@ describe("access tokens (jose)", () => {
 
   it("rejects a token signed with a different secret", async () => {
     const token = await signAccessToken(
-      { id: 1, email: "x@y.com" },
+      { id: 1, email: "x@y.com", role: "user" },
       "secret-a",
       "1h"
     );
@@ -504,7 +504,7 @@ describe("access tokens (jose)", () => {
 
   it("rejects an expired token", async () => {
     const token = await signAccessToken(
-      { id: 1, email: "x@y.com" },
+      { id: 1, email: "x@y.com", role: "user" },
       TEST_SECRET,
       "0s" // 0 seconds — already expired by the time we verify
     );
@@ -623,7 +623,7 @@ describe("requireAuth middleware", () => {
 
   it("401s on a token signed with the wrong secret", async () => {
     const bad = await signAccessToken(
-      { id: userId, email: "alice@test.com" },
+      { id: userId, email: "alice@test.com", role: "user" },
       "wrong-secret",
       "1h"
     );

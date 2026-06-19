@@ -238,7 +238,7 @@ Each milestone is independently shippable and verifiable.
 **Goal:** user management from the UI.
 
 **Tasks:**
-- [ ] Users list, create-user dialog, reset-password, promote/demote.
+- [x] Users list, create-user dialog, reset-password, promote/demote.
 
 **Done when:** admin can fully manage users without touching the CLI.
 

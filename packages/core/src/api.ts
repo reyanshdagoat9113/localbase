@@ -316,9 +316,11 @@ export function createServer(
   // this, `GET /api/auth/user` would be interpreted as a request for row
   // `user` of table `auth`.
   let authRouter: ReturnType<typeof createAuthRouter> | null = null;
-  // `resolvedSecret` is hoisted out so the admin block can reuse it to gate
-  // `/_api/admin/*` with `requireAdmin`. It's only set when auth is enabled.
+  // `resolvedSecret` and `auth` are hoisted out so the admin block can reuse
+  // them: the secret gates `/_api/admin/*` with `requireAdmin`, and `auth`
+  // mounts the Auth Manager endpoints. Both are only set when auth is enabled.
   let resolvedSecret: string | undefined;
+  let auth: Auth | undefined;
   if (normalized.auth?.enabled) {
     // Ensure the auth tables exist on this database. This covers the case
     // where the user passed auth to createServer but not to the Database
@@ -334,7 +336,7 @@ export function createServer(
           'Set auth.jwtSecret in localbase.config.ts (e.g. process.env.JWT_SECRET).'
       );
     }
-    const auth = new Auth(db, config);
+    auth = new Auth(db, config);
     authRouter = createAuthRouter(auth, config.jwtSecret);
     app.route("/", authRouter);
   }
@@ -360,6 +362,11 @@ export function createServer(
     }
     const adminRouter = createAdminRouter(db, {
       requireAdminSecret: resolvedSecret,
+      // When auth is on, mount the Auth Manager endpoints. They go through the
+      // typed Auth helpers (hashing + last-admin lockout) and are gated by the
+      // same requireAdmin secret above. When auth is off there are no users to
+      // manage, so this stays undefined and the user endpoints aren't mounted.
+      auth,
     });
     app.route("/", adminRouter);
     const { servingPlaceholder } = mountAdminStatic(app, { enabled: true });
