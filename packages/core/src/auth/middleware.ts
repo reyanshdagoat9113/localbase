@@ -1,4 +1,4 @@
-import type { MiddlewareHandler } from "hono";
+import type { Context, MiddlewareHandler } from "hono";
 import { verifyAccessToken } from "./tokens.js";
 import type { Database } from "../db.js";
 
@@ -6,6 +6,8 @@ import type { Database } from "../db.js";
 export interface AuthenticatedUser {
   id: number;
   email: string;
+  /** Role snapshot from the access token (`"user"` | `"admin"`). */
+  role: string;
 }
 
 /** Augment Hono's context with the user key. */
@@ -65,7 +67,7 @@ export function requireAuth(secret: string): MiddlewareHandler<{
       if (!Number.isFinite(id)) {
         return c.json({ error: "Invalid token subject" }, 401);
       }
-      c.set("user", { id, email: claims.email });
+      c.set("user", { id, email: claims.email, role: claims.role });
       await next();
     } catch (err) {
       if (err instanceof Error && err.name === "JWTExpired") {
@@ -74,6 +76,35 @@ export function requireAuth(secret: string): MiddlewareHandler<{
       return c.json({ error: "Invalid token" }, 401);
     }
   };
+}
+
+/**
+ * Verify the `Authorization: Bearer <jwt>` header and return the authenticated
+ * user, or `null` on any failure (missing/malformed/invalid/expired token).
+ *
+ * Unlike {@link requireAuth}, this is a plain function (not middleware) and
+ * produces no HTTP response — callers decide how to handle `null`. RLS uses it
+ * inside the `/api/:table` handlers to authenticate lazily, only for tables that
+ * have a policy, so tables without a policy stay open to anonymous requests.
+ */
+export async function authenticate(
+  c: Context,
+  secret: string
+): Promise<AuthenticatedUser | null> {
+  const header = c.req.header("authorization");
+  if (!header) return null;
+
+  const [scheme, token] = header.split(" ");
+  if (scheme?.toLowerCase() !== "bearer" || !token) return null;
+
+  try {
+    const claims = await verifyAccessToken(token, secret);
+    const id = Number(claims.sub);
+    if (!Number.isFinite(id)) return null;
+    return { id, email: claims.email, role: claims.role };
+  } catch {
+    return null;
+  }
 }
 
 /**

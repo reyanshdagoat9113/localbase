@@ -39,10 +39,40 @@ export interface AuthConfig {
   minPasswordLength?: number;
 }
 
+/**
+ * Row-Level Security policy for a single table.
+ *
+ * Declares which column holds the owning user's id (`_users.id`). When a table
+ * has a policy, the public REST API (`/api/:table`) auto-scopes every request
+ * to the authenticated user: `select` filters by the owner column, `insert`
+ * stamps it, and `update`/`delete` are constrained to owned rows.
+ *
+ * By default this scopes EVERYONE — including admins — to their own rows; admins
+ * oversee all data through the separate `/_api/admin/*` surface. Set
+ * `adminBypass: true` to let admin-role users see every row on this table via
+ * the public API as well.
+ */
+export interface OwnerPolicy {
+  /** Column holding the owner's `_users.id`. Must exist on the table. */
+  ownerColumn: string;
+  /** When true, admin-role users skip owner scoping on this table. Default false. */
+  adminBypass?: boolean;
+}
+
+/**
+ * Per-table RLS policies, keyed by table name. Each entry opts that table into
+ * owner-based row-level security on the public REST API. Requires `auth.enabled`.
+ */
+export interface PoliciesConfig {
+  [tableName: string]: OwnerPolicy;
+}
+
 export interface LocalBaseConfig {
   tables: DatabaseSchema;
   auth?: AuthConfig;
   realtime?: RealtimeConfig;
+  /** Per-table RLS policies. Requires `auth.enabled`. See {@link OwnerPolicy}. */
+  policies?: PoliciesConfig;
 }
 
 export interface RealtimeConfig {

@@ -86,6 +86,7 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
     const app = createApi(db, config.tables, {
       auth: config.auth,
       admin: { enabled: true },
+      policies: config.policies,
     });
 
     // Start HTTP server
