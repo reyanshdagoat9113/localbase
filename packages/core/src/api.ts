@@ -1,9 +1,20 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
-import type { AdminConfig, AuthConfig, DatabaseSchema } from "@localbase/shared";
+import type {
+  AdminConfig,
+  AuthConfig,
+  DatabaseSchema,
+  PoliciesConfig,
+} from "@localbase/shared";
 import type { Database } from "./db.js";
 import type { Filter, FilterOperator, OrderBy, QueryOptions } from "./query.js";
-import { Auth, createAuthRouter, resolveAuthConfig } from "./auth/index.js";
+import {
+  Auth,
+  createAuthRouter,
+  resolveAuthConfig,
+  authenticate,
+} from "./auth/index.js";
+import { resolvePolicies, ownerFilter, stampOwner } from "./rls.js";
 import { createAdminRouter } from "./admin/router.js";
 import { mountAdminStatic } from "./admin/static.js";
 import { AdminError } from "./admin/system-tables.js";
@@ -290,6 +301,14 @@ export interface CreateServerOptions {
    * user passes an explicit `--admin-unsafe-public` flag.
    */
   admin?: AdminConfig;
+  /**
+   * Per-table Row-Level Security policies. A table with an entry is auto-scoped
+   * to the authenticated user on the public `/api/:table` routes — `select`
+   * filters by the owner column, `insert` stamps it, and `update`/`delete` are
+   * constrained to owned rows. Tables without an entry stay open. Requires
+   * `auth.enabled`. See {@link PoliciesConfig}.
+   */
+  policies?: PoliciesConfig;
 }
 
 export function createServer(
@@ -304,6 +323,20 @@ export function createServer(
     options && typeof options === "object" && "enabled" in options
       ? { auth: options as AuthConfig }
       : (options as CreateServerOptions);
+
+  // Row-Level Security requires auth: without an authenticated user there is no
+  // owner to scope by. Fail loudly at startup rather than silently ignoring
+  // policies (which would leave data exposed).
+  if (normalized.policies && !normalized.auth?.enabled) {
+    throw new Error(
+      "[localbase] Row-Level Security policies require auth to be enabled. " +
+        'Set auth.enabled = true in localbase.config.ts.'
+    );
+  }
+
+  // Validated once at startup (throws on unknown table/column). The handlers
+  // below consult this map to decide whether a request is owner-scoped.
+  const policyMap = resolvePolicies(normalized.policies, schema);
 
   const app = new Hono();
 
@@ -377,8 +410,28 @@ export function createServer(
     }
   }
 
+  // ── Row-Level Security scope resolver ──
+  // For each /api/:table request this decides whether the call is scoped to the
+  // authenticated user. Tables without a policy are open (userId null, never
+  // rejected). Policy'd tables require a valid token (else `reject` → the
+  // handler returns 401) and scope by user id — unless adminBypass lets an
+  // admin-role user through unscoped. See packages/core/src/rls.ts.
+  const resolveOwnerScope = async (
+    c: Context,
+    tableName: string
+  ): Promise<{ userId: number | null; reject: boolean }> => {
+    const policy = policyMap.get(tableName);
+    if (!policy) return { userId: null, reject: false };
+    const user = await authenticate(c, resolvedSecret!);
+    if (!user) return { userId: null, reject: true };
+    if (policy.adminBypass && hasLiveAdminRole(db, user.id)) {
+      return { userId: null, reject: false };
+    }
+    return { userId: user.id, reject: false };
+  };
+
   // ── GET /api/:table — list rows ──
-  app.get("/api/:table", (c) => {
+  app.get("/api/:table", async (c) => {
     const tableName = c.req.param("table");
 
     if (!(tableName in schema)) {
@@ -386,8 +439,20 @@ export function createServer(
     }
 
     try {
+      const scope = await resolveOwnerScope(c, tableName);
+      if (scope.reject) {
+        return c.json({ error: "Authentication required" }, 401);
+      }
+
       const url = new URL(c.req.url);
       const options = parseQueryOptions(url, tableName, schema);
+      if (scope.userId !== null) {
+        const policy = policyMap.get(tableName)!;
+        options.filters = [
+          ...(options.filters ?? []),
+          ownerFilter(policy, scope.userId),
+        ];
+      }
       const rows = db.select(tableName, options);
       return c.json({ data: rows });
     } catch (err) {
@@ -396,7 +461,7 @@ export function createServer(
   });
 
   // ── GET /api/:table/:id — get one row ──
-  app.get("/api/:table/:id", (c) => {
+  app.get("/api/:table/:id", async (c) => {
     const tableName = c.req.param("table");
     const id = c.req.param("id");
 
@@ -404,12 +469,33 @@ export function createServer(
       return c.json({ error: `Unknown table: "${tableName}"` }, 404);
     }
 
-    const row = db.selectById(tableName, id);
-    if (!row) {
-      return c.json({ error: "Row not found" }, 404);
+    const scope = await resolveOwnerScope(c, tableName);
+    if (scope.reject) {
+      return c.json({ error: "Authentication required" }, 401);
     }
 
-    return c.json({ data: row });
+    // Unscoped (no policy / admin bypass): fetch directly by id.
+    if (scope.userId === null) {
+      const row = db.selectById(tableName, id);
+      if (!row) {
+        return c.json({ error: "Row not found" }, 404);
+      }
+      return c.json({ data: row });
+    }
+
+    // Scoped: require both the id AND ownership. A row that exists but isn't
+    // owned reads as "not found" (404, not 403) so existence isn't leaked.
+    const policy = policyMap.get(tableName)!;
+    const rows = db.select(tableName, {
+      filters: [
+        { column: "id", operator: "eq", value: id },
+        ownerFilter(policy, scope.userId),
+      ],
+    });
+    if (rows.length === 0) {
+      return c.json({ error: "Row not found" }, 404);
+    }
+    return c.json({ data: rows[0] });
   });
 
   // ── POST /api/:table — insert row ──
@@ -421,7 +507,18 @@ export function createServer(
     }
 
     try {
-      const body = await c.req.json();
+      const scope = await resolveOwnerScope(c, tableName);
+      if (scope.reject) {
+        return c.json({ error: "Authentication required" }, 401);
+      }
+
+      const body = (await c.req.json()) as Record<string, unknown>;
+      // Stamp the owner BEFORE validation so a NOT NULL owner column satisfies
+      // the required-column check, and so a client can never write as another
+      // user (the stamp overrides any supplied value).
+      if (scope.userId !== null) {
+        stampOwner(policyMap.get(tableName)!, body, scope.userId);
+      }
       const validated = validateBody(body, schema, tableName);
       const result = db.insert(tableName, validated);
       return c.json({ data: result.length === 1 ? result[0] : result }, 201);
@@ -440,11 +537,35 @@ export function createServer(
     }
 
     try {
+      const scope = await resolveOwnerScope(c, tableName);
+      if (scope.reject) {
+        return c.json({ error: "Authentication required" }, 401);
+      }
+
       const body = await c.req.json();
       const validated = validateBody(body, schema, tableName, true); // partial = true
-      const result = db.update(tableName, validated, [
-        { column: "id", operator: "eq", value: id },
-      ]);
+
+      const filters: Filter[] = [{ column: "id", operator: "eq", value: id }];
+      if (scope.userId !== null) {
+        const policy = policyMap.get(tableName)!;
+        // A scoped user cannot reassign ownership — drop any attempt to change
+        // the owner column, then constrain the update to rows they own.
+        delete validated[policy.ownerColumn];
+        filters.push(ownerFilter(policy, scope.userId));
+        if (Object.keys(validated).length === 0) {
+          // Nothing updatable remains (e.g. only the protected owner column was
+          // supplied, or an empty body). Return the current row unchanged — a
+          // graceful no-op — rather than erroring. Scoped fetch keeps this from
+          // leaking a row the caller doesn't own.
+          const existing = db.select(tableName, { filters });
+          if (existing.length === 0) {
+            return c.json({ error: "Row not found" }, 404);
+          }
+          return c.json({ data: existing[0] });
+        }
+      }
+
+      const result = db.update(tableName, validated, filters);
 
       if (result.length === 0) {
         return c.json({ error: "Row not found" }, 404);
@@ -457,7 +578,7 @@ export function createServer(
   });
 
   // ── DELETE /api/:table/:id — delete row ──
-  app.delete("/api/:table/:id", (c) => {
+  app.delete("/api/:table/:id", async (c) => {
     const tableName = c.req.param("table");
     const id = c.req.param("id");
 
@@ -466,9 +587,17 @@ export function createServer(
     }
 
     try {
-      const count = db.delete(tableName, [
-        { column: "id", operator: "eq", value: id },
-      ]);
+      const scope = await resolveOwnerScope(c, tableName);
+      if (scope.reject) {
+        return c.json({ error: "Authentication required" }, 401);
+      }
+
+      const filters: Filter[] = [{ column: "id", operator: "eq", value: id }];
+      if (scope.userId !== null) {
+        filters.push(ownerFilter(policyMap.get(tableName)!, scope.userId));
+      }
+
+      const count = db.delete(tableName, filters);
 
       if (count === 0) {
         return c.json({ error: "Row not found" }, 404);
@@ -484,6 +613,21 @@ export function createServer(
   app.get("/", (c) => c.json({ status: "ok", version: "0.1.0" }));
 
   return app;
+}
+
+// ─── Admin bypass helper ───────────────────────────────────────
+
+/**
+ * `adminBypass` must not trust the JWT role claim: that claim is only a
+ * snapshot from token issue time. Re-read `_users.role` so demoting/deleting an
+ * admin revokes bypass immediately, matching the admin API's authorization
+ * semantics. Missing/deleted users simply do not bypass and remain scoped.
+ */
+function hasLiveAdminRole(db: Database, userId: number): boolean {
+  const row = db.selectById("_users", userId) as
+    | { role?: unknown }
+    | undefined;
+  return row?.role === "admin";
 }
 
 // ─── Error handler ─────────────────────────────────────────────

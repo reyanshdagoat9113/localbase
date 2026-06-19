@@ -10,6 +10,11 @@ export default {
   tables: {
     projects: {
       id: { type: "integer", primaryKey: true, autoIncrement: true },
+      // RLS owner column. The API stamps the authenticated user's id here on
+      // insert and filters by it on read, so a board only ever shows for the
+      // account that created it. Nullable so adding the column migrates cleanly
+      // over an existing db (pre-RLS boards get NULL and become hidden).
+      owner_id: { type: "integer" },
       name: { type: "text", nullable: false },
       description: { type: "text" },
       color: { type: "text", default: "'#3b82f6'" },
@@ -51,5 +56,13 @@ export default {
       body: { type: "text", nullable: false },
       created_at: { type: "text", default: "CURRENT_TIMESTAMP" },
     },
+  },
+
+  // Row-Level Security: boards are scoped to the user who created them. This is
+  // what keeps account A's boards from showing up when signed in as account B.
+  // (Child tables like tasks/columns could be scoped the same way by adding an
+  // owner column and an entry here — projects alone fixes the reported leak.)
+  policies: {
+    projects: { ownerColumn: "owner_id" },
   },
 };

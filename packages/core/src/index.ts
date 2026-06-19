@@ -23,6 +23,10 @@ export { runMigrations, resetDatabase, getAppliedMigrations } from "./migrate.js
 export { select, selectById, insert, update, remove } from "./query.js";
 export type { Filter, FilterOperator, OrderBy, QueryOptions } from "./query.js";
 
+// Row-Level Security
+export { resolvePolicies, ownerFilter, stampOwner } from "./rls.js";
+export type { ResolvedPolicy } from "./rls.js";
+
 // Auth subsystem
 export {
   AUTH_SCHEMA,
@@ -80,6 +84,8 @@ export type {
   LocalBaseConfig,
   AuthConfig,
   AdminConfig,
+  PoliciesConfig,
+  OwnerPolicy,
   IntrospectedColumn,
   IntrospectedTable,
   IntrospectedSchema,

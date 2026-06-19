@@ -80,7 +80,79 @@ export async function loadConfig(
     );
   }
 
+  validatePolicies(config);
+
   return { configPath, dbPath, dbDir, config };
+}
+
+const IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+/**
+ * Validate the optional `policies` (Row-Level Security) section of the config.
+ * Failures throw {@link ConfigError} with an actionable hint so misconfiguration
+ * is caught at `localbase dev`/`serve` startup, not silently at request time.
+ *
+ * The deeper per-request enforcement (owner filtering/stamping) lives in core's
+ * `createServer`; this only guards the declared shape and the auth dependency.
+ */
+function validatePolicies(config: LocalBaseConfig): void {
+  const policies = (config as { policies?: unknown }).policies;
+  if (policies === undefined) return;
+
+  if (typeof policies !== "object" || policies === null || Array.isArray(policies)) {
+    throw new ConfigError(
+      `Invalid config: "policies" must be an object mapping table names to policies.`,
+      `Example: policies: { projects: { ownerColumn: "owner_id" } }`
+    );
+  }
+
+  if (!config.auth?.enabled) {
+    throw new ConfigError(
+      `Invalid config: "policies" requires auth to be enabled.`,
+      `Set auth.enabled = true to use Row-Level Security.`
+    );
+  }
+
+  for (const [table, policy] of Object.entries(
+    policies as Record<string, unknown>
+  )) {
+    const tableSchema = config.tables[table];
+    if (!tableSchema) {
+      throw new ConfigError(
+        `Invalid config: policies reference unknown table "${table}".`,
+        `Add a "${table}" table to "tables", or remove the policy.`
+      );
+    }
+
+    if (!policy || typeof policy !== "object") {
+      throw new ConfigError(
+        `Invalid config: policy for "${table}" must be an object with an "ownerColumn".`,
+        `Example: ${table}: { ownerColumn: "owner_id" }`
+      );
+    }
+
+    const ownerColumn = (policy as { ownerColumn?: unknown }).ownerColumn;
+    if (typeof ownerColumn !== "string" || !IDENT_RE.test(ownerColumn)) {
+      throw new ConfigError(
+        `Invalid config: policy for "${table}" has an invalid "ownerColumn".`,
+        `"ownerColumn" must be a valid column name on "${table}".`
+      );
+    }
+    if (!(ownerColumn in tableSchema)) {
+      throw new ConfigError(
+        `Invalid config: policy for "${table}" references unknown column "${ownerColumn}".`,
+        `Add an "${ownerColumn}" column to the "${table}" table.`
+      );
+    }
+
+    const adminBypass = (policy as { adminBypass?: unknown }).adminBypass;
+    if (adminBypass !== undefined && typeof adminBypass !== "boolean") {
+      throw new ConfigError(
+        `Invalid config: policy for "${table}" has a non-boolean "adminBypass".`,
+        `"adminBypass" must be true or false (it is optional).`
+      );
+    }
+  }
 }
 
 export { CONFIG_FILE, DB_DIR, DB_FILE };

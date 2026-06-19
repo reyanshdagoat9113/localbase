@@ -11,6 +11,7 @@ export type { AccessTokenClaims, RefreshTokenClaims } from "./tokens.js";
 export {
   requireAuth,
   requireAdmin,
+  authenticate,
   type AuthVariables,
   type AuthenticatedUser,
   type AdminVariables,
