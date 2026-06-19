@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { initCommand } from "./init.js";
 import { devCommand } from "./dev.js";
+import { studioCommand } from "./studio.js";
 import { migrateCommand, resetCommand } from "./db.js";
 import {
   createUserCommand,
@@ -58,12 +59,17 @@ program
     "127.0.0.1"
   )
   .option(
+    "--open",
+    "Open the admin UI in your default browser once the server is ready",
+    false
+  )
+  .option(
     "--admin-unsafe-public",
     "Allow an UNGATED admin API on a non-local interface when auth is disabled. " +
       "Dangerous: anyone who can reach the port has full admin access.",
     false
   )
-  .action(async (opts: { port: string; host: string; adminUnsafePublic?: boolean }) => {
+  .action(async (opts: { port: string; host: string; open?: boolean; adminUnsafePublic?: boolean }) => {
     const port = Number.parseInt(opts.port, 10);
     if (!Number.isFinite(port) || port < 1 || port > 65535) {
       fail(new Error(`Invalid port: "${opts.port}". Must be between 1 and 65535.`));
@@ -72,12 +78,66 @@ program
       await devCommand({
         port,
         host: opts.host,
+        openBrowser: opts.open === true,
         adminUnsafePublic: opts.adminUnsafePublic === true,
       });
     } catch (err) {
       fail(err);
     }
   });
+
+// ── localbase studio ──
+program
+  .command("studio")
+  .description(
+    "Start the dev server and open the admin UI in your default browser. " +
+      "Alias of `localbase dev --open` with friendlier output."
+  )
+  .option(
+    "-p, --port <number>",
+    "Port to run the server on (default: 5180)",
+    "5180"
+  )
+  .option(
+    "-H, --host <address>",
+    "Bind address (default: 127.0.0.1). Use 0.0.0.0 for LAN access.",
+    "127.0.0.1"
+  )
+  .option(
+    "--no-open",
+    "Don't open the admin UI in a browser (use when driving studio from a script)"
+  )
+  .option(
+    "--admin-unsafe-public",
+    "Allow an UNGATED admin API on a non-local interface when auth is disabled. " +
+      "Dangerous: anyone who can reach the port has full admin access.",
+    false
+  )
+  .action(
+    async (opts: {
+      port: string;
+      host: string;
+      open?: boolean;
+      adminUnsafePublic?: boolean;
+    }) => {
+      const port = Number.parseInt(opts.port, 10);
+      if (!Number.isFinite(port) || port < 1 || port > 65535) {
+        fail(
+          new Error(`Invalid port: "${opts.port}". Must be between 1 and 65535.`)
+        );
+      }
+      try {
+        await studioCommand({
+          port,
+          host: opts.host,
+          openBrowser: opts.open !== false,
+          adminUnsafePublic: opts.adminUnsafePublic === true,
+        });
+      } catch (err) {
+        fail(err);
+      }
+    }
+  );
 
 // ── localbase db migrate ──
 const dbCmd = program

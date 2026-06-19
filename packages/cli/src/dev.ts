@@ -7,6 +7,7 @@ import type { RealtimeServer } from "@localbase/core";
 import { loadConfig, ConfigError } from "./config.js";
 import { log } from "./log.js";
 import { unsafeAdminBinding } from "./admin-bind-policy.js";
+import { adminUrl, openBrowser } from "./open-browser.js";
 
 const DEFAULT_PORT = 5180;
 /**
@@ -28,6 +29,20 @@ export interface DevOptions {
    * that combination on a public `--host` is a hard startup error.
    */
   adminUnsafePublic?: boolean;
+  /**
+   * Open the admin UI in the default browser after the server is ready.
+   * Used by `localbase studio` and `--open` on the dev command. The
+   * browser is opened exactly once per `devCommand` invocation — a
+   * config-file hot-reload does not re-open it.
+   */
+  openBrowser?: boolean;
+  /**
+   * Optional callback fired after the server is bound and listening.
+   * Receives the resolved host/port so callers (e.g. tests) can hit the
+   * server without re-implementing port discovery. Runs *after* the
+   * success log lines and *before* `openBrowser` if both are set.
+   */
+  onReady?: (info: { host: string; port: number }) => void | Promise<void>;
 }
 
 export async function devCommand(opts: DevOptions = {}): Promise<void> {
@@ -37,6 +52,7 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
   let currentRealtime: RealtimeServer | null = null;
   let currentDb: Database | null = null;
   let reloading = false;
+  let didOpenBrowser = false;
 
   async function start() {
     const cwd = process.cwd();
@@ -103,6 +119,34 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
           log.success(`Realtime WS at ws://localhost:${info.port}${config.realtime?.path ?? "/realtime"}`);
         }
         log.info("Press Ctrl+C to stop");
+
+        // Fire the onReady hook before the optional browser launch so
+        // callers (e.g. integration tests) can race the browser open.
+        if (opts.onReady) {
+          try {
+            const result = opts.onReady({ host, port: info.port });
+            if (result && typeof (result as Promise<void>).then === "function") {
+              (result as Promise<void>).catch((err) => {
+                log.warn(
+                  `onReady callback rejected: ${err instanceof Error ? err.message : err}`
+                );
+              });
+            }
+          } catch (err) {
+            log.warn(
+              `onReady callback threw: ${err instanceof Error ? err.message : err}`
+            );
+          }
+        }
+
+        if (opts.openBrowser === true && !didOpenBrowser) {
+          didOpenBrowser = true;
+          const url = adminUrl(host, info.port);
+          const result = openBrowser(url);
+          if (result.opened) {
+            log.success(`Opening ${url} in your browser...`);
+          }
+        }
       }
     );
 

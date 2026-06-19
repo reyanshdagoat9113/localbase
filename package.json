@@ -10,8 +10,10 @@
     "examples/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces",
+    "build": "npm run build:admin && npm run build --workspaces",
+    "build:admin": "npm run build --workspace @localbase/admin",
     "clean": "npm run clean --workspaces",
+    "verify:admin-bundle": "npm run verify:admin-bundle --workspace @localbase/core",
     "admin:dev": "npm run dev --workspace @localbase/admin",
     "admin:build": "npm run build --workspace @localbase/admin"
   },
