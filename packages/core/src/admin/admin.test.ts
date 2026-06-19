@@ -1,5 +1,6 @@
 import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
 import { Database } from "../db.js";
 import { createServer } from "../api.js";
 import type { DatabaseSchema } from "@localbase/shared";
@@ -473,6 +474,24 @@ describe("System-table write protection (defense-in-depth gate)", () => {
 // ─── Static mount ──────────────────────────────────────────────
 
 describe("Admin static mount (M1 deliverable)", () => {
+  let previousAdminDist: string | undefined;
+
+  beforeEach(() => {
+    previousAdminDist = process.env.LOCALBASE_ADMIN_DIST;
+    process.env.LOCALBASE_ADMIN_DIST = path.join(
+      process.cwd(),
+      ".missing-admin-bundle-for-static-tests"
+    );
+  });
+
+  afterEach(() => {
+    if (previousAdminDist === undefined) {
+      delete process.env.LOCALBASE_ADMIN_DIST;
+    } else {
+      process.env.LOCALBASE_ADMIN_DIST = previousAdminDist;
+    }
+  });
+
   it("serves placeholder HTML at /admin when no bundle is present", async () => {
     const db = new Database({ schema: testSchema });
     try {

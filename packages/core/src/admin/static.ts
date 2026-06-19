@@ -21,14 +21,22 @@ const DEFAULT_ADMIN_DIST = "admin";
  * and fall through to the placeholder.
  *
  * Resolution rules (first match wins):
- *   1. `process.env.LOCALBASE_ADMIN_DIST` if set
- *   2. `<core dist>/admin` (the production path)
- *   3. `<core dist>/../admin` (the workspace-dev path used while
+ *   1. `process.env.LOCALBASE_ADMIN_DIST` if set and usable
+ *   2. `<workspace>/packages/admin/dist` in this monorepo
+ *   3. `<core dist>/admin` (the production path)
+ *   4. `<core dist>/../admin` (the workspace-dev path used while
  *      `packages/admin` is being built separately — M3)
  */
 export function findAdminDistPath(): string | null {
   if (process.env.LOCALBASE_ADMIN_DIST) {
-    return process.env.LOCALBASE_ADMIN_DIST;
+    return isUsableBundle(process.env.LOCALBASE_ADMIN_DIST)
+      ? process.env.LOCALBASE_ADMIN_DIST
+      : null;
+  }
+
+  const workspaceDist = findWorkspaceAdminDistPath();
+  if (workspaceDist) {
+    return workspaceDist;
   }
 
   const distDir = resolveCoreDistDir();
@@ -43,6 +51,39 @@ export function findAdminDistPath(): string | null {
     if (isUsableBundle(candidate)) return candidate;
   }
   return null;
+}
+
+function findWorkspaceAdminDistPath(): string | null {
+  try {
+    const here = fileURLToPath(import.meta.url);
+    let dir = path.dirname(here);
+    for (let i = 0; i < 8; i++) {
+      const candidate = path.join(dir, "packages", "admin", "dist");
+      if (isLocalbaseWorkspaceRoot(dir) && isUsableBundle(candidate)) {
+        return candidate;
+      }
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  } catch {
+    // import.meta.url may be unavailable in some test runners; fall through.
+  }
+  return null;
+}
+
+function isLocalbaseWorkspaceRoot(dir: string): boolean {
+  try {
+    const raw = fs.readFileSync(path.join(dir, "package.json"), "utf8");
+    const pkg = JSON.parse(raw) as { name?: string; workspaces?: unknown };
+    return (
+      pkg.name === "localbase" &&
+      Array.isArray(pkg.workspaces) &&
+      pkg.workspaces.includes("packages/admin")
+    );
+  } catch {
+    return false;
+  }
 }
 
 function resolveCoreDistDir(): string | null {
