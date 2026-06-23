@@ -20,7 +20,7 @@ const MAX_BUCKET_NAME_LENGTH = 63;
 const BUCKET_NAME_RE = /^[a-z0-9-]{1,63}$/;
 
 /** Characters that must never appear in an original filename. */
-const ORIGINAL_NAME_RE = /[\x00\\/]/;
+const ORIGINAL_NAME_RE = /[\x00-\x1F\x7F\\/]/;
 
 /** Stored file metadata as it appears in the `_files` system table. */
 export interface StoredFile {

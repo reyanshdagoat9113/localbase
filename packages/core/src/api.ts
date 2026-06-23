@@ -18,7 +18,7 @@ import { resolvePolicies, ownerFilter, stampOwner } from "./rls.js";
 import { createAdminRouter } from "./admin/router.js";
 import { mountAdminStatic } from "./admin/static.js";
 import { AdminError } from "./admin/system-tables.js";
-import { createStorageRouter } from "./storage/router.js";
+import { createStorageRouter, type StorageRouterOptions } from "./storage/router.js";
 
 const RESERVED_PARAMS = new Set(["order", "limit", "offset"]);
 const VALID_OPERATORS: FilterOperator[] = [
@@ -310,6 +310,8 @@ export interface CreateServerOptions {
    * `auth.enabled`. See {@link PoliciesConfig}.
    */
   policies?: PoliciesConfig;
+  /** Storage REST API options. */
+  storage?: StorageRouterOptions;
 }
 
 export function createServer(
@@ -416,7 +418,7 @@ export function createServer(
   // by typed storage endpoints rather than being treated as a table named
   // "storage". Auth gates (public/private buckets, signed URLs) are layered on
   // in M3; this milestone exposes the raw upload/download/delete/list surface.
-  app.route("/", createStorageRouter(db));
+  app.route("/", createStorageRouter(db, normalized.storage));
 
   // ── Row-Level Security scope resolver ──
   // For each /api/:table request this decides whether the call is scoped to the

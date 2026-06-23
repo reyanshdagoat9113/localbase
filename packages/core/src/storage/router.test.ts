@@ -80,29 +80,26 @@ describe("Storage REST API", () => {
       assert.ok(body.error);
     });
 
-    it("should reject oversized uploads", async () => {
-      // Re-create server with a tiny limit to avoid moving large buffers.
+    it("should reject oversized uploads from createServer storage options", async () => {
       const limitedTmp = tempDir();
       const limitedDb = new Database({
         schema: testSchema,
         dataDir: limitedTmp,
       });
       const limitedApp = createServer(limitedDb, testSchema, {
-        // Storage router doesn't read createServer options in M2, so we rely
-        // on the default. To test the limit we instead use a large file.
+        storage: { maxFileSize: 5 },
       });
 
       try {
-        const big = makeFile("big.bin", "x".repeat(100));
+        const big = makeFile("big.bin", "123456");
         const res = await limitedApp.request("/api/storage/documents", {
           method: "POST",
           body: makeUploadForm(big),
         });
 
-        // The default 50 MiB limit should accept a 100-byte file, so this
-        // doesn't actually test rejection. We test the engine-level rejection
-        // separately below.
-        assert.equal(res.status, 201);
+        const { status, body } = await parseJson(res);
+        assert.equal(status, 413);
+        assert.ok(/exceeds maximum/.test(body.error));
       } finally {
         limitedDb.close();
         fs.rmSync(limitedTmp, { recursive: true, force: true });
@@ -119,6 +116,18 @@ describe("Storage REST API", () => {
       const { status, body } = await parseJson(res);
       assert.equal(status, 400);
       assert.ok(/Invalid bucket name/.test(body.error));
+    });
+
+    it("should reject filenames with header-control characters", async () => {
+      const file = makeFile("bad\nname.txt", "ok");
+      const res = await app.request("/api/storage/documents", {
+        method: "POST",
+        body: makeUploadForm(file),
+      });
+
+      const { status, body } = await parseJson(res);
+      assert.equal(status, 400);
+      assert.ok(/Invalid original filename/.test(body.error));
     });
   });
 

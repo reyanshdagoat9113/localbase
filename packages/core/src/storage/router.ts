@@ -46,6 +46,12 @@ export function createStorageRouter(
       if (!(file instanceof File)) {
         throw new StorageError(400, "Expected a single file under the 'file' field");
       }
+      if (file.size > maxFileSize) {
+        throw new StorageError(
+          413,
+          `File exceeds maximum allowed size of ${maxFileSize} bytes`
+        );
+      }
 
       const saved = await db.storage.save(bucket, {
         originalName: file.name,
@@ -141,15 +147,17 @@ export function createStorageRouter(
 }
 
 function contentDisposition(originalName: string): string {
-  // RFC 5987 / RFC 6266: use a quoted filename for ASCII-safe names and
-  // a fallback UTF-8 filename* parameter for others.
-  const ascii = /^[\x20-\x7E]+$/;
-  const escaped = originalName.replace(/"/g, '\\"');
-  if (ascii.test(originalName)) {
-    return `attachment; filename="${escaped}"`;
+  // RFC 5987 / RFC 6266: use a quoted ASCII filename fallback and add the
+  // UTF-8 filename* parameter when the original name contains non-ASCII bytes.
+  const asciiOnly = /^[\x20-\x7E]+$/;
+  const fallback = originalName
+    .replace(/[^\x20-\x7E]/g, "_")
+    .replace(/"/g, '\\"');
+  if (asciiOnly.test(originalName)) {
+    return `attachment; filename="${fallback}"`;
   }
   const utf8 = encodeURIComponent(originalName);
-  return `attachment; filename="${escaped}"; filename*=UTF-8''${utf8}`;
+  return `attachment; filename="${fallback}"; filename*=UTF-8''${utf8}`;
 }
 
 function parsePagination(url: URL): { limit?: number; offset?: number } {
