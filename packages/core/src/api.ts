@@ -413,12 +413,24 @@ export function createServer(
     }
   }
 
-  // ── Storage router (M2) ──
+  // ── Storage router ──
   // Mounted before the generic /api/:table routes so /api/storage/* is handled
   // by typed storage endpoints rather than being treated as a table named
-  // "storage". Auth gates (public/private buckets, signed URLs) are layered on
-  // in M3; this milestone exposes the raw upload/download/delete/list surface.
-  app.route("/", createStorageRouter(db, normalized.storage));
+  // "storage".
+  //
+  // Security gate wiring (M3): the storage secret is the dedicated
+  // `storage.secret` if provided, otherwise the resolved auth JWT secret.
+  // When neither is set (auth disabled, no storage secret) `secret` is
+  // undefined and the router stays open — matching the M2 surface. Signed
+  // URLs and the read/write gates only activate once a secret is present.
+  const storageSecret = normalized.storage?.secret ?? resolvedSecret;
+  app.route(
+    "/",
+    createStorageRouter(db, {
+      ...normalized.storage,
+      secret: storageSecret,
+    })
+  );
 
   // ── Row-Level Security scope resolver ──
   // For each /api/:table request this decides whether the call is scoped to the

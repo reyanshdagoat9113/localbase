@@ -197,12 +197,12 @@ Each milestone is independently shippable and verifiable.
 **Goal:** the security gate is real and tested.
 
 **Tasks:**
-- [ ] Read gate: public bucket → open; private → `requireAuth` **or** valid signed URL; else 401/403.
-- [ ] Write gate: upload/delete always require `requireAuth` regardless of bucket visibility.
-- [ ] Implement signed URL generation: `HMAC-SHA256(secret, bucket/stored_name|expires)` → `?expires=&sig=`.
-- [ ] Implement signed URL verify middleware (constant-time compare, expiry check).
-- [ ] Wire storage secret config (fallback to JWT secret).
-- [ ] Write security tests: private bucket 401 without auth, 200 with auth, 200 with valid signed URL, expired/tampered signed URL rejected, public bucket open, writes always require auth.
+- [x] Read gate: public bucket → open; private → `requireAuth` **or** valid signed URL; else 401/403.
+- [x] Write gate: upload/delete always require `requireAuth` regardless of bucket visibility.
+- [x] Implement signed URL generation: `HMAC-SHA256(secret, bucket/stored_name|expires)` → `?expires=&sig=`.
+- [x] Implement signed URL verify middleware (constant-time compare, expiry check).
+- [x] Wire storage secret config (fallback to JWT secret).
+- [x] Write security tests: private bucket 401 without auth, 200 with auth, 200 with valid signed URL, expired/tampered signed URL rejected, public bucket open, writes always require auth.
 
 **Done when:** the four read-gate branches and the always-auth write gate are all proven by tests.
 

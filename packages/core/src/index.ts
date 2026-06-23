@@ -79,6 +79,17 @@ export { SYSTEM_TABLES, isSystemTable, assertNotSystemTable } from "./admin/syst
 export { StorageEngine, StorageError } from "./storage/engine.js";
 export { STORAGE_SCHEMA } from "./storage/schema.js";
 export { createStorageRouter, DEFAULT_MAX_FILE_SIZE } from "./storage/router.js";
+export {
+  signStorageUrl,
+  createSignedUrl,
+  verifySignedUrl,
+} from "./storage/signed-urls.js";
+export type {
+  SignStorageUrlParams,
+  CreateSignedUrlParams,
+  VerifySignedUrlParams,
+  SignedUrlQuery,
+} from "./storage/signed-urls.js";
 export type {
   StoredFile,
   SaveResult,
@@ -110,4 +121,5 @@ export type {
   PresenceEvent,
   PresenceState,
   ChangeEventType,
+  StorageConfig,
 } from "@localbase/shared";

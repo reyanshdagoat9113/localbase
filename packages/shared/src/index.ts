@@ -81,6 +81,26 @@ export interface BucketConfig {
   public?: boolean;
 }
 
+/**
+ * Cross-cutting options for the storage subsystem.
+ *
+ * `secret` signs and verifies storage URLs; it falls back to `auth.jwtSecret`
+ * when omitted (see `createServer`). `maxFileSize` caps a single upload.
+ *
+ * Pre-declared buckets live in the top-level `buckets` array rather than
+ * here, to match the shape introduced in M1.
+ */
+export interface StorageConfig {
+  /**
+   * HMAC secret for signed storage URLs. Falls back to `auth.jwtSecret`.
+   * When neither is set (and auth is disabled), storage is open — no
+   * read/write gates and no signed URLs can be issued.
+   */
+  secret?: string;
+  /** Maximum upload size in bytes. Default ~50 MiB. */
+  maxFileSize?: number;
+}
+
 export interface LocalBaseConfig {
   tables: DatabaseSchema;
   auth?: AuthConfig;
@@ -89,6 +109,8 @@ export interface LocalBaseConfig {
   policies?: PoliciesConfig;
   /** Optional pre-declared storage buckets. */
   buckets?: BucketConfig[];
+  /** Storage subsystem options (signed-URL secret, upload size cap). */
+  storage?: StorageConfig;
 }
 
 export interface RealtimeConfig {
