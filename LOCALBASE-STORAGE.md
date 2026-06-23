@@ -173,11 +173,11 @@ Each milestone is independently shippable and verifiable.
 **Goal:** the engine that reads/writes files exists and is tested, with the `_files` table.
 
 **Tasks:**
-- [ ] Add `buckets` to `LocalBaseConfig` — optional pre-declared list with `{ public }`; auto-create on first upload if not declared.
-- [ ] Create `_files` table (id, bucket, stored_name, original_name, size, mime, uploaded_at) + indexes.
-- [ ] Build storage engine: `save` (stream to disk, UUID name), `get` (stream), `delete`, `list`.
-- [ ] Enforce filename/path safety: UUID `stored_name`, reject path separators/null bytes, resolve-and-verify inside storage root, bucket-name allowlist.
-- [ ] Write engine tests: save/get/delete/list, path-traversal rejection (`..`, absolute, null bytes), bad bucket names.
+- [x] Add `buckets` to `LocalBaseConfig` — optional pre-declared list with `{ public }`; auto-create on first upload if not declared.
+- [x] Create `_files` table (id, bucket, stored_name, original_name, size, mime, uploaded_at) + indexes.
+- [x] Build storage engine: `save` (stream to disk, UUID name), `get` (stream), `delete`, `list`.
+- [x] Enforce filename/path safety: UUID `stored_name`, reject path separators/null bytes, resolve-and-verify inside storage root, bucket-name allowlist.
+- [x] Write engine tests: save/get/delete/list, path-traversal rejection (`..`, absolute, null bytes), bad bucket names.
 
 **Done when:** engine round-trips a file, metadata matches disk, and every traversal vector is rejected.
 
