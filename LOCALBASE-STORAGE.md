@@ -185,11 +185,11 @@ Each milestone is independently shippable and verifiable.
 **Goal:** HTTP endpoints work, streaming, with size limits.
 
 **Tasks:**
-- [ ] Add `POST /api/storage/:bucket` endpoint — multipart parse via `c.req.parseBody`, stream to disk, enforce `maxFileSize`, insert `_files` row.
-- [ ] Add `GET /api/storage/:bucket/:filename` — resolve via `_files`, stream file, set `Content-Type` + `Content-Disposition: attachment; filename="<original>"`.
-- [ ] Add `DELETE /api/storage/:bucket/:filename` — delete file + metadata row (best-effort cleanup on partial failure).
-- [ ] Add `GET /api/storage/:bucket` — list files (paginated).
-- [ ] Write API tests: upload/download/list/delete, oversized upload rejected, original name preserved on download, `{ data } | { error }` shape.
+- [x] Add `POST /api/storage/:bucket` endpoint — multipart parse via `c.req.parseBody`, stream to disk, enforce `maxFileSize`, insert `_files` row.
+- [x] Add `GET /api/storage/:bucket/:filename` — resolve via `_files`, stream file, set `Content-Type` + `Content-Disposition: attachment; filename="<original>"`.
+- [x] Add `DELETE /api/storage/:bucket/:filename` — delete file + metadata row (best-effort cleanup on partial failure).
+- [x] Add `GET /api/storage/:bucket` — list files (paginated).
+- [x] Write API tests: upload/download/list/delete, oversized upload rejected, original name preserved on download, `{ data } | { error }` shape.
 
 **Done when:** a raw `curl` can upload, download (correct filename), list, and delete.
 

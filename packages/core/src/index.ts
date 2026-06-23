@@ -78,11 +78,13 @@ export { SYSTEM_TABLES, isSystemTable, assertNotSystemTable } from "./admin/syst
 // Storage subsystem
 export { StorageEngine, StorageError } from "./storage/engine.js";
 export { STORAGE_SCHEMA } from "./storage/schema.js";
+export { createStorageRouter, DEFAULT_MAX_FILE_SIZE } from "./storage/router.js";
 export type {
   StoredFile,
   SaveResult,
   UploadPayload,
 } from "./storage/engine.js";
+export type { StorageRouterOptions } from "./storage/router.js";
 
 // Re-export shared types
 export type {
