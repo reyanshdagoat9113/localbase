@@ -67,12 +67,28 @@ export interface PoliciesConfig {
   [tableName: string]: OwnerPolicy;
 }
 
+/**
+ * Configuration for a storage bucket.
+ *
+ * Buckets can be pre-declared in `localbase.config.ts` to set their visibility
+ * up-front. If a bucket is not declared, it is created automatically on the
+ * first upload, and it defaults to private.
+ */
+export interface BucketConfig {
+  /** Bucket name. Must match `[a-z0-9-]{1,63}`. */
+  name: string;
+  /** When true, files in this bucket can be read without authentication. */
+  public?: boolean;
+}
+
 export interface LocalBaseConfig {
   tables: DatabaseSchema;
   auth?: AuthConfig;
   realtime?: RealtimeConfig;
   /** Per-table RLS policies. Requires `auth.enabled`. See {@link OwnerPolicy}. */
   policies?: PoliciesConfig;
+  /** Optional pre-declared storage buckets. */
+  buckets?: BucketConfig[];
 }
 
 export interface RealtimeConfig {

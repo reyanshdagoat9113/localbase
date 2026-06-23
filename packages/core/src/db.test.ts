@@ -121,7 +121,9 @@ describe("Migrations", () => {
     const applied = db.getAppliedMigrations();
     assert.ok(applied.has("users"));
     assert.ok(applied.has("posts"));
-    assert.equal(applied.size, 2);
+    // The storage subsystem adds the `_files` system table automatically.
+    assert.ok(applied.has("_files"));
+    assert.equal(applied.size, 3);
     db.close();
   });
 

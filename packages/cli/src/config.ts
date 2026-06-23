@@ -81,11 +81,59 @@ export async function loadConfig(
   }
 
   validatePolicies(config);
+  validateBuckets(config);
 
   return { configPath, dbPath, dbDir, config };
 }
 
 const IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+const BUCKET_NAME_RE = /^[a-z0-9-]{1,63}$/;
+
+/**
+ * Validate the optional `buckets` (storage) section of the config.
+ * Failures throw {@link ConfigError} with an actionable hint so
+ * misconfiguration is caught at startup.
+ */
+function validateBuckets(config: LocalBaseConfig): void {
+  const buckets = config.buckets;
+  if (buckets === undefined) return;
+
+  if (!Array.isArray(buckets)) {
+    throw new ConfigError(
+      `Invalid config: "buckets" must be an array of bucket definitions.`,
+      `Example: buckets: [{ name: "avatars", public: true }]`
+    );
+  }
+
+  for (const bucket of buckets) {
+    if (
+      !bucket ||
+      typeof bucket !== "object" ||
+      typeof (bucket as { name?: unknown }).name !== "string"
+    ) {
+      throw new ConfigError(
+        `Invalid config: every bucket entry must be an object with a "name" string.`,
+        `Example: { name: "avatars", public: true }`
+      );
+    }
+
+    const name = (bucket as { name: string }).name;
+    if (!BUCKET_NAME_RE.test(name) || name.startsWith("-") || name.endsWith("-")) {
+      throw new ConfigError(
+        `Invalid config: bucket name "${name}" is invalid.`,
+        `Bucket names must be 1-63 lowercase letters, numbers, or hyphens, and cannot start or end with a hyphen.`
+      );
+    }
+
+    const public_ = (bucket as { public?: unknown }).public;
+    if (public_ !== undefined && typeof public_ !== "boolean") {
+      throw new ConfigError(
+        `Invalid config: bucket "${name}" has a non-boolean "public" value.`,
+        `Set "public: true" to make the bucket readable without authentication, or omit it for private (default).`
+      );
+    }
+  }
+}
 
 /**
  * Validate the optional `policies` (Row-Level Security) section of the config.

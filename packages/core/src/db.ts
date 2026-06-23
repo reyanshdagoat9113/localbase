@@ -1,7 +1,9 @@
 import BetterSqlite3 from "better-sqlite3";
 import { EventEmitter } from "node:events";
+import nodePath from "node:path";
 import type {
   AuthConfig,
+  BucketConfig,
   DatabaseSchema,
   IntrospectedSchema,
   RealtimeEvent,
@@ -20,6 +22,8 @@ import {
 } from "./query.js";
 import { introspect as runIntrospect } from "./admin/introspect.js";
 import { AUTH_SCHEMA } from "./auth/index.js";
+import { STORAGE_SCHEMA } from "./storage/schema.js";
+import { StorageEngine } from "./storage/engine.js";
 
 export interface DatabaseOptions {
   /** Path to the SQLite file. Use ":memory:" for in-memory databases. */
@@ -33,6 +37,14 @@ export interface DatabaseOptions {
    * added here automatically.
    */
   auth?: AuthConfig;
+  /**
+   * Root directory for local file storage. Files are written under
+   * `<dataDir>/storage/<bucket>/<stored_name>`. Defaults to the directory
+   * containing the SQLite file, or `process.cwd()` for `:memory:` databases.
+   */
+  dataDir?: string;
+  /** Optional pre-declared storage buckets. */
+  buckets?: BucketConfig[];
   /** If true, automatically run migrations on open. Default: true. */
   autoMigrate?: boolean;
 }
@@ -44,9 +56,11 @@ export interface DatabaseEvents {
 export class Database extends EventEmitter<DatabaseEvents> {
   private db: BetterSqlite3.Database;
   private schema: DatabaseSchema;
-  /** Effective schema including any auth system tables, used for migrations. */
+  /** Effective schema including system tables, used for migrations. */
   private effectiveSchema: DatabaseSchema;
   private authConfig?: AuthConfig;
+  /** Storage engine for file uploads/downloads. */
+  storage: StorageEngine;
 
   constructor(options: DatabaseOptions) {
     super();
@@ -54,17 +68,24 @@ export class Database extends EventEmitter<DatabaseEvents> {
       path = ":memory:",
       schema,
       auth,
+      dataDir,
+      buckets,
       autoMigrate = true,
     } = options;
 
     this.db = new BetterSqlite3(path);
     this.schema = schema;
     this.authConfig = auth;
-    // Auth system tables get the `_` prefix, which `resetDatabase` already
-    // filters out, so user resets never wipe the auth subsystem.
-    this.effectiveSchema = auth?.enabled
-      ? { ...schema, ...AUTH_SCHEMA }
-      : schema;
+
+    // System tables get the `_` prefix, which `resetDatabase` filters out, so
+    // user resets never wipe auth or storage metadata.
+    this.effectiveSchema = { ...schema, ...STORAGE_SCHEMA };
+    if (auth?.enabled) {
+      this.effectiveSchema = { ...this.effectiveSchema, ...AUTH_SCHEMA };
+    }
+
+    const resolvedDataDir =
+      dataDir ?? (path === ":memory:" ? process.cwd() : nodePath.dirname(path));
 
     // Enable foreign keys
     this.db.pragma("foreign_keys = ON");
@@ -73,6 +94,13 @@ export class Database extends EventEmitter<DatabaseEvents> {
     if (autoMigrate) {
       this.migrate();
     }
+
+    // Storage engine is created after migrations so the `_files` table exists.
+    this.storage = new StorageEngine({
+      db: this,
+      root: resolvedDataDir,
+      buckets,
+    });
   }
 
   /** Returns the effective auth config, or undefined if auth is not enabled. */
