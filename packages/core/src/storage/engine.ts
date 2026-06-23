@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { Readable } from "node:stream";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import type { BucketConfig } from "@localbase/shared";
 import type { Database } from "../db.js";
 
@@ -307,7 +308,7 @@ export class StorageEngine {
    * `autoMigrate: false`), we skip index creation. Operations that need the
    * table will fail later with a clear SQLite error.
    */
-  private ensureIndexes(): void {
+  ensureIndexes(): void {
     const exists = this.db.raw()
       .prepare(
         `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_files'`
@@ -346,7 +347,13 @@ function assertValidBucketName(name: string): void {
 }
 
 function assertValidOriginalName(name: string): void {
-  if (typeof name !== "string" || name.length === 0 || ORIGINAL_NAME_RE.test(name)) {
+  if (
+    typeof name !== "string" ||
+    name.length === 0 ||
+    name === "." ||
+    name === ".." ||
+    ORIGINAL_NAME_RE.test(name)
+  ) {
     throw new StorageError(
       400,
       `Invalid original filename: "${name}"`
@@ -364,39 +371,35 @@ function assertNoPathSeparators(name: string): void {
 }
 
 /**
- * Read every chunk from a web stream and write it to disk, returning the
- * total number of bytes written.
+ * Pipe a web stream to disk with Node's backpressure/error handling, returning
+ * the total number of bytes written.
  */
 async function writeStream(
   stream: ReadableStream<Uint8Array>,
   filePath: string
 ): Promise<number> {
-  const nodeStream = fs.createWriteStream(filePath);
-  const reader = stream.getReader();
+  let total = 0;
+  const counter = new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      total += chunk.byteLength;
+      callback(null, chunk);
+    },
+  });
 
   try {
-    let total = 0;
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      nodeStream.write(value);
-    }
-    return new Promise((resolve, reject) => {
-      nodeStream.end(() => resolve(total));
-      nodeStream.on("error", reject);
-    });
+    await pipeline(
+      Readable.fromWeb(stream as unknown as Parameters<typeof Readable.fromWeb>[0]),
+      counter,
+      fs.createWriteStream(filePath)
+    );
+    return total;
   } catch (err) {
     // Clean up partially-written file on error.
-    nodeStream.destroy();
     try {
       fs.unlinkSync(filePath);
     } catch {
       // ignore
     }
     throw err;
-  } finally {
-    reader.releaseLock();
   }
 }

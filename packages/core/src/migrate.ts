@@ -167,8 +167,15 @@ export function resetDatabase(
     db.exec(`DROP TABLE IF EXISTS "${name}"`);
   }
 
-  // Clear migration history
-  db.exec(`DELETE FROM "${MIGRATIONS_TABLE}"`);
+  // Clear migration history only for the user tables we actually dropped.
+  // System tables (auth/storage/etc., prefixed with `_`) are intentionally
+  // preserved above, so their migration records must be preserved too;
+  // otherwise the next migrate would try to CREATE already-existing tables.
+  for (const { name } of userTables) {
+    db.prepare(
+      `DELETE FROM "${MIGRATIONS_TABLE}" WHERE "name" = ? OR "name" LIKE ?`
+    ).run(name, `${name}${COLUMN_MIGRATION_SEPARATOR}%`);
+  }
 
   // Re-enable foreign keys
   db.exec("PRAGMA foreign_keys = ON");

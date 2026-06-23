@@ -222,6 +222,16 @@ describe("StorageEngine", () => {
     );
   });
 
+  it("should reject dot path segments as original names", async () => {
+    await assert.rejects(
+      db.storage.save("documents", {
+        originalName: "..",
+        stream: makeStream("bad"),
+      }),
+      (err) => err instanceof StorageError && /Invalid original filename/.test((err as StorageError).message)
+    );
+  });
+
   it("should keep bucket directories isolated", async () => {
     const saved = await db.storage.save("bucket-a", {
       originalName: "shared.txt",
@@ -255,5 +265,34 @@ describe("StorageEngine", () => {
         }),
       (err) => err instanceof StorageError && /Invalid bucket name/.test(err.message)
     );
+  });
+
+  it("should remain usable after resetting user tables", async () => {
+    const resetTmp = tempDir();
+    const resetDb = new Database({
+      schema: testSchema,
+      dataDir: resetTmp,
+    });
+
+    try {
+      const first = await resetDb.storage.save("documents", {
+        originalName: "before-reset.txt",
+        stream: makeStream("before"),
+      });
+
+      const applied = resetDb.reset();
+      assert.ok(applied.includes("users"));
+      assert.ok(resetDb.storage.get("documents", first.storedName));
+
+      const second = await resetDb.storage.save("documents", {
+        originalName: "after-reset.txt",
+        stream: makeStream("after"),
+      });
+      assert.ok(resetDb.storage.get("documents", second.storedName));
+      assert.equal(resetDb.migrate().length, 0);
+    } finally {
+      resetDb.close();
+      fs.rmSync(resetTmp, { recursive: true, force: true });
+    }
   });
 });

@@ -123,6 +123,7 @@ export class Database extends EventEmitter<DatabaseEvents> {
     if (config.enabled) {
       this.effectiveSchema = {
         ...this.schema,
+        ...STORAGE_SCHEMA,
         ...AUTH_SCHEMA,
       };
       this.migrate();
@@ -134,7 +135,9 @@ export class Database extends EventEmitter<DatabaseEvents> {
    * tables when enabled). Returns the names of newly applied migrations.
    */
   migrate(): string[] {
-    return runMigrations(this.db, this.effectiveSchema);
+    const applied = runMigrations(this.db, this.effectiveSchema);
+    this.storage?.ensureIndexes();
+    return applied;
   }
 
   /**
@@ -148,7 +151,9 @@ export class Database extends EventEmitter<DatabaseEvents> {
    * Drop all user tables and re-run migrations.
    */
   reset(): string[] {
-    return resetDatabase(this.db, this.schema);
+    const applied = resetDatabase(this.db, this.effectiveSchema);
+    this.storage.ensureIndexes();
+    return applied;
   }
 
   /**
