@@ -75,6 +75,15 @@ export { mountAdminStatic, findAdminDistPath } from "./admin/static.js";
 export { introspect } from "./admin/introspect.js";
 export { SYSTEM_TABLES, isSystemTable, assertNotSystemTable } from "./admin/system-tables.js";
 
+// Storage subsystem
+export { StorageEngine, StorageError } from "./storage/engine.js";
+export { STORAGE_SCHEMA } from "./storage/schema.js";
+export type {
+  StoredFile,
+  SaveResult,
+  UploadPayload,
+} from "./storage/engine.js";
+
 // Re-export shared types
 export type {
   ColumnType,
@@ -86,6 +95,7 @@ export type {
   AdminConfig,
   PoliciesConfig,
   OwnerPolicy,
+  BucketConfig,
   IntrospectedColumn,
   IntrospectedTable,
   IntrospectedSchema,

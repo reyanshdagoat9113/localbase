@@ -7,9 +7,9 @@
 ## Priority Order
 
 1. ~~**Auth**~~ — ✅ **Done** (Phase 7)
-2. **Realtime** — biggest perceived value, hardest to do well
-3. **Storage** — needs auth for private buckets
-4. **Admin UI** — differentiator vs dev-only tools
+2. ~~**Realtime**~~ — ✅ **Done** (Phase 8) — biggest perceived value, hardest to do well
+3. **Storage** ➡️ dedicated plan — needs auth for private buckets (auth now exists)
+4. ~~**Admin UI**~~ — ✅ **Done** (Phase 10) — differentiator vs dev-only tools
 5. **Scheduled Jobs** — genuinely useful, simpler scope
 
 Edge Functions are **out of scope**. Developers can just write Node scripts.
@@ -76,7 +76,7 @@ POST /api/auth/refresh     → refresh access token
 
 ---
 
-### Phase 8: Realtime
+### Phase 8: Realtime ✅ DONE
 
 **Goal:** Frontend gets notified instantly when data changes — no polling.
 
@@ -120,9 +120,9 @@ db.subscribe("messages", { where: { room_id: 1 } }, (event) => {
 
 ---
 
-### Phase 10: Admin UI  ➡️  [Dedicated plan](./LOCALBASE-ADMIN-UI.md)
+### Phase 10: Admin UI ✅ DONE  ➡️  [Dedicated plan](./LOCALBASE-ADMIN-UI.md)
 
-> **Promoted to its own plan.** The Admin UI is the one feature where LocalBase is uniquely absent vs. every competitor (see `COMPETITION.md`), and the single biggest perception/adoption lever. Full design, decision record, and milestone breakdown live in [`LOCALBASE-ADMIN-UI.md`](./LOCALBASE-ADMIN-UI.md). The summary below is kept for context.
+> **Promoted to its own plan — now complete.** The Admin UI is the one feature where LocalBase was uniquely absent vs. every competitor (see `COMPETITION.md`), and the single biggest perception/adoption lever. Full design, decision record, and milestone breakdown live in [`LOCALBASE-ADMIN-UI.md`](./LOCALBASE-ADMIN-UI.md). The summary below is kept for context.
 
 **Goal:** A built-in management dashboard for inspecting and editing data without writing code.
 
@@ -175,21 +175,21 @@ localbase studio       → opens browser directly to admin UI (alias)
 
 **Tasks:**
 
-- [ ] Create `packages/core/admin/` subfolder with React app
-- [ ] Add admin build step to `core` package.json (builds into `dist/admin/`)
-- [ ] Add Hono static file route `/_admin/*` serving `dist/admin/` assets
-- [ ] Add `GET /_api/admin/tables` endpoint (list all tables from schema)
-- [ ] Add `GET /_api/admin/:table/rows` endpoint (list rows with pagination, sort, search)
-- [ ] Add `POST /_api/admin/:table/rows` endpoint (insert row)
-- [ ] Add `PATCH /_api/admin/:table/rows/:id` endpoint (update row)
-- [ ] Add `DELETE /_api/admin/:table/rows/:id` endpoint (delete row)
-- [ ] Add `GET /_api/admin/schema` endpoint (return current schema as JSON)
-- [ ] Build table browser: sidebar table list + data grid
-- [ ] Build inline row editor (double-click cell → edit → save)
-- [ ] Build schema viewer panel (shows column names, types, constraints)
-- [ ] Add `localbase studio` CLI command (opens `http://localhost:5180/_/admin` in default browser)
-- [ ] Write integration tests: load admin, list tables, edit row, delete row
-- [ ] Update README with admin UI screenshot
+- [x] Create `packages/core/admin/` subfolder with React app
+- [x] Add admin build step to `core` package.json (builds into `dist/admin/`)
+- [x] Add Hono static file route `/_admin/*` serving `dist/admin/` assets
+- [x] Add `GET /_api/admin/tables` endpoint (list all tables from schema)
+- [x] Add `GET /_api/admin/:table/rows` endpoint (list rows with pagination, sort, search)
+- [x] Add `POST /_api/admin/:table/rows` endpoint (insert row)
+- [x] Add `PATCH /_api/admin/:table/rows/:id` endpoint (update row)
+- [x] Add `DELETE /_api/admin/:table/rows/:id` endpoint (delete row)
+- [x] Add `GET /_api/admin/schema` endpoint (return current schema as JSON)
+- [x] Build table browser: sidebar table list + data grid
+- [x] Build inline row editor (double-click cell → edit → save)
+- [x] Build schema viewer panel (shows column names, types, constraints)
+- [x] Add `localbase studio` CLI command (opens `http://localhost:5180/_/admin` in default browser)
+- [x] Write integration tests: load admin, list tables, edit row, delete row
+- [x] Update README with admin UI screenshot
 
 ---
 
@@ -250,27 +250,29 @@ localbase jobs logs <name>       Show run history for a job
 
 ---
 
-### Phase 9: Storage
+### Phase 9: Storage  ➡️  [Dedicated plan](./LOCALBASE-STORAGE.md)
+
+> **Promoted to its own plan.** Storage is the last missing first-class data primitive and the one remaining phase with a genuinely dangerous security surface (uploads, path traversal, signed URLs). Full decision record, security model, API surface, and milestone breakdown (M1–M4) live in [`LOCALBASE-STORAGE.md`](./LOCALBASE-STORAGE.md). The summary below is kept for context.
 
 **Goal:** File uploads/downloads with bucket abstraction.
 
 **SDK example:**
 
 ```ts
-await storage.from("avatars").upload(file);
-// → { path: "avatars/reyansh.jpg", url: "http://localhost:5180/storage/avatars/reyansh.jpg" }
+await db.storage.from("avatars").upload(file);
+// → { path: "avatars/<uuid>.jpg", storedName: "<uuid>", originalName: "reyansh.jpg", size, mime }
 
-const url = storage.from("avatars").getPublicUrl("reyansh.jpg");
-const signedUrl = await storage.from("documents").createSignedUrl("report.pdf", { expiresIn: 3600 });
+const url    = db.storage.from("avatars").getPublicUrl("reyansh.jpg");
+const signed = await db.storage.from("documents").createSignedUrl("report.pdf", { expiresIn: 3600 });
 ```
 
 **REST API:**
 
 ```
-POST   /api/storage/:bucket              Upload file (multipart)
-GET    /api/storage/:bucket/:filename    Download file
-DELETE /api/storage/:bucket/:filename    Delete file
-GET    /api/storage/:bucket              List files in bucket
+POST   /api/storage/:bucket              Upload file (multipart, auth required)
+GET    /api/storage/:bucket/:filename    Download file (public bucket → open; private → auth or signed URL)
+DELETE /api/storage/:bucket/:filename    Delete file (auth required)
+GET    /api/storage/:bucket              List files in bucket (auth required)
 ```
 
 **File layout:**
@@ -280,41 +282,18 @@ GET    /api/storage/:bucket              List files in bucket
   data.db
   storage/
     avatars/
-      reyansh.jpg
+      <uuid>.jpg        # stored_name is always a server-generated UUID
     documents/
-      report.pdf
+      <uuid>.pdf
 ```
 
-**Implementation:**
-
-| Component | Where | What it does |
-|---|---|---|
-| Storage engine | `packages/core` | Read/write files to `.localbase/storage/` |
-| Upload endpoint | `packages/core` | Multipart parser, writes file |
-| Download endpoint | `packages/core` | Streams file from disk |
-| Metadata table | SQLite | Tracks file metadata (size, mime, uploaded_at) |
-| Signed URLs | `packages/core` | HMAC-signed expiring URLs |
-| SDK | `packages/sdk` | `storage.from(bucket).upload/get/list` |
-
-**Tasks:**
-
-- [ ] Add `buckets` to `LocalBaseConfig` (define buckets in config, or auto-create)
-- [ ] Create `_files` table (id, bucket, filename, size, mime, uploaded_at)
-- [ ] Build storage engine: save file, get file, delete file, list bucket
-- [ ] Add `POST /api/storage/:bucket` endpoint with multipart parsing
-- [ ] Add `GET /api/storage/:bucket/:filename` endpoint (stream file)
-- [ ] Add `DELETE /api/storage/:bucket/:filename` endpoint
-- [ ] Add `GET /api/storage/:bucket` endpoint (list files)
-- [ ] Implement signed URL generation (HMAC + expiry timestamp)
-- [ ] Implement signed URL verification middleware
-- [ ] Add `storage` namespace to SDK
-- [ ] Write integration tests: upload, download, list, delete, signed URL
+**Key decisions (full rationale in the dedicated plan):** private-by-default buckets, UUID `stored_name` with original preserved as metadata, HMAC-SHA256 signed URLs, Hono multipart streamed to disk, storage root under the data dir. Four milestones: M1 engine+metadata → M2 REST API → M3 auth/signed URLs → M4 SDK + Admin browser.
 
 ---
 
 ## Decision Points (Defer Until Needed)
 
-- **Auth for storage** — without auth, all files are public. Defer until auth exists.
+- **Auth for storage** — auth exists now (Phase 7); the public/private bucket decision is captured in Phase 9 (Decision #2).
 - **Realtime row-level security** — without auth, all events go to all subscribers. Defer until auth exists.
 - **Job retries** — if a job fails, should it retry? Defer; just log for now.
 - **Storage quotas** — limit per-bucket size? Defer.
@@ -324,10 +303,10 @@ GET    /api/storage/:bucket              List files in bucket
 
 ## Prerequisites
 
-- Phase 7 (Auth) requires MVP complete (Database + API + SDK foundation)
-- Phase 8 (Realtime) requires MVP complete
-- Phase 9 (Storage) is independent, can ship anytime
-- Phase 10 (Admin UI) requires MVP complete. Optional: Phase 7 (Auth) for login gate, Phase 9 (Storage) for file browser, Phase 8 (Realtime) for inspector.
-- Phase 11 (Scheduled Jobs) requires MVP complete
+- Phase 7 (Auth) ✅ — requires MVP complete (Database + API + SDK foundation)
+- Phase 8 (Realtime) ✅ — requires MVP complete
+- Phase 9 (Storage) — independent, can ship anytime
+- Phase 10 (Admin UI) ✅ — required MVP complete. Optional: Phase 7 (Auth) for login gate, Phase 9 (Storage) for file browser, Phase 8 (Realtime) for inspector.
+- Phase 11 (Scheduled Jobs) — requires MVP complete
 
 Phases 7–11 are independent — build in any order based on demand, except Admin UI benefits from earlier phases.

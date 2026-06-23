@@ -84,6 +84,8 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
       path: dbPath,
       schema: config.tables,
       auth: config.auth,
+      dataDir: dbDir,
+      buckets: config.buckets,
     });
     const applied = db.getAppliedMigrations();
     log.info(`Database: ${path.relative(cwd, dbPath)}`);

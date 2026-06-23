@@ -16,6 +16,8 @@ export async function migrateCommand(): Promise<void> {
     path: dbPath,
     schema: config.tables,
     auth: config.auth,
+    dataDir: dbDir,
+    buckets: config.buckets,
   });
 
   try {
@@ -56,6 +58,8 @@ export async function resetCommand(): Promise<void> {
     path: dbPath,
     schema: config.tables,
     auth: config.auth,
+    dataDir: dbDir,
+    buckets: config.buckets,
   });
 
   try {
