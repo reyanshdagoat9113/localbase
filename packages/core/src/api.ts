@@ -18,6 +18,7 @@ import { resolvePolicies, ownerFilter, stampOwner } from "./rls.js";
 import { createAdminRouter } from "./admin/router.js";
 import { mountAdminStatic } from "./admin/static.js";
 import { AdminError } from "./admin/system-tables.js";
+import { createStorageRouter } from "./storage/router.js";
 
 const RESERVED_PARAMS = new Set(["order", "limit", "offset"]);
 const VALID_OPERATORS: FilterOperator[] = [
@@ -409,6 +410,13 @@ export function createServer(
       );
     }
   }
+
+  // ── Storage router (M2) ──
+  // Mounted before the generic /api/:table routes so /api/storage/* is handled
+  // by typed storage endpoints rather than being treated as a table named
+  // "storage". Auth gates (public/private buckets, signed URLs) are layered on
+  // in M3; this milestone exposes the raw upload/download/delete/list surface.
+  app.route("/", createStorageRouter(db));
 
   // ── Row-Level Security scope resolver ──
   // For each /api/:table request this decides whether the call is scoped to the

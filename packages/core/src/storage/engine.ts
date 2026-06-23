@@ -51,6 +51,8 @@ export interface UploadPayload {
   mime?: string;
   /** Known byte size, if available, for validation and metadata. */
   size?: number;
+  /** Maximum allowed byte size for this upload. Enforced while streaming. */
+  maxSize?: number;
   /** Raw byte stream to persist to disk. */
   stream: ReadableStream<Uint8Array>;
 }
@@ -134,7 +136,7 @@ export class StorageEngine {
 
     fs.mkdirSync(bucketDir, { recursive: true });
 
-    const size = await writeStream(payload.stream, filePath);
+    const size = await writeStream(payload.stream, filePath, payload.maxSize);
 
     let row: StoredFile;
     try {
@@ -373,15 +375,28 @@ function assertNoPathSeparators(name: string): void {
 /**
  * Pipe a web stream to disk with Node's backpressure/error handling, returning
  * the total number of bytes written.
+ *
+ * If `maxSize` is provided, the stream is aborted as soon as the running total
+ * exceeds it and a {@link StorageError} with status 413 is thrown.
  */
 async function writeStream(
   stream: ReadableStream<Uint8Array>,
-  filePath: string
+  filePath: string,
+  maxSize?: number
 ): Promise<number> {
   let total = 0;
   const counter = new Transform({
     transform(chunk: Buffer, _encoding, callback) {
       total += chunk.byteLength;
+      if (maxSize !== undefined && total > maxSize) {
+        callback(
+          new StorageError(
+            413,
+            `File exceeds maximum allowed size of ${maxSize} bytes`
+          )
+        );
+        return;
+      }
       callback(null, chunk);
     },
   });
@@ -392,6 +407,12 @@ async function writeStream(
       counter,
       fs.createWriteStream(filePath)
     );
+    if (maxSize !== undefined && total > maxSize) {
+      throw new StorageError(
+        413,
+        `File exceeds maximum allowed size of ${maxSize} bytes`
+      );
+    }
     return total;
   } catch (err) {
     // Clean up partially-written file on error.
