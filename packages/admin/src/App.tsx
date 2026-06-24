@@ -6,6 +6,7 @@ import { TablesView } from "@/views/TablesView";
 import { SchemaView } from "@/views/SchemaView";
 import { TableDetailView } from "@/views/TableDetailView";
 import { UsersView } from "@/views/UsersView";
+import { StorageView } from "@/views/StorageView";
 import { StubView } from "@/views/StubView";
 
 export default function App() {
@@ -29,16 +30,7 @@ export default function App() {
               />
             }
           />
-          <Route
-            path="storage"
-            element={
-              <StubView
-                title="Storage browser"
-                badge="P9"
-                description="Storage management is gated on Phase 9."
-              />
-            }
-          />
+          <Route path="storage" element={<StorageView />} />
           <Route
             path="jobs"
             element={

@@ -210,11 +210,11 @@ Each milestone is independently shippable and verifiable.
 **Goal:** developers use it from code; admins see it in the dashboard.
 
 **Tasks:**
-- [ ] Add `storage` namespace to SDK: `upload`, `download`, `list`, `remove`, `getPublicUrl`, `createSignedUrl`.
-- [ ] SDK addresses files by `original_name` (resolves via `_files`).
-- [ ] Wire the Admin UI Storage browser (the P1 stub from `LOCALBASE-ADMIN-UI.md`) against `GET /api/storage/:bucket` + delete.
-- [ ] Write SDK integration tests: full upload→download→list→delete cycle, signed URL fetch from an unauthenticated client.
-- [ ] Update README with storage quickstart.
+- [x] Add `storage` namespace to SDK: `upload`, `download`, `list`, `remove`, `getPublicUrl`, `createSignedUrl`.
+- [x] SDK addresses files by `original_name` (resolves via `_files`).
+- [x] Wire the Admin UI Storage browser (the P1 stub from `LOCALBASE-ADMIN-UI.md`) against `GET /api/storage/:bucket` + delete.
+- [x] Write SDK integration tests: full upload→download→list→delete cycle, signed URL fetch from an unauthenticated client.
+- [x] Update README with storage quickstart.
 
 **Done when:** the SDK cycle works end-to-end and the Admin UI can browse + delete files.
 

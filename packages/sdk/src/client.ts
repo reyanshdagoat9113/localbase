@@ -6,12 +6,22 @@ import {
   type RealtimeCallback,
   type SubscribeOptions,
 } from "./realtime.js";
+import {
+  createStorageClient,
+  type StorageClient,
+  type StorageBucketClient,
+  type StorageFile,
+  type UploadResult,
+  type StorageResponse,
+  type CreateSignedUrlOptions,
+} from "./storage.js";
 import type { StoredSession } from "./auth.js";
 import type { RealtimeConfig } from "@localbase/shared";
 
 export interface LocalBaseClient {
   from<T = unknown>(table: string): QueryBuilder<T>;
   auth: AuthClient;
+  storage: StorageClient;
   subscribe<T = unknown>(table: string, callback: RealtimeCallback<T>): () => void;
   subscribe<T = unknown>(
     table: string,
@@ -57,6 +67,7 @@ export function createClient(url: string, options: CreateClientOptions = {}): Lo
   };
 
   const auth = createAuthClient(baseUrl, getSession, setSession);
+  const storage = createStorageClient(baseUrl, () => session?.accessToken);
   const realtime = new RealtimeClient(
     baseUrl,
     () => session?.accessToken,
@@ -69,6 +80,7 @@ export function createClient(url: string, options: CreateClientOptions = {}): Lo
       return new QueryBuilder<T>(baseUrl, table, () => session?.accessToken);
     },
     auth,
+    storage,
     subscribe<T = unknown>(
       table: string,
       optionsOrCallback: SubscribeOptions | RealtimeCallback<T>,

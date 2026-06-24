@@ -358,6 +358,87 @@ AUTH_EMAIL=alice@example.com AUTH_PASSWORD=supersecret \
 
 ---
 
+## Storage
+
+LocalBase ships with a bucket-based file API at `/api/storage/:bucket` for
+upload / download / list / delete, backed by the local filesystem under your
+`.localbase/` data directory. Files are stored under a server-generated UUID
+name (the original name is kept as metadata and restored on download via
+`Content-Disposition`), so user-supplied filenames can never be used for path
+traversal or to overwrite another object.
+
+Buckets are **private by default**. Reads of a private file require auth **or**
+a valid signed URL; writes always require auth, even on public buckets.
+
+```ts
+// localbase.config.ts
+export default {
+  tables: { ... },
+
+  auth: { enabled: true, jwtSecret: process.env.JWT_SECRET },
+
+  // Optional: pre-declare buckets and their visibility. Any bucket not
+  // listed here is created automatically on first upload as private.
+  buckets: [
+    { name: "avatars", public: true },
+    { name: "documents" },          // private (default)
+  ],
+
+  // Optional: a dedicated secret for signing storage URLs. Falls back to
+  // auth.jwtSecret when omitted.
+  storage: {
+    secret: process.env.STORAGE_SECRET,
+    maxFileSize: 50 * 1024 * 1024,  // 50 MiB, the default
+  },
+};
+```
+
+### SDK
+
+```ts
+import { createClient } from "@localbase/sdk";
+
+const db = createClient("http://localhost:5180");
+await db.auth.signIn({ email, password });
+
+const storage = db.storage;
+
+// Upload — returns metadata (originalName, storedName, size, mime).
+const { data, error } = await storage.from("avatars").upload(file);
+
+// Files are addressed by their ORIGINAL name for ergonomics.
+await storage.from("avatars").list();
+const { data: blob } = await storage.from("avatars").download("reyansh.jpg");
+await storage.from("avatars").remove("reyansh.jpg");
+
+// Public buckets: a plain, token-less URL.
+const { data: url } = await storage.from("avatars").getPublicUrl("reyansh.jpg", { absolute: true });
+
+// Private buckets: mint a short-lived signed URL an unauthenticated client
+// (e.g. an <img>) can use. The signing secret never leaves the server.
+const { data: signed } = await storage
+  .from("documents")
+  .createSignedUrl("report.pdf", { expiresIn: 3600 });
+```
+
+### REST endpoints
+
+```
+POST   /api/storage/:bucket                      Upload (multipart, auth)
+GET    /api/storage/:bucket/:filename            Download (public bucket → open;
+                                                 private → auth or signed URL)
+DELETE /api/storage/:bucket/:filename            Delete (auth)
+GET    /api/storage/:bucket                      List files (auth)
+POST   /api/storage/:bucket/:filename/sign       Create a signed URL (auth)
+```
+
+Signed URLs carry `?expires=<unix>&sig=<hmac>`; verify is constant-time and
+expiry-checked. Rotating the storage secret revokes all outstanding signed
+URLs. The Admin UI (LocalBase Studio) includes a Storage browser for listing
+and deleting files.
+
+---
+
 ## Column types
 
 | Type | SQLite mapping | Notes |
@@ -410,9 +491,9 @@ your-project/
 
 ## Roadmap
 
-MVP is complete. Phase 7 (Auth) is also done — see the Authentication
-section above. See [`LOCALBASE-POST-MVP.md`](LOCALBASE-POST-MVP.md) for what's
-next:
+MVP is complete. Phase 7 (Auth) and Phase 9 (Storage) are also done — see the
+relevant sections above. See [`LOCALBASE-POST-MVP.md`](LOCALBASE-POST-MVP.md)
+for what's next:
 
 - **Phase 8:** Realtime (WebSockets + subscriptions)
 - **Phase 9:** Scheduled Jobs (cron + handlers)

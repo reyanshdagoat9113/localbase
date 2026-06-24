@@ -670,6 +670,103 @@ describe("storage write gate (POST / DELETE / GET list)", () => {
   });
 });
 
+// ─── signed-URL generation endpoint (M4) ────────────────────────
+
+describe("storage sign endpoint (POST /api/storage/:bucket/:filename/sign)", () => {
+  let h: Harness;
+  let token: string;
+
+  before(async () => {
+    h = setup();
+    const session = await h.auth.signUp({
+      email: "reyansh@test.com",
+      password: "supersecret",
+    });
+    token = session.accessToken;
+  });
+  after(() => {
+    h.db.close();
+    h.cleanup();
+  });
+
+  it("401 without auth", async () => {
+    const { storedName } = await uploadAndGet(
+      h.app,
+      "private-docs",
+      makeFile("a.pdf", "x"),
+      token
+    );
+    const res = await h.app.request(
+      `/api/storage/private-docs/${storedName}/sign`,
+      { method: "POST" }
+    );
+    assert.equal(res.status, 401);
+  });
+
+  it("returns a signed URL that an unauthenticated client can fetch", async () => {
+    const { storedName } = await uploadAndGet(
+      h.app,
+      "private-docs",
+      makeFile("secret.pdf", "private bytes", "application/pdf"),
+      token
+    );
+
+    const sign = await h.app.request(
+      `/api/storage/private-docs/${storedName}/sign`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ expiresIn: 3600 }),
+      }
+    );
+    assert.equal(sign.status, 200);
+    const { data } = (await sign.json()) as {
+      data: { signedUrl: string; expires: number; expiresIn: number };
+    };
+    assert.ok(data.signedUrl.includes("expires="));
+    assert.ok(data.signedUrl.includes("sig="));
+    assert.equal(data.expiresIn, 3600);
+
+    // The returned URL must work for a client with NO credentials.
+    const get = await h.app.request(data.signedUrl);
+    assert.equal(get.status, 200);
+    assert.equal(await get.text(), "private bytes");
+  });
+
+  it("defaults expiresIn when the body is omitted", async () => {
+    const { storedName } = await uploadAndGet(
+      h.app,
+      "private-docs",
+      makeFile("a.pdf", "x"),
+      token
+    );
+    const sign = await h.app.request(
+      `/api/storage/private-docs/${storedName}/sign`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+    assert.equal(sign.status, 200);
+    const { data } = (await sign.json()) as { data: { expiresIn: number } };
+    assert.equal(data.expiresIn, 3600);
+  });
+
+  it("404s when signing a non-existent file", async () => {
+    const res = await h.app.request(
+      `/api/storage/private-docs/00000000-0000-0000-0000-000000000000/sign`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+    assert.equal(res.status, 404);
+  });
+});
+
 // ─── no-secret fallback (M2 surface preserved) ────────────────
 
 describe("storage without a secret stays open (M2 surface)", () => {

@@ -14,9 +14,12 @@ import {
   createUser,
   resetUserPassword,
   setUserRole,
+  listStorageFiles,
+  deleteStorageFile,
   type AuthUser,
   type UserRole,
   type GetRowsParams,
+  type StorageFile,
 } from "@/lib/api";
 
 export function useSchema() {
@@ -116,4 +119,24 @@ function invalidateUserData(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({ queryKey: ["admin", "schema"] });
 }
 
-export type { AuthUser, UserRole };
+// ─── Storage browser ───────────────────────────────────────────
+
+export function useStorageFiles(bucket: string) {
+  return useQuery({
+    queryKey: ["admin", "storage", bucket],
+    queryFn: () => listStorageFiles(bucket),
+    enabled: bucket.length > 0,
+  });
+}
+
+export function useDeleteStorageFile(bucket: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (storedName: string) => deleteStorageFile(bucket, storedName),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "storage", bucket] });
+    },
+  });
+}
+
+export type { AuthUser, UserRole, StorageFile };

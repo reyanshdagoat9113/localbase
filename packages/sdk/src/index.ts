@@ -10,6 +10,14 @@ export type {
   RealtimeCallback,
   SubscribeOptions,
 } from "./realtime.js";
+export { createStorageClient, StorageBucketClient } from "./storage.js";
+export type {
+  StorageClient,
+  StorageFile,
+  UploadResult,
+  StorageResponse,
+  CreateSignedUrlOptions,
+} from "./storage.js";
 export type {
   AuthUser,
   AuthSession,

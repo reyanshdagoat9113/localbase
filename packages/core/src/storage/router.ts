@@ -2,7 +2,7 @@ import { Hono, type Context } from "hono";
 import type { Database } from "../db.js";
 import { authenticate } from "../auth/index.js";
 import { StorageError, type StoredFile } from "./engine.js";
-import { verifySignedUrl } from "./signed-urls.js";
+import { verifySignedUrl, createSignedUrl } from "./signed-urls.js";
 
 /**
  * Default maximum upload size for a single file: 50 MiB.
@@ -236,7 +236,106 @@ export function createStorageRouter(
     }
   });
 
+  // ── POST /api/storage/:bucket/:filename/sign — create signed URL ──
+  //
+  // Generates a short-lived signed URL that lets an unauthenticated client
+  // read this specific file (e.g. an <img> on a public page). Requires the
+  // write gate (Bearer token) because it uses the storage secret and shares
+  // access to a resource. The secret never leaves the server — the SDK's
+  // `createSignedUrl` calls this endpoint rather than signing locally.
+  //
+  // Disabled when the router is ungated (no secret): without a secret there
+  // is nothing to sign with, and private buckets do not exist (all reads
+  // are open), so signed URLs are meaningless in that mode.
+  router.post("/api/storage/:bucket/:filename/sign", async (c) => {
+    const bucket = c.req.param("bucket");
+    const filename = c.req.param("filename");
+
+    try {
+      if (!gated) {
+        return c.json(
+          { error: "Signed URLs require a storage secret (enable auth or set storage.secret)" },
+          400
+        );
+      }
+      if (!(await passesWriteAuth(c))) {
+        return c.json({ error: "Authentication required" }, 401);
+      }
+
+      // Confirm the file exists before handing out a URL to it.
+      const found = db.storage.get(bucket, filename);
+      if (!found) {
+        return c.json({ error: "File not found" }, 404);
+      }
+
+      const body = (await c.req.json().catch(() => ({}))) as {
+        expiresIn?: number;
+      };
+      const expiresIn = clampExpiresIn(body.expiresIn);
+
+      const expires = Math.floor(Date.now() / 1000) + expiresIn;
+      const origin = originFromRequest(c);
+      const signedUrl = createSignedUrl({
+        bucket,
+        storedName: filename,
+        expiresIn,
+        secret: signedUrlSecret!,
+        baseUrl: origin,
+      });
+
+      return c.json({
+        data: {
+          signedUrl,
+          path: `${bucket}/${filename}`,
+          expires,
+          expiresIn,
+        },
+      });
+    } catch (err) {
+      return storageErrorResponse(c, err);
+    }
+  });
+
   return router;
+}
+
+/** Default + bounds for signed-URL lifetimes offered by the sign endpoint. */
+const DEFAULT_SIGNED_URL_EXPIRES_IN = 3600; // 1 hour
+const MIN_SIGNED_URL_EXPIRES_IN = 1;
+const MAX_SIGNED_URL_EXPIRES_IN = 7 * 24 * 60 * 60; // 7 days
+
+/**
+ * Coerce a client-supplied `expiresIn` (seconds) into a safe integer within
+ * the allowed range. Bad input falls back to the default rather than 400-ing,
+ * so a missing/invalid body still yields a usable URL.
+ */
+function clampExpiresIn(input: number | undefined): number {
+  const n = typeof input === "number" && Number.isFinite(input) ? input : DEFAULT_SIGNED_URL_EXPIRES_IN;
+  return Math.min(
+    MAX_SIGNED_URL_EXPIRES_IN,
+    Math.max(MIN_SIGNED_URL_EXPIRES_IN, Math.trunc(n))
+  );
+}
+
+/**
+ * Best-effort absolute origin for the signed URL. Prefers the `Forwarded`
+ * / `X-Forwarded-*` headers (so URLs work behind a proxy), then falls back
+ * to the request's own host. When neither yields an origin (e.g. a unit
+ * test hitting `app.request` with no host), the signed URL is returned
+ * root-relative and the caller can prefix it.
+ */
+function originFromRequest(c: Context): string | undefined {
+  const url = new URL(c.req.url);
+  // Honor a forwarded proto/host so signed URLs survive a reverse proxy.
+  const fwdProto = c.req.header("x-forwarded-proto");
+  const fwdHost = c.req.header("x-forwarded-host");
+  if (fwdHost) {
+    return `${(fwdProto ?? "https").split(",")[0].trim()}://${fwdHost.split(",")[0].trim()}`;
+  }
+  if (url.host) {
+    return `${url.protocol}//${url.host}`;
+  }
+  return undefined;
 }
 
 function contentDisposition(originalName: string): string {

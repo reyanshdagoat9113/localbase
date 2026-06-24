@@ -308,3 +308,42 @@ export function setUserRole(
     { method: "PATCH", body: JSON.stringify({ role }) }
   );
 }
+
+// ─── Storage (/api/storage/*) ──────────────────────────────────
+//
+// The admin Storage browser talks to the *public* storage REST surface,
+// not the admin API. These endpoints are gated by the storage read/write
+// auth checks (a valid Bearer token), which the admin session satisfies —
+// `request()` attaches the token automatically and handles refresh on 401.
+// Buckets are browsed by name; files are keyed by their server `storedName`.
+
+export interface StorageFile {
+  id: number;
+  bucket: string;
+  storedName: string;
+  originalName: string;
+  size: number;
+  mime: string | null;
+  uploadedAt: string;
+}
+
+export interface StorageFilesResponse {
+  files: StorageFile[];
+  total: number;
+}
+
+export function listStorageFiles(bucket: string): Promise<StorageFilesResponse> {
+  return request<StorageFilesResponse>(
+    `/api/storage/${encodeURIComponent(bucket)}`
+  );
+}
+
+export function deleteStorageFile(
+  bucket: string,
+  storedName: string
+): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>(
+    `/api/storage/${encodeURIComponent(bucket)}/${encodeURIComponent(storedName)}`,
+    { method: "DELETE" }
+  );
+}
