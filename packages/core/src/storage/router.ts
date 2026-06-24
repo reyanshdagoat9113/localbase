@@ -1,6 +1,8 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import type { Database } from "../db.js";
+import { authenticate } from "../auth/index.js";
 import { StorageError, type StoredFile } from "./engine.js";
+import { verifySignedUrl } from "./signed-urls.js";
 
 /**
  * Default maximum upload size for a single file: 50 MiB.
@@ -16,17 +18,40 @@ export interface StorageRouterOptions {
    * @default DEFAULT_MAX_FILE_SIZE
    */
   maxFileSize?: number;
+  /**
+   * Secret used to verify Bearer access tokens for storage auth gates.
+   * Usually the resolved auth JWT secret.
+   */
+  authSecret?: string;
+  /**
+   * Secret used to verify signed storage URLs. Defaults to `authSecret`.
+   */
+  signedUrlSecret?: string;
+  /**
+   * Back-compat alias used as both `authSecret` and `signedUrlSecret` when
+   * the more specific secrets are omitted.
+   */
+  secret?: string;
 }
 
 /**
  * Hono router exposing the storage REST API at `/api/storage/*`.
  *
  * The host server mounts this at the root with
- * `app.route("/", createStorageRouter(db))`, so paths are absolute.
+ * `app.route("/", createStorageRouter(db, { authSecret, signedUrlSecret }))`,
+ * so paths are absolute.
  *
- * This router intentionally has no auth gate — that is layered on by the host
- * in M3. M2 only concerns itself with the multipart/file plumbing and the
- * basic `{ data } | { error }` response shape.
+ * Security gates (M3):
+ *   - Write gate — `POST` (upload), `DELETE`, and `GET /:bucket` (list)
+ *     always require a valid Bearer token, regardless of bucket visibility.
+ *   - Read gate — `GET /:bucket/:filename` is open for public buckets; for
+ *     private buckets it requires either a valid signed URL
+ *     (`?expires=&sig=`) or a Bearer token, else 401.
+ *
+ * Gates are active when an auth secret is provided (auth enabled). Without
+ * one — a server running with auth disabled — storage stays open, preserving
+ * the M2 surface. Signed URLs use the dedicated storage secret when provided,
+ * otherwise the auth secret.
  */
 export function createStorageRouter(
   db: Database,
@@ -35,11 +60,70 @@ export function createStorageRouter(
   const router = new Hono();
   const maxFileSize = options.maxFileSize ?? DEFAULT_MAX_FILE_SIZE;
 
-  // ── POST /api/storage/:bucket — upload file ──────────────────
+  // ── M3 security gates ──────────────────────────────────────
+  // When an auth secret is configured (auth enabled), the read and write
+  // gates below are active. Without auth, storage stays open, matching the M2
+  // surface. Signed URLs are bound to the dedicated storage secret if present,
+  // otherwise to the auth secret.
+  const authSecret = options.authSecret ?? options.secret;
+  const signedUrlSecret = options.signedUrlSecret ?? options.secret ?? authSecret;
+  const gated = Boolean(authSecret);
+
+  /**
+   * Write gate (upload / delete / list). Writes always require a valid
+   * Bearer token, regardless of bucket visibility — a public bucket is open
+   * for *reads*, not for writes. Signed URLs are read-only credentials and
+   * are never accepted here.
+   */
+  async function passesWriteAuth(c: Context): Promise<boolean> {
+    if (!gated) return true;
+    const user = await authenticate(c, authSecret!);
+    return user !== null;
+  }
+
+  /**
+   * Read gate (file download). Branches:
+   *   1. public bucket    → open;
+   *   2. valid signed URL → open (lets unauthenticated clients read a private
+   *      file, e.g. an `<img>` on a public page);
+   *   3. valid Bearer token → open;
+   *   4. otherwise → reject (handler returns 401).
+   * `isPublic` validates the bucket name and throws StorageError(400) on an
+   * invalid name, which the handler's try/catch maps to a 400.
+   */
+  async function passesReadGate(
+    c: Context,
+    bucket: string,
+    storedName: string
+  ): Promise<boolean> {
+    if (!gated) return true;
+    if (db.storage.isPublic(bucket)) return true;
+    const url = new URL(c.req.url);
+    if (
+      verifySignedUrl({
+        bucket,
+        storedName,
+        query: {
+          expires: url.searchParams.get("expires"),
+          sig: url.searchParams.get("sig"),
+        },
+        secret: signedUrlSecret!,
+      })
+    ) {
+      return true;
+    }
+    const user = await authenticate(c, authSecret!);
+    return user !== null;
+  }
+
+  // ── POST /api/storage/:bucket — upload file (auth required) ──
   router.post("/api/storage/:bucket", async (c) => {
     const bucket = c.req.param("bucket");
 
     try {
+      if (!(await passesWriteAuth(c))) {
+        return c.json({ error: "Authentication required" }, 401);
+      }
       const body = await c.req.parseBody({ all: false });
       const file = body.file;
 
@@ -85,6 +169,9 @@ export function createStorageRouter(
     const filename = c.req.param("filename");
 
     try {
+      if (!(await passesReadGate(c, bucket, filename))) {
+        return c.json({ error: "Authentication required" }, 401);
+      }
       const found = db.storage.get(bucket, filename);
       if (!found) {
         return c.json({ error: "File not found" }, 404);
@@ -104,12 +191,15 @@ export function createStorageRouter(
     }
   });
 
-  // ── DELETE /api/storage/:bucket/:filename — delete file ──────
+  // ── DELETE /api/storage/:bucket/:filename — delete file (auth required) ──
   router.delete("/api/storage/:bucket/:filename", async (c) => {
     const bucket = c.req.param("bucket");
     const filename = c.req.param("filename");
 
     try {
+      if (!(await passesWriteAuth(c))) {
+        return c.json({ error: "Authentication required" }, 401);
+      }
       const deleted = db.storage.delete(bucket, filename);
       if (!deleted) {
         return c.json({ error: "File not found" }, 404);
@@ -120,11 +210,14 @@ export function createStorageRouter(
     }
   });
 
-  // ── GET /api/storage/:bucket — list files ────────────────────
+  // ── GET /api/storage/:bucket — list files (auth required) ────
   router.get("/api/storage/:bucket", async (c) => {
     const bucket = c.req.param("bucket");
 
     try {
+      if (!(await passesWriteAuth(c))) {
+        return c.json({ error: "Authentication required" }, 401);
+      }
       const url = new URL(c.req.url);
       const { limit, offset } = parsePagination(url);
 

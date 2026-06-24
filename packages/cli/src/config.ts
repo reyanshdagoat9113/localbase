@@ -82,6 +82,7 @@ export async function loadConfig(
 
   validatePolicies(config);
   validateBuckets(config);
+  validateStorage(config);
 
   return { configPath, dbPath, dbDir, config };
 }
@@ -132,6 +133,48 @@ function validateBuckets(config: LocalBaseConfig): void {
         `Set "public: true" to make the bucket readable without authentication, or omit it for private (default).`
       );
     }
+  }
+}
+
+/**
+ * Validate the optional `storage` section of the config. Failures throw
+ * {@link ConfigError} with an actionable hint so misconfiguration is caught
+ * at startup rather than silently at request time.
+ */
+function validateStorage(config: LocalBaseConfig): void {
+  const storage = config.storage;
+  if (storage === undefined) return;
+
+  if (
+    typeof storage !== "object" ||
+    storage === null ||
+    Array.isArray(storage)
+  ) {
+    throw new ConfigError(
+      `Invalid config: "storage" must be an object.`,
+      `Example: storage: { secret: process.env.STORAGE_SECRET, maxFileSize: 10485760 }`
+    );
+  }
+
+  const secret = (storage as { secret?: unknown }).secret;
+  if (secret !== undefined && typeof secret !== "string") {
+    throw new ConfigError(
+      `Invalid config: "storage.secret" must be string.`,
+      `Set it to a long random value, or omit it to fall back to auth.jwtSecret.`
+    );
+  }
+
+  const maxFileSize = (storage as { maxFileSize?: unknown }).maxFileSize;
+  if (
+    maxFileSize !== undefined &&
+    (typeof maxFileSize !== "number" ||
+      !Number.isFinite(maxFileSize) ||
+      maxFileSize <= 0)
+  ) {
+    throw new ConfigError(
+      `Invalid config: "storage.maxFileSize" must be a positive number of bytes.`,
+      `Example: storage: { maxFileSize: 52428800 } // 50 MiB`
+    );
   }
 }
 

@@ -105,6 +105,7 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
       auth: config.auth,
       admin: { enabled: true },
       policies: config.policies,
+      storage: config.storage,
     });
 
     // Start HTTP server
