@@ -19,11 +19,17 @@ export interface StorageRouterOptions {
    */
   maxFileSize?: number;
   /**
-   * Secret used to sign and verify storage URLs, and to gate the read/write
-   * auth checks. When set, the security gates are active. When omitted
-   * (auth disabled and no dedicated storage secret), storage is open —
-   * matching the M2 surface. The host resolves this as
-   * `storage.secret ?? auth.jwtSecret` (see {@link createServer}).
+   * Secret used to verify Bearer access tokens for storage auth gates.
+   * Usually the resolved auth JWT secret.
+   */
+  authSecret?: string;
+  /**
+   * Secret used to verify signed storage URLs. Defaults to `authSecret`.
+   */
+  signedUrlSecret?: string;
+  /**
+   * Back-compat alias used as both `authSecret` and `signedUrlSecret` when
+   * the more specific secrets are omitted.
    */
   secret?: string;
 }
@@ -32,7 +38,8 @@ export interface StorageRouterOptions {
  * Hono router exposing the storage REST API at `/api/storage/*`.
  *
  * The host server mounts this at the root with
- * `app.route("/", createStorageRouter(db, { secret }))`, so paths are absolute.
+ * `app.route("/", createStorageRouter(db, { authSecret, signedUrlSecret }))`,
+ * so paths are absolute.
  *
  * Security gates (M3):
  *   - Write gate — `POST` (upload), `DELETE`, and `GET /:bucket` (list)
@@ -41,9 +48,10 @@ export interface StorageRouterOptions {
  *     private buckets it requires either a valid signed URL
  *     (`?expires=&sig=`) or a Bearer token, else 401.
  *
- * Gates are active only when a `secret` is provided (auth enabled, or a
- * dedicated storage secret set). Without one — a server running with auth
- * disabled — storage stays open, preserving the M2 surface.
+ * Gates are active when an auth secret is provided (auth enabled). Without
+ * one — a server running with auth disabled — storage stays open, preserving
+ * the M2 surface. Signed URLs use the dedicated storage secret when provided,
+ * otherwise the auth secret.
  */
 export function createStorageRouter(
   db: Database,
@@ -53,13 +61,13 @@ export function createStorageRouter(
   const maxFileSize = options.maxFileSize ?? DEFAULT_MAX_FILE_SIZE;
 
   // ── M3 security gates ──────────────────────────────────────
-  // When a `secret` is configured (auth enabled, or a dedicated storage
-  // secret), the read and write gates below are active. Without a secret —
-  // e.g. a server running with auth disabled — storage stays open, matching
-  // the M2 surface. Signed URLs are bound to the secret, so they can only be
-  // issued when one is present.
-  const secret = options.secret;
-  const gated = Boolean(secret);
+  // When an auth secret is configured (auth enabled), the read and write
+  // gates below are active. Without auth, storage stays open, matching the M2
+  // surface. Signed URLs are bound to the dedicated storage secret if present,
+  // otherwise to the auth secret.
+  const authSecret = options.authSecret ?? options.secret;
+  const signedUrlSecret = options.signedUrlSecret ?? options.secret ?? authSecret;
+  const gated = Boolean(authSecret);
 
   /**
    * Write gate (upload / delete / list). Writes always require a valid
@@ -69,7 +77,7 @@ export function createStorageRouter(
    */
   async function passesWriteAuth(c: Context): Promise<boolean> {
     if (!gated) return true;
-    const user = await authenticate(c, secret!);
+    const user = await authenticate(c, authSecret!);
     return user !== null;
   }
 
@@ -99,12 +107,12 @@ export function createStorageRouter(
           expires: url.searchParams.get("expires"),
           sig: url.searchParams.get("sig"),
         },
-        secret: secret!,
+        secret: signedUrlSecret!,
       })
     ) {
       return true;
     }
-    const user = await authenticate(c, secret!);
+    const user = await authenticate(c, authSecret!);
     return user !== null;
   }
 

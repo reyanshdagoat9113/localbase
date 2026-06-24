@@ -478,6 +478,61 @@ describe("storage read gate (GET /api/storage/:bucket/:filename)", () => {
     assert.equal(res.status, 200);
   });
 
+  it("supports a dedicated storage secret without breaking Bearer auth", async () => {
+    const tmp = tempDir();
+    const storageSecret = "dedicated-storage-secret";
+    const db = new Database({
+      schema: testSchema,
+      auth: authConfig,
+      dataDir: tmp,
+    });
+    const app = createServer(db, testSchema, {
+      auth: authConfig,
+      storage: { secret: storageSecret },
+    });
+    const auth = new Auth(db, {
+      jwtSecret: TEST_SECRET,
+      accessTokenExpiry: "1h",
+      refreshTokenExpirySeconds: 86400,
+      minPasswordLength: 8,
+    });
+
+    try {
+      const session = await auth.signUp({
+        email: "dedicated-secret@test.com",
+        password: "supersecret",
+      });
+      const { storedName } = await uploadAndGet(
+        app,
+        "private-docs",
+        makeFile("report.pdf", "report body", "application/pdf"),
+        session.accessToken
+      );
+
+      const signedWithStorageSecret = createSignedUrl({
+        bucket: "private-docs",
+        storedName,
+        expiresIn: 3600,
+        secret: storageSecret,
+      });
+      const signedRead = await app.request(signedWithStorageSecret);
+      assert.equal(signedRead.status, 200);
+      assert.equal(await signedRead.text(), "report body");
+
+      const signedWithJwtSecret = createSignedUrl({
+        bucket: "private-docs",
+        storedName,
+        expiresIn: 3600,
+        secret: TEST_SECRET,
+      });
+      const wrongSecretRead = await app.request(signedWithJwtSecret);
+      assert.equal(wrongSecretRead.status, 401);
+    } finally {
+      db.close();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it("private bucket: 404 (not 401) once authenticated but file missing", async () => {
     const res = await h.app.request(
       `/api/storage/private-docs/00000000-0000-0000-0000-000000000000`,
