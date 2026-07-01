@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useStorageFiles, useDeleteStorageFile } from "@/hooks/useAdmin";
-import { ApiError } from "@/lib/api";
+import { ApiError, createStorageSignedUrl } from "@/lib/api";
 import { ErrorState, LoadingState, PageHeader, Panel } from "@/views/State";
 
 /**
@@ -41,6 +41,16 @@ export function StorageView() {
     } catch (err) {
       setBannerError(toMessage(err));
       setConfirmDelete(null);
+    }
+  }
+
+  async function openFile(storedName: string) {
+    setBannerError(null);
+    try {
+      const { signedUrl } = await createStorageSignedUrl(bucket, storedName);
+      window.open(signedUrl, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      setBannerError(toMessage(err));
     }
   }
 
@@ -132,14 +142,13 @@ export function StorageView() {
                     </td>
                     <td className="py-2 pr-4">
                       <div className="flex justify-end gap-2">
-                        <a
-                          href={`/api/storage/${encodeURIComponent(bucket)}/${encodeURIComponent(file.storedName)}`}
-                          target="_blank"
-                          rel="noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => openFile(file.storedName)}
                           className="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent"
                         >
                           Open
-                        </a>
+                        </button>
                         <button
                           type="button"
                           onClick={() =>

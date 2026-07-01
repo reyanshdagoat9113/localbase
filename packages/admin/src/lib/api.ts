@@ -347,3 +347,13 @@ export function deleteStorageFile(
     { method: "DELETE" }
   );
 }
+
+export function createStorageSignedUrl(
+  bucket: string,
+  storedName: string
+): Promise<{ signedUrl: string }> {
+  return request<{ signedUrl: string }>(
+    `/api/storage/${encodeURIComponent(bucket)}/${encodeURIComponent(storedName)}/sign`,
+    { method: "POST", body: JSON.stringify({ expiresIn: 300 }) }
+  );
+}

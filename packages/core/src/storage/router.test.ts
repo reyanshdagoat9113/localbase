@@ -5,8 +5,18 @@ import path from "node:path";
 import os from "node:os";
 import { Database } from "../db.js";
 import { createServer } from "../api.js";
+import { Auth } from "../auth/index.js";
 import type { DatabaseSchema } from "@localbase/shared";
 import type { Hono } from "hono";
+
+const TEST_SECRET = "test-secret-key-32-bytes-or-longer";
+
+const authConfig = {
+  enabled: true,
+  jwtSecret: TEST_SECRET,
+  accessTokenExpiry: "1h",
+  minPasswordLength: 8,
+} as const;
 
 const testSchema: DatabaseSchema = {
   users: {
@@ -29,6 +39,10 @@ function makeUploadForm(file: File): FormData {
   return form;
 }
 
+function authHeaders(token: string): Record<string, string> {
+  return { Authorization: `Bearer ${token}` };
+}
+
 async function readResponseBody(res: Response): Promise<string> {
   return res.text();
 }
@@ -37,14 +51,27 @@ describe("Storage REST API", () => {
   let db: Database;
   let app: Hono;
   let tmp: string;
+  let token: string;
 
-  before(() => {
+  before(async () => {
     tmp = tempDir();
     db = new Database({
       schema: testSchema,
+      auth: authConfig,
       dataDir: tmp,
     });
-    app = createServer(db, testSchema);
+    app = createServer(db, testSchema, { auth: authConfig });
+    const auth = new Auth(db, {
+      jwtSecret: TEST_SECRET,
+      accessTokenExpiry: "1h",
+      refreshTokenExpirySeconds: 86400,
+      minPasswordLength: 8,
+    });
+    const session = await auth.signUp({
+      email: "storage-router@test.com",
+      password: "supersecret",
+    });
+    token = session.accessToken;
   });
 
   after(() => {
@@ -57,6 +84,7 @@ describe("Storage REST API", () => {
       const file = makeFile("report.pdf", "hello world", "application/pdf");
       const res = await app.request("/api/storage/documents", {
         method: "POST",
+        headers: authHeaders(token),
         body: makeUploadForm(file),
       });
 
@@ -72,6 +100,7 @@ describe("Storage REST API", () => {
     it("should reject requests without a file", async () => {
       const res = await app.request("/api/storage/documents", {
         method: "POST",
+        headers: authHeaders(token),
         body: new FormData(),
       });
 
@@ -84,16 +113,29 @@ describe("Storage REST API", () => {
       const limitedTmp = tempDir();
       const limitedDb = new Database({
         schema: testSchema,
+        auth: authConfig,
         dataDir: limitedTmp,
       });
       const limitedApp = createServer(limitedDb, testSchema, {
+        auth: authConfig,
         storage: { maxFileSize: 5 },
+      });
+      const limitedAuth = new Auth(limitedDb, {
+        jwtSecret: TEST_SECRET,
+        accessTokenExpiry: "1h",
+        refreshTokenExpirySeconds: 86400,
+        minPasswordLength: 8,
+      });
+      const limitedSession = await limitedAuth.signUp({
+        email: "limited-router@test.com",
+        password: "supersecret",
       });
 
       try {
         const big = makeFile("big.bin", "123456");
         const res = await limitedApp.request("/api/storage/documents", {
           method: "POST",
+          headers: authHeaders(limitedSession.accessToken),
           body: makeUploadForm(big),
         });
 
@@ -110,6 +152,7 @@ describe("Storage REST API", () => {
       const file = makeFile("ok.txt", "ok");
       const res = await app.request("/api/storage/BadBucket", {
         method: "POST",
+        headers: authHeaders(token),
         body: makeUploadForm(file),
       });
 
@@ -122,6 +165,7 @@ describe("Storage REST API", () => {
       const file = makeFile("bad\nname.txt", "ok");
       const res = await app.request("/api/storage/documents", {
         method: "POST",
+        headers: authHeaders(token),
         body: makeUploadForm(file),
       });
 
@@ -136,12 +180,14 @@ describe("Storage REST API", () => {
       const file = makeFile("reyansh.jpg", "image bytes", "image/jpeg");
       const upload = await app.request("/api/storage/avatars", {
         method: "POST",
+        headers: authHeaders(token),
         body: makeUploadForm(file),
       });
       const { data } = (await upload.json()) as { data: { storedName: string } };
 
       const res = await app.request(
-        `/api/storage/avatars/${data.storedName}`
+        `/api/storage/avatars/${data.storedName}`,
+        { headers: authHeaders(token) }
       );
 
       assert.equal(res.status, 200);
@@ -156,7 +202,8 @@ describe("Storage REST API", () => {
 
     it("should return 404 for unknown stored name", async () => {
       const res = await app.request(
-        "/api/storage/avatars/00000000-0000-0000-0000-000000000000"
+        "/api/storage/avatars/00000000-0000-0000-0000-000000000000",
+        { headers: authHeaders(token) }
       );
 
       const { status, body } = await parseJson(res);
@@ -166,7 +213,8 @@ describe("Storage REST API", () => {
 
     it("should return 404 for unknown bucket", async () => {
       const res = await app.request(
-        "/api/storage/unknown/00000000-0000-0000-0000-000000000000"
+        "/api/storage/unknown/00000000-0000-0000-0000-000000000000",
+        { headers: authHeaders(token) }
       );
 
       const { status, body } = await parseJson(res);
@@ -179,14 +227,18 @@ describe("Storage REST API", () => {
     it("should list files in a bucket", async () => {
       await app.request("/api/storage/photos", {
         method: "POST",
+        headers: authHeaders(token),
         body: makeUploadForm(makeFile("a.png", "a", "image/png")),
       });
       await app.request("/api/storage/photos", {
         method: "POST",
+        headers: authHeaders(token),
         body: makeUploadForm(makeFile("b.png", "b", "image/png")),
       });
 
-      const res = await app.request("/api/storage/photos");
+      const res = await app.request("/api/storage/photos", {
+        headers: authHeaders(token),
+      });
       const { status, body } = await parseJson(res);
 
       assert.equal(status, 200);
@@ -198,18 +250,23 @@ describe("Storage REST API", () => {
     it("should paginate list results", async () => {
       await app.request("/api/storage/paged", {
         method: "POST",
+        headers: authHeaders(token),
         body: makeUploadForm(makeFile("1.txt", "1")),
       });
       await app.request("/api/storage/paged", {
         method: "POST",
+        headers: authHeaders(token),
         body: makeUploadForm(makeFile("2.txt", "2")),
       });
       await app.request("/api/storage/paged", {
         method: "POST",
+        headers: authHeaders(token),
         body: makeUploadForm(makeFile("3.txt", "3")),
       });
 
-      const res = await app.request("/api/storage/paged?limit=2&offset=0");
+      const res = await app.request("/api/storage/paged?limit=2&offset=0", {
+        headers: authHeaders(token),
+      });
       const { status, body } = await parseJson(res);
 
       assert.equal(status, 200);
@@ -218,7 +275,9 @@ describe("Storage REST API", () => {
     });
 
     it("should return 400 for invalid pagination", async () => {
-      const res = await app.request("/api/storage/photos?limit=abc");
+      const res = await app.request("/api/storage/photos?limit=abc", {
+        headers: authHeaders(token),
+      });
       const { status } = await parseJson(res);
       assert.equal(status, 400);
     });
@@ -229,26 +288,30 @@ describe("Storage REST API", () => {
       const file = makeFile("temp.txt", "delete me");
       const upload = await app.request("/api/storage/trash", {
         method: "POST",
+        headers: authHeaders(token),
         body: makeUploadForm(file),
       });
       const { data } = (await upload.json()) as { data: { storedName: string } };
 
       const res = await app.request(`/api/storage/trash/${data.storedName}`, {
         method: "DELETE",
+        headers: authHeaders(token),
       });
 
       const { status, body } = await parseJson(res);
       assert.equal(status, 200);
       assert.equal(body.data.deleted, true);
 
-      const after = await app.request(`/api/storage/trash/${data.storedName}`);
+      const after = await app.request(`/api/storage/trash/${data.storedName}`, {
+        headers: authHeaders(token),
+      });
       assert.equal(after.status, 404);
     });
 
     it("should return 404 for non-existent file", async () => {
       const res = await app.request(
         "/api/storage/trash/00000000-0000-0000-0000-000000000000",
-        { method: "DELETE" }
+        { method: "DELETE", headers: authHeaders(token) }
       );
 
       const { status, body } = await parseJson(res);
@@ -262,17 +325,35 @@ describe("Storage REST API", () => {
       const limitedTmp = tempDir();
       const limitedDb = new Database({
         schema: testSchema,
+        auth: authConfig,
         dataDir: limitedTmp,
+      });
+      const limitedAuth = new Auth(limitedDb, {
+        jwtSecret: TEST_SECRET,
+        accessTokenExpiry: "1h",
+        refreshTokenExpirySeconds: 86400,
+        minPasswordLength: 8,
+      });
+      const limitedSession = await limitedAuth.signUp({
+        email: "limited-direct@test.com",
+        password: "supersecret",
       });
       const { createStorageRouter } = await import("./router.js");
       const { Hono } = await import("hono");
       const limitedApp = new Hono();
-      limitedApp.route("/", createStorageRouter(limitedDb, { maxFileSize: 5 }));
+      limitedApp.route(
+        "/",
+        createStorageRouter(limitedDb, {
+          authSecret: TEST_SECRET,
+          maxFileSize: 5,
+        })
+      );
 
       try {
         const file = makeFile("too-big.txt", "123456");
         const res = await limitedApp.request("/api/storage/docs", {
           method: "POST",
+          headers: authHeaders(limitedSession.accessToken),
           body: makeUploadForm(file),
         });
 

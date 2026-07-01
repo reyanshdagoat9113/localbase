@@ -421,8 +421,8 @@ export function createServer(
   // Security gate wiring (M3): Bearer-token checks must always use the
   // resolved auth JWT secret, while signed URLs use the dedicated
   // `storage.secret` if provided, otherwise the auth secret. When auth is
-  // disabled (`resolvedSecret` undefined), the router stays open — matching
-  // the M2 surface.
+  // disabled (`resolvedSecret` undefined), writes/listing and private reads
+  // fail closed; public bucket reads can still be served.
   const signedUrlSecret = normalized.storage?.secret ?? resolvedSecret;
   app.route(
     "/",

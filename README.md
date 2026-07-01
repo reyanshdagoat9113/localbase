@@ -369,6 +369,8 @@ traversal or to overwrite another object.
 
 Buckets are **private by default**. Reads of a private file require auth **or**
 a valid signed URL; writes always require auth, even on public buckets.
+If auth is disabled, writes/listing and private reads fail closed; public bucket
+reads still work.
 
 ```ts
 // localbase.config.ts

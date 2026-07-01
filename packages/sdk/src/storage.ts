@@ -92,11 +92,14 @@ export class StorageBucketClient {
    */
   private async resolveStoredName(
     originalName: string
-  ): Promise<string | null> {
+  ): Promise<StorageResponse<string>> {
     const { data, error } = await this.list();
-    if (error || !data) return null;
+    if (error) return { data: null, error };
+    if (!data) return { data: null, error: `File not found: "${originalName}"` };
     const match = data.find((f) => f.originalName === originalName);
-    return match?.storedName ?? null;
+    return match
+      ? { data: match.storedName, error: null }
+      : { data: null, error: `File not found: "${originalName}"` };
   }
 
   /**
@@ -159,11 +162,11 @@ export class StorageBucketClient {
     originalName: string
   ): Promise<StorageResponse<Blob>> {
     try {
-      const storedName = await this.resolveStoredName(originalName);
-      if (!storedName) {
-        return { data: null, error: `File not found: "${originalName}"` };
+      const resolved = await this.resolveStoredName(originalName);
+      if (resolved.error || !resolved.data) {
+        return { data: null, error: resolved.error };
       }
-      const res = await fetch(this.fileUrl(storedName), {
+      const res = await fetch(this.fileUrl(resolved.data), {
         headers: this.authHeader(),
       });
       if (!res.ok) {
@@ -192,12 +195,12 @@ export class StorageBucketClient {
     originalName: string
   ): Promise<StorageResponse<{ deleted: boolean }>> {
     try {
-      const storedName = await this.resolveStoredName(originalName);
-      if (!storedName) {
-        return { data: null, error: `File not found: "${originalName}"` };
+      const resolved = await this.resolveStoredName(originalName);
+      if (resolved.error || !resolved.data) {
+        return { data: null, error: resolved.error };
       }
       return this.sendJson<{ deleted: boolean }>(
-        this.fileUrl(storedName),
+        this.fileUrl(resolved.data),
         "DELETE"
       );
     } catch (err) {
@@ -220,11 +223,13 @@ export class StorageBucketClient {
     originalName: string,
     options: { absolute?: boolean } = {}
   ): Promise<StorageResponse<string>> {
-    const storedName = await this.resolveStoredName(originalName);
-    if (!storedName) {
-      return { data: null, error: `File not found: "${originalName}"` };
+    const resolved = await this.resolveStoredName(originalName);
+    if (resolved.error || !resolved.data) {
+      return { data: null, error: resolved.error };
     }
-    const relative = `/api/storage/${encodeURIComponent(this.bucket)}/${encodeURIComponent(storedName)}`;
+    const relative = `/api/storage/${encodeURIComponent(this.bucket)}/${encodeURIComponent(
+      resolved.data
+    )}`;
     const url = options.absolute ? `${this.baseUrl}${relative}` : relative;
     return { data: url, error: null };
   }
@@ -242,12 +247,12 @@ export class StorageBucketClient {
     options: CreateSignedUrlOptions = {}
   ): Promise<StorageResponse<string>> {
     try {
-      const storedName = await this.resolveStoredName(originalName);
-      if (!storedName) {
-        return { data: null, error: `File not found: "${originalName}"` };
+      const resolved = await this.resolveStoredName(originalName);
+      if (resolved.error || !resolved.data) {
+        return { data: null, error: resolved.error };
       }
       const res = await fetch(
-        `${this.fileUrl(storedName)}/sign`,
+        `${this.fileUrl(resolved.data)}/sign`,
         {
           method: "POST",
           headers: {

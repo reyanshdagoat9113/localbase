@@ -157,9 +157,12 @@ function validateStorage(config: LocalBaseConfig): void {
   }
 
   const secret = (storage as { secret?: unknown }).secret;
-  if (secret !== undefined && typeof secret !== "string") {
+  if (
+    secret !== undefined &&
+    (typeof secret !== "string" || secret.length === 0)
+  ) {
     throw new ConfigError(
-      `Invalid config: "storage.secret" must be string.`,
+      `Invalid config: "storage.secret" must be a non-empty string.`,
       `Set it to a long random value, or omit it to fall back to auth.jwtSecret.`
     );
   }

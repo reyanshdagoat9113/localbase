@@ -11,6 +11,9 @@ import { verifySignedUrl, createSignedUrl } from "./signed-urls.js";
  */
 export const DEFAULT_MAX_FILE_SIZE = 50 * 1024 * 1024;
 
+/** Allow room for multipart headers/boundaries before the exact File.size check. */
+const MAX_MULTIPART_OVERHEAD = 1024 * 1024;
+
 /** Options for {@link createStorageRouter}. */
 export interface StorageRouterOptions {
   /**
@@ -48,10 +51,9 @@ export interface StorageRouterOptions {
  *     private buckets it requires either a valid signed URL
  *     (`?expires=&sig=`) or a Bearer token, else 401.
  *
- * Gates are active when an auth secret is provided (auth enabled). Without
- * one — a server running with auth disabled — storage stays open, preserving
- * the M2 surface. Signed URLs use the dedicated storage secret when provided,
- * otherwise the auth secret.
+ * Writes and private reads stay closed when no auth secret is available; a
+ * public bucket is still readable without auth. Signed URLs use the dedicated
+ * storage secret when provided, otherwise the auth secret.
  */
 export function createStorageRouter(
   db: Database,
@@ -61,13 +63,10 @@ export function createStorageRouter(
   const maxFileSize = options.maxFileSize ?? DEFAULT_MAX_FILE_SIZE;
 
   // ── M3 security gates ──────────────────────────────────────
-  // When an auth secret is configured (auth enabled), the read and write
-  // gates below are active. Without auth, storage stays open, matching the M2
-  // surface. Signed URLs are bound to the dedicated storage secret if present,
-  // otherwise to the auth secret.
+  // Without an auth secret there is no way to satisfy Bearer-token gates, so
+  // writes/listing and private reads fail closed. Public reads remain open.
   const authSecret = options.authSecret ?? options.secret;
   const signedUrlSecret = options.signedUrlSecret ?? options.secret ?? authSecret;
-  const gated = Boolean(authSecret);
 
   /**
    * Write gate (upload / delete / list). Writes always require a valid
@@ -76,7 +75,7 @@ export function createStorageRouter(
    * are never accepted here.
    */
   async function passesWriteAuth(c: Context): Promise<boolean> {
-    if (!gated) return true;
+    if (!authSecret) return false;
     const user = await authenticate(c, authSecret!);
     return user !== null;
   }
@@ -96,10 +95,10 @@ export function createStorageRouter(
     bucket: string,
     storedName: string
   ): Promise<boolean> {
-    if (!gated) return true;
     if (db.storage.isPublic(bucket)) return true;
     const url = new URL(c.req.url);
     if (
+      signedUrlSecret &&
       verifySignedUrl({
         bucket,
         storedName,
@@ -112,6 +111,7 @@ export function createStorageRouter(
     ) {
       return true;
     }
+    if (!authSecret) return false;
     const user = await authenticate(c, authSecret!);
     return user !== null;
   }
@@ -123,6 +123,19 @@ export function createStorageRouter(
     try {
       if (!(await passesWriteAuth(c))) {
         return c.json({ error: "Authentication required" }, 401);
+      }
+      const contentLength = c.req.header("content-length");
+      if (contentLength) {
+        const bytes = Number(contentLength);
+        if (
+          Number.isFinite(bytes) &&
+          bytes > maxFileSize + MAX_MULTIPART_OVERHEAD
+        ) {
+          throw new StorageError(
+            413,
+            `File exceeds maximum allowed size of ${maxFileSize} bytes`
+          );
+        }
       }
       const body = await c.req.parseBody({ all: false });
       const file = body.file;
@@ -244,15 +257,15 @@ export function createStorageRouter(
   // access to a resource. The secret never leaves the server — the SDK's
   // `createSignedUrl` calls this endpoint rather than signing locally.
   //
-  // Disabled when the router is ungated (no secret): without a secret there
-  // is nothing to sign with, and private buckets do not exist (all reads
-  // are open), so signed URLs are meaningless in that mode.
+  // Disabled when there is no signing secret. It still requires Bearer auth,
+  // so `storage.secret` alone can verify externally-issued URLs but cannot
+  // expose the server-side sign endpoint without auth enabled.
   router.post("/api/storage/:bucket/:filename/sign", async (c) => {
     const bucket = c.req.param("bucket");
     const filename = c.req.param("filename");
 
     try {
-      if (!gated) {
+      if (!signedUrlSecret) {
         return c.json(
           { error: "Signed URLs require a storage secret (enable auth or set storage.secret)" },
           400
@@ -273,7 +286,8 @@ export function createStorageRouter(
       };
       const expiresIn = clampExpiresIn(body.expiresIn);
 
-      const expires = Math.floor(Date.now() / 1000) + expiresIn;
+      const now = Math.floor(Date.now() / 1000);
+      const expires = now + expiresIn;
       const origin = originFromRequest(c);
       const signedUrl = createSignedUrl({
         bucket,
@@ -281,6 +295,7 @@ export function createStorageRouter(
         expiresIn,
         secret: signedUrlSecret!,
         baseUrl: origin,
+        now,
       });
 
       return c.json({

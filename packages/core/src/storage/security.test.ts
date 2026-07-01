@@ -767,17 +767,20 @@ describe("storage sign endpoint (POST /api/storage/:bucket/:filename/sign)", () 
   });
 });
 
-// ─── no-secret fallback (M2 surface preserved) ────────────────
+// ─── no-auth fallback stays closed except public reads ─────────
 
-describe("storage without a secret stays open (M2 surface)", () => {
+describe("storage without auth fails closed", () => {
   let tmp: string;
   let db: Database;
   let app: Hono;
 
   before(() => {
     tmp = tempDir();
-    // No auth → no JWT secret → no storage secret → gates off.
-    db = new Database({ schema: testSchema, dataDir: tmp });
+    db = new Database({
+      schema: testSchema,
+      dataDir: tmp,
+      buckets: [{ name: "public-assets", public: true }],
+    });
     app = createServer(db, testSchema);
   });
   after(() => {
@@ -785,15 +788,64 @@ describe("storage without a secret stays open (M2 surface)", () => {
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("allows anonymous upload, download, and list", async () => {
-    const up = await upload(app, "open-bucket", makeFile("free.txt", "free"));
-    assert.equal(up.status, 201);
-    const { data } = (await up.json()) as { data: { storedName: string } };
+  it("rejects anonymous upload, list, and private reads", async () => {
+    const saved = await db.storage.save("private-docs", {
+      originalName: "secret.txt",
+      stream: makeFile("secret.txt", "secret").stream(),
+    });
 
-    const get = await app.request(`/api/storage/open-bucket/${data.storedName}`);
+    const up = await upload(app, "private-docs", makeFile("free.txt", "free"));
+    assert.equal(up.status, 401);
+
+    const list = await app.request("/api/storage/private-docs");
+    assert.equal(list.status, 401);
+
+    const get = await app.request(`/api/storage/private-docs/${saved.storedName}`);
+    assert.equal(get.status, 401);
+  });
+
+  it("still allows anonymous reads from public buckets", async () => {
+    const saved = await db.storage.save("public-assets", {
+      originalName: "logo.txt",
+      stream: makeFile("logo.txt", "logo").stream(),
+    });
+
+    const get = await app.request(`/api/storage/public-assets/${saved.storedName}`);
     assert.equal(get.status, 200);
+  });
+});
 
-    const list = await app.request("/api/storage/open-bucket");
-    assert.equal(list.status, 200);
+describe("storage.secret without auth verifies signed reads", () => {
+  it("keeps writes closed but accepts a valid signed URL", async () => {
+    const tmp = tempDir();
+    const secret = "storage-only-secret";
+    const db = new Database({ schema: testSchema, dataDir: tmp });
+    const app = createServer(db, testSchema, { storage: { secret } });
+
+    try {
+      const saved = await db.storage.save("private-docs", {
+        originalName: "signed.txt",
+        stream: makeFile("signed.txt", "signed").stream(),
+      });
+
+      const noAuth = await app.request(`/api/storage/private-docs/${saved.storedName}`);
+      assert.equal(noAuth.status, 401);
+
+      const signed = createSignedUrl({
+        bucket: "private-docs",
+        storedName: saved.storedName,
+        expiresIn: 3600,
+        secret,
+      });
+      const withSignedUrl = await app.request(signed);
+      assert.equal(withSignedUrl.status, 200);
+      assert.equal(await withSignedUrl.text(), "signed");
+
+      const post = await upload(app, "private-docs", makeFile("x.txt", "x"));
+      assert.equal(post.status, 401);
+    } finally {
+      db.close();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
