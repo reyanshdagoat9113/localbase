@@ -1,0 +1,31 @@
+{
+  "name": "@localbase/sdk",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
+    "test": "tsx --test src/**/*.test.ts"
+  },
+  "dependencies": {
+    "@localbase/shared": "0.1.0"
+  },
+  "devDependencies": {
+    "@hono/node-server": "^1.19.5",
+    "@localbase/core": "0.1.0",
+    "tsup": "^8.0.0",
+    "tsx": "^4.22.4",
+    "typescript": "^5.7.0"
+  }
+}
