@@ -8,7 +8,7 @@
 
 1. ~~**Auth**~~ — ✅ **Done** (Phase 7)
 2. ~~**Realtime**~~ — ✅ **Done** (Phase 8) — biggest perceived value, hardest to do well
-3. **Storage** ➡️ dedicated plan — needs auth for private buckets (auth now exists)
+3. ~~**Storage**~~ — ✅ **Done** (Phase 9) — dedicated plan complete
 4. ~~**Admin UI**~~ — ✅ **Done** (Phase 10) — differentiator vs dev-only tools
 5. **Scheduled Jobs** — genuinely useful, simpler scope
 
@@ -250,9 +250,9 @@ localbase jobs logs <name>       Show run history for a job
 
 ---
 
-### Phase 9: Storage  ➡️  [Dedicated plan](./LOCALBASE-STORAGE.md)
+### Phase 9: Storage ✅ DONE  ➡️  [Dedicated plan](./LOCALBASE-STORAGE.md)
 
-> **Promoted to its own plan.** Storage is the last missing first-class data primitive and the one remaining phase with a genuinely dangerous security surface (uploads, path traversal, signed URLs). Full decision record, security model, API surface, and milestone breakdown (M1–M4) live in [`LOCALBASE-STORAGE.md`](./LOCALBASE-STORAGE.md). The summary below is kept for context.
+> **Promoted to its own plan — now complete.** Storage was the last missing first-class data primitive and the one remaining phase with a genuinely dangerous security surface (uploads, path traversal, signed URLs). Full decision record, security model, API surface, and milestone breakdown (M1–M4) live in [`LOCALBASE-STORAGE.md`](./LOCALBASE-STORAGE.md). The summary below is kept for context.
 
 **Goal:** File uploads/downloads with bucket abstraction.
 
@@ -305,7 +305,7 @@ GET    /api/storage/:bucket              List files in bucket (auth required)
 
 - Phase 7 (Auth) ✅ — requires MVP complete (Database + API + SDK foundation)
 - Phase 8 (Realtime) ✅ — requires MVP complete
-- Phase 9 (Storage) — independent, can ship anytime
+- Phase 9 (Storage) ✅ — independent, now complete
 - Phase 10 (Admin UI) ✅ — required MVP complete. Optional: Phase 7 (Auth) for login gate, Phase 9 (Storage) for file browser, Phase 8 (Realtime) for inspector.
 - Phase 11 (Scheduled Jobs) — requires MVP complete
 
