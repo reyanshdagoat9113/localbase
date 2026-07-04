@@ -101,6 +101,28 @@ export interface StorageConfig {
   maxFileSize?: number;
 }
 
+/**
+ * Configuration for a single scheduled job.
+ *
+ * Jobs are declared in `localbase.config.ts` under the top-level `jobs` map;
+ * the map's keys are the job names. A job is loaded once at startup: its
+ * `handler` file is imported (relative to the project cwd) and invoked on
+ * the cron `schedule`. Every run — scheduled or manual — is recorded in
+ * the `_job_runs` system table.
+ */
+export interface JobConfig {
+  /** Standard 5-field cron: "m h dom mon dow". e.g. "0 3 * * *" = 3 AM daily. */
+  schedule: string;
+  /** Path (relative to project cwd) to a handler file. Default-exports an async fn. */
+  handler: string;
+  /** IANA timezone, e.g. "America/New_York". Default: server local. */
+  timezone?: string;
+  /** Set false to register-but-pause. Default: true. */
+  enabled?: boolean;
+  /** Free-text note shown in `jobs list` and the dashboard. */
+  description?: string;
+}
+
 export interface LocalBaseConfig {
   tables: DatabaseSchema;
   auth?: AuthConfig;
@@ -111,6 +133,8 @@ export interface LocalBaseConfig {
   buckets?: BucketConfig[];
   /** Storage subsystem options (signed-URL secret, upload size cap). */
   storage?: StorageConfig;
+  /** Cron-scheduled jobs. Keys are job names. See {@link JobConfig}. */
+  jobs?: Record<string, JobConfig>;
 }
 
 export interface RealtimeConfig {
