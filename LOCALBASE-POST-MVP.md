@@ -193,7 +193,9 @@ localbase studio       → opens browser directly to admin UI (alias)
 
 ---
 
-### Phase 11: Scheduled Jobs
+### Phase 11: Scheduled Jobs  ➡️  [Dedicated plan](./LOCALBASE-JOBS.md)
+
+> **Promoted to its own plan.** Scheduled jobs close the loop on "things a backend does for you" and are the natural follow-up to the data primitives and Admin UI. Full decision record, security model, API surface, and milestone breakdown (M1–M5) live in [`LOCALBASE-JOBS.md`](./LOCALBASE-JOBS.md). The summary below is kept for context.
 
 **Goal:** Define cron jobs in config, LocalBase runs them automatically.
 
