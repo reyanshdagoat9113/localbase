@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Playwright E2E suite for the LocalBase Admin Studio (full SPA + backend).",
   "scripts": {
+    "build": "tsc --noEmit -p tsconfig.json",
     "test": "playwright test",
     "test:headed": "playwright test --headed",
     "test:ui": "playwright test --ui",
