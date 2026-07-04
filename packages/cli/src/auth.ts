@@ -27,6 +27,9 @@ function openAuthDb() {
       path: dbPath,
       schema: config.tables,
       auth: authConfig,
+      dataDir: dbDir,
+      buckets: config.buckets,
+      jobs: config.jobs,
     });
     const auth = new Auth(db, resolved);
     return { db, auth };
