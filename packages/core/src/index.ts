@@ -97,6 +97,9 @@ export type {
 } from "./storage/engine.js";
 export type { StorageRouterOptions } from "./storage/router.js";
 
+// Jobs subsystem
+export { JOBS_SCHEMA } from "./jobs/schema.js";
+
 // Re-export shared types
 export type {
   ColumnType,
@@ -122,4 +125,5 @@ export type {
   PresenceState,
   ChangeEventType,
   StorageConfig,
+  JobConfig,
 } from "@localbase/shared";

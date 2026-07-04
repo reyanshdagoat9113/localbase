@@ -6,6 +6,7 @@ import type {
   BucketConfig,
   DatabaseSchema,
   IntrospectedSchema,
+  JobConfig,
   RealtimeEvent,
 } from "@localbase/shared";
 import { schemaToDDL } from "./ddl.js";
@@ -23,6 +24,7 @@ import {
 import { introspect as runIntrospect } from "./admin/introspect.js";
 import { AUTH_SCHEMA } from "./auth/index.js";
 import { STORAGE_SCHEMA } from "./storage/schema.js";
+import { JOBS_SCHEMA } from "./jobs/schema.js";
 import { StorageEngine } from "./storage/engine.js";
 
 export interface DatabaseOptions {
@@ -45,6 +47,13 @@ export interface DatabaseOptions {
   dataDir?: string;
   /** Optional pre-declared storage buckets. */
   buckets?: BucketConfig[];
+  /**
+   * Scheduled jobs declared in `localbase.config.ts`. When provided,
+   * LocalBase provisions the `_job_runs` system table. The runner/scheduler
+   * (later milestones) is the sole writer; this option only opts the table
+   * in so migrations create it.
+   */
+  jobs?: Record<string, JobConfig>;
   /** If true, automatically run migrations on open. Default: true. */
   autoMigrate?: boolean;
 }
@@ -59,6 +68,8 @@ export class Database extends EventEmitter<DatabaseEvents> {
   /** Effective schema including system tables, used for migrations. */
   private effectiveSchema: DatabaseSchema;
   private authConfig?: AuthConfig;
+  /** Whether the jobs subsystem (_job_runs table) has been provisioned. */
+  private jobsEnabled: boolean;
   /** Storage engine for file uploads/downloads. */
   storage: StorageEngine;
 
@@ -70,6 +81,7 @@ export class Database extends EventEmitter<DatabaseEvents> {
       auth,
       dataDir,
       buckets,
+      jobs,
       autoMigrate = true,
     } = options;
 
@@ -78,10 +90,16 @@ export class Database extends EventEmitter<DatabaseEvents> {
     this.authConfig = auth;
 
     // System tables get the `_` prefix, which `resetDatabase` filters out, so
-    // user resets never wipe auth or storage metadata.
+    // user resets never wipe auth, storage, or job-run metadata.
     this.effectiveSchema = { ...schema, ...STORAGE_SCHEMA };
     if (auth?.enabled) {
       this.effectiveSchema = { ...this.effectiveSchema, ...AUTH_SCHEMA };
+    }
+    // The jobs table is only provisioned when a `jobs` map is configured —
+    // a project with no scheduled jobs never creates `_job_runs`.
+    this.jobsEnabled = jobs !== undefined;
+    if (this.jobsEnabled) {
+      this.effectiveSchema = { ...this.effectiveSchema, ...JOBS_SCHEMA };
     }
 
     const resolvedDataDir =
@@ -108,6 +126,11 @@ export class Database extends EventEmitter<DatabaseEvents> {
     return this.authConfig;
   }
 
+  /** Returns true when the `_job_runs` system table has been provisioned. */
+  getJobsEnabled(): boolean {
+    return this.jobsEnabled;
+  }
+
   /**
    * Enable auth on an already-constructed Database. Provisions the
    * `_users` and `_sessions` system tables if they don't exist. Idempotent
@@ -124,6 +147,7 @@ export class Database extends EventEmitter<DatabaseEvents> {
       this.effectiveSchema = {
         ...this.schema,
         ...STORAGE_SCHEMA,
+        ...(this.jobsEnabled ? JOBS_SCHEMA : {}),
         ...AUTH_SCHEMA,
       };
       this.migrate();

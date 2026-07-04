@@ -28,6 +28,7 @@
     "@localbase/core": "0.1.0",
     "@localbase/shared": "0.1.0",
     "commander": "^15.0.0",
+    "croner": "^10.0.1",
     "jiti": "^2.7.0",
     "picocolors": "^1.1.1"
   },

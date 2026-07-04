@@ -1,6 +1,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import { createJiti } from "jiti";
+import { Cron } from "croner";
 import type { LocalBaseConfig } from "@localbase/shared";
 
 const CONFIG_FILE = "localbase.config.ts";
@@ -83,6 +84,7 @@ export async function loadConfig(
   validatePolicies(config);
   validateBuckets(config);
   validateStorage(config);
+  validateJobs(config);
 
   return { configPath, dbPath, dbDir, config };
 }
@@ -246,6 +248,136 @@ function validatePolicies(config: LocalBaseConfig): void {
         `"adminBypass" must be true or false (it is optional).`
       );
     }
+  }
+}
+
+/**
+ * Validate the optional `jobs` (scheduled jobs) section of the config.
+ * Failures throw {@link ConfigError} with an actionable hint so a malformed
+ * schedule or handler is caught at `localbase dev`/`serve` startup, not
+ * silently at the first firing.
+ *
+ * Cron syntax is checked with `croner` (Decision #1). We additionally
+ * restrict to standard 5-field cron (Decision #2): croner accepts 6/7-field
+ * expressions with seconds precision, but sub-minute jobs are out of scope,
+ * so those are rejected here with a clear message.
+ *
+ * The handler path is validated as a non-empty string only. Whether the
+ * file actually exists on disk is a runtime concern (the runner imports it
+ * via `jiti`), checked when a job first fires — not at config load.
+ */
+function validateJobs(config: LocalBaseConfig): void {
+  const jobs = (config as { jobs?: unknown }).jobs;
+  if (jobs === undefined) return;
+
+  if (typeof jobs !== "object" || jobs === null || Array.isArray(jobs)) {
+    throw new ConfigError(
+      `Invalid config: "jobs" must be an object mapping job names to definitions.`,
+      `Example: jobs: { cleanup: { schedule: "0 3 * * *", handler: "./jobs/cleanup.ts" } }`
+    );
+  }
+
+  for (const [name, job] of Object.entries(jobs as Record<string, unknown>)) {
+    if (!name || !IDENT_RE.test(name)) {
+      throw new ConfigError(
+        `Invalid config: job name "${name}" is invalid.`,
+        `Job names must start with a letter or underscore and contain only letters, digits, or underscores.`
+      );
+    }
+
+    if (!job || typeof job !== "object") {
+      throw new ConfigError(
+        `Invalid config: job "${name}" must be an object with "schedule" and "handler".`,
+        `Example: ${name}: { schedule: "0 3 * * *", handler: "./jobs/${name}.ts" }`
+      );
+    }
+
+    const schedule = (job as { schedule?: unknown }).schedule;
+    if (typeof schedule !== "string" || schedule.length === 0) {
+      throw new ConfigError(
+        `Invalid config: job "${name}" must have a non-empty "schedule" string.`,
+        `Example: schedule: "0 3 * * *" (3 AM daily)`
+      );
+    }
+    const cronError = validateCronSchedule(schedule);
+    if (cronError) {
+      throw new ConfigError(
+        `Invalid config: job "${name}" schedule "${schedule}" ${cronError}`,
+        `Use standard 5-field cron: "m h dom mon dow". Example: "0 3 * * *" = 3 AM daily.`
+      );
+    }
+
+    const handler = (job as { handler?: unknown }).handler;
+    if (typeof handler !== "string" || handler.length === 0) {
+      throw new ConfigError(
+        `Invalid config: job "${name}" must have a non-empty "handler" string path.`,
+        `Example: handler: "./jobs/${name}.ts" (relative to project cwd)`
+      );
+    }
+
+    const timezone = (job as { timezone?: unknown }).timezone;
+    if (
+      timezone !== undefined &&
+      (typeof timezone !== "string" || !isValidTimezone(timezone))
+    ) {
+      throw new ConfigError(
+        `Invalid config: job "${name}" has an invalid "timezone" "${timezone}".`,
+        `"timezone" must be an IANA name, e.g. "America/New_York". Omit it for server-local time.`
+      );
+    }
+
+    const enabled = (job as { enabled?: unknown }).enabled;
+    if (enabled !== undefined && typeof enabled !== "boolean") {
+      throw new ConfigError(
+        `Invalid config: job "${name}" has a non-boolean "enabled".`,
+        `"enabled" must be true or false (it is optional; default true).`
+      );
+    }
+
+    const description = (job as { description?: unknown }).description;
+    if (description !== undefined && typeof description !== "string") {
+      throw new ConfigError(
+        `Invalid config: job "${name}" has a non-string "description".`,
+        `"description" must be a free-text string (it is optional).`
+      );
+    }
+  }
+}
+
+/**
+ * Validates a cron schedule string. croner accepts 5, 6, or 7 space-separated
+ * fields, but LocalBase restricts to standard 5-field cron (Decision #2), so
+ * we enforce the field count before handing off to croner's parser. Returns an
+ * error string on failure, or `null` when the schedule is valid.
+ */
+function validateCronSchedule(schedule: string): string | null {
+  const fields = schedule.trim().split(/\s+/);
+  if (fields.length !== 5) {
+    return `must be a standard 5-field cron expression ("m h dom mon dow"), got ${fields.length} field(s).`;
+  }
+  try {
+    // Constructing a Cron parses + validates the pattern. We pass no function
+    // so nothing executes; .stop() clears the scheduled timer immediately.
+    const cron = new Cron(schedule);
+    cron.stop();
+    return null;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return `is not a valid cron expression: ${msg}`;
+  }
+}
+
+/**
+ * Returns true when `tz` is a recognized IANA timezone. `Intl.DateTimeFormat`
+ * throws a `RangeError` for unknown names, which we treat as invalid.
+ */
+function isValidTimezone(tz: string): boolean {
+  if (tz.length === 0) return false;
+  try {
+    new Intl.DateTimeFormat("en", { timeZone: tz });
+    return true;
+  } catch {
+    return false;
   }
 }
 
