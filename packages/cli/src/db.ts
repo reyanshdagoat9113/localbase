@@ -18,6 +18,7 @@ export async function migrateCommand(): Promise<void> {
     auth: config.auth,
     dataDir: dbDir,
     buckets: config.buckets,
+    jobs: config.jobs,
   });
 
   try {
@@ -60,6 +61,7 @@ export async function resetCommand(): Promise<void> {
     auth: config.auth,
     dataDir: dbDir,
     buckets: config.buckets,
+    jobs: config.jobs,
   });
 
   try {

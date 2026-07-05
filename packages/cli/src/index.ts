@@ -8,7 +8,7 @@ import {
   listUsersCommand,
   resetPasswordCommand,
 } from "./auth.js";
-import { promoteCommand, demoteCommand } from "./admin.js";
+import { promoteCommand, demoteCommand, listAdminsCommand } from "./admin.js";
 import { ConfigError } from "./config.js";
 import { log } from "./log.js";
 
@@ -218,6 +218,13 @@ adminCmd
   .option("-f, --force", "Skip the confirmation prompt")
   .action(async (email: string, opts: { force?: boolean }) => {
     await demoteCommand({ email, force: opts.force === true });
+  });
+
+adminCmd
+  .command("list")
+  .description("List all admin users")
+  .action(async () => {
+    await listAdminsCommand();
   });
 
 program.parse(process.argv);

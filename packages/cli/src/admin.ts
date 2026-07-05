@@ -27,6 +27,9 @@ function openAuthDb() {
       path: dbPath,
       schema: config.tables,
       auth: authConfig,
+      dataDir: dbDir,
+      buckets: config.buckets,
+      jobs: config.jobs,
     });
     const auth = new Auth(db, resolved);
     return { db, auth };
@@ -69,6 +72,30 @@ export async function promoteCommand(
         log.info(`${email} was already an admin.`);
       } else {
         log.success(`Promoted ${email} (#${user.id}) to admin. (${after} admin${after === 1 ? "" : "s"} total)`);
+      }
+    } finally {
+      db.close();
+    }
+  } catch (err) {
+    handleAuthError(err);
+  }
+}
+
+// ── localbase admin list ──────────────────────────────────────
+
+export async function listAdminsCommand(): Promise<void> {
+  try {
+    const { db, auth } = await openAuthDb();
+    try {
+      const admins = auth.listAdmins();
+      if (admins.length === 0) {
+        log.info("No admins found.");
+        return;
+      }
+      log.heading(`Admins (${admins.length}):`);
+      for (const a of admins) {
+        const created = a.created_at ?? "?";
+        console.log(`  #${a.id}  ${a.email}  (created ${created})`);
       }
     } finally {
       db.close();
