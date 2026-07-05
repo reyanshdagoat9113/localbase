@@ -25,7 +25,7 @@ export async function migrateCommand(): Promise<void> {
     const applied = db.getAppliedMigrations();
     const tableNames = Object.keys(config.tables);
     if (config.auth?.enabled) {
-      tableNames.push("_users", "_sessions");
+      tableNames.push("_users", "_sessions", "_admin_requests");
     }
 
     log.heading("Migration status:");

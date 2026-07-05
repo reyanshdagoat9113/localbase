@@ -37,4 +37,15 @@ export const AUTH_SCHEMA: DatabaseSchema = {
     expires_at: { type: "text", nullable: false },
     created_at: { type: "text", default: "CURRENT_TIMESTAMP" },
   },
+  _admin_requests: {
+    id: { type: "integer", primaryKey: true, autoIncrement: true },
+    email: { type: "text", nullable: false, unique: true },
+    password_hash: { type: "text", nullable: false },
+    // Logical reference to _users.id for promotion requests. This is
+    // intentionally not a SQL FOREIGN KEY: existing installations already
+    // have _admin_requests, and SQLite cannot add a REFERENCES column through
+    // ALTER TABLE. Auth.approveAdminRequest validates the user explicitly.
+    user_id: { type: "integer" },
+    created_at: { type: "text", default: "CURRENT_TIMESTAMP" },
+  },
 };

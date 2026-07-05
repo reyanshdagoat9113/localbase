@@ -113,7 +113,13 @@ export function createAdminRouter(
   // TanStack Query; we don't add server-side memoization because the
   // admin is a dev/management tool, not a hot path.
   router.get("/_api/admin/schema", (c) => {
-    return c.json({ data: db.introspect() });
+    const schema = db.introspect();
+    return c.json({
+      data: {
+        ...schema,
+        tables: schema.tables.filter((table) => table.name !== "_admin_requests"),
+      },
+    });
   });
 
   // ── GET /_api/admin/tables ─────────────────────────────────
@@ -122,11 +128,13 @@ export function createAdminRouter(
   // table pays the cost of full schema introspection.
   router.get("/_api/admin/tables", (c) => {
     const schema = db.introspect();
-    const data = schema.tables.map((t) => ({
-      name: t.name,
-      rowCount: t.rowCount,
-      system: t.system,
-    }));
+    const data = schema.tables
+      .filter((table) => table.name !== "_admin_requests")
+      .map((t) => ({
+        name: t.name,
+        rowCount: t.rowCount,
+        system: t.system,
+      }));
     return c.json({ data });
   });
 
@@ -135,6 +143,12 @@ export function createAdminRouter(
   // grid can show "showing 1–25 of 137" without an extra request.
   router.get("/_api/admin/tables/:table/rows", (c) => {
     const tableName = c.req.param("table");
+    if (tableName === "_admin_requests") {
+      return c.json(
+        { error: "Admin requests are available only through the owner approval API" },
+        403
+      );
+    }
     if (!tableExists(db, tableName)) {
       return c.json({ error: `Unknown table: "${tableName}"` }, 404);
     }
@@ -299,9 +313,60 @@ export function createAdminRouter(
         return adminErrorResponse(c, err);
       }
     });
+
+    router.get("/_api/admin/admin-requests", (c) => {
+      try {
+        const url = new URL(c.req.url);
+        const limit = parseBoundedInteger(url.searchParams.get("limit"), 100, 1, 100);
+        const offset = parseBoundedInteger(url.searchParams.get("offset"), 0, 0, Number.MAX_SAFE_INTEGER);
+        const data = auth.listAdminRequests(
+          c.get("adminUser")?.role,
+          limit,
+          offset
+        );
+        return c.json({ data });
+      } catch (err) {
+        return adminErrorResponse(c, err);
+      }
+    });
+
+    router.post("/_api/admin/admin-requests/:id/approve", (c) => {
+      try {
+        const user = auth.approveAdminRequest(
+          c.req.param("id"),
+          c.get("adminUser")?.role
+        );
+        return c.json({ data: user }, 201);
+      } catch (err) {
+        return adminErrorResponse(c, err);
+      }
+    });
+
+    router.delete("/_api/admin/admin-requests/:id", (c) => {
+      try {
+        auth.rejectAdminRequest(c.req.param("id"), c.get("adminUser")?.role);
+        return c.json({ data: { deleted: true } });
+      } catch (err) {
+        return adminErrorResponse(c, err);
+      }
+    });
   }
 
   return router;
+}
+
+function parseBoundedInteger(
+  raw: string | null,
+  fallback: number,
+  min: number,
+  max: number
+): number {
+  if (raw === null) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new AdminError(400, `Invalid pagination value: "${raw}"`);
+  }
+  return value;
 }
 
 // ─── Query param parsing ──────────────────────────────────────

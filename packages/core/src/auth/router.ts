@@ -3,7 +3,7 @@ import { Auth, AuthError } from "./auth.js";
 import { requireAuth, type AuthVariables } from "./middleware.js";
 
 /**
- * Hono router exposing the 5 `/api/auth/*` endpoints. The host server
+ * Hono router exposing the public `/api/auth/*` endpoints. The host server
  * mounts this at the root with `app.route("/", createAuthRouter(...))`,
  * so paths are absolute (`/api/auth/signup`, etc.).
  *
@@ -16,6 +16,31 @@ export function createAuthRouter(
   jwtSecret: string
 ): Hono<{ Variables: AuthVariables }> {
   const router = new Hono<{ Variables: AuthVariables }>();
+
+  router.get("/api/auth/admin-registration", (c) => {
+    c.header("Cache-Control", "no-store");
+    return c.json({ data: { ownerExists: auth.hasOwner() } });
+  });
+
+  router.post("/api/auth/admin-requests", async (c) => {
+    try {
+      const body = await readJson(c);
+      const request = await auth.requestAdmin(body);
+      return c.json({ data: request }, 202);
+    } catch (err) {
+      return errorResponse(c, err);
+    }
+  });
+
+  router.post("/api/auth/owner", async (c) => {
+    try {
+      const body = await readJson(c);
+      const session = await auth.signUp(body, true);
+      return c.json({ data: session }, 201);
+    } catch (err) {
+      return errorResponse(c, err);
+    }
+  });
 
   // POST /api/auth/signup
   router.post("/api/auth/signup", async (c) => {

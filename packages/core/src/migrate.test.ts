@@ -169,6 +169,39 @@ describe("runMigrations — additive columns", () => {
     }
   });
 
+  it("adds promotion user_id to an existing admin-request table", () => {
+    const db = new BetterSqlite3(":memory:");
+    try {
+      const v1: DatabaseSchema = {
+        _admin_requests: {
+          id: { type: "integer", primaryKey: true, autoIncrement: true },
+          email: { type: "text", nullable: false, unique: true },
+          password_hash: { type: "text", nullable: false },
+          created_at: { type: "text", default: "CURRENT_TIMESTAMP" },
+        },
+      };
+      runMigrations(db, v1);
+      db.prepare(
+        `INSERT INTO "_admin_requests" ("email", "password_hash") VALUES (?, ?)`
+      ).run("pending@test.com", "hash");
+
+      const v2: DatabaseSchema = {
+        _admin_requests: {
+          ...v1._admin_requests,
+          user_id: { type: "integer" },
+        },
+      };
+      const applied = runMigrations(db, v2);
+      assert.ok(applied.includes("_admin_requests::user_id"));
+      const row = db
+        .prepare(`SELECT * FROM "_admin_requests" WHERE "email" = ?`)
+        .get("pending@test.com") as { user_id: number | null };
+      assert.equal(row.user_id, null);
+    } finally {
+      db.close();
+    }
+  });
+
   it("creates brand-new tables in phase 1 and skips phase 2 for them", () => {
     const db = new BetterSqlite3(":memory:");
     try {

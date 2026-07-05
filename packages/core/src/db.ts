@@ -34,7 +34,8 @@ export interface DatabaseOptions {
   schema: DatabaseSchema;
   /**
    * If provided with `enabled: true`, LocalBase will provision the `_users`
-   * and `_sessions` system tables and prepare for the auth router to mount.
+   * `_sessions`, and `_admin_requests` system tables and prepare for the auth
+   * router to mount.
    * The user never has to declare these tables in their `schema` — they're
    * added here automatically.
    */
@@ -133,7 +134,7 @@ export class Database extends EventEmitter<DatabaseEvents> {
 
   /**
    * Enable auth on an already-constructed Database. Provisions the
-   * `_users` and `_sessions` system tables if they don't exist. Idempotent
+   * auth system tables if they don't exist. Idempotent
    * — calling it twice is a no-op.
    *
    * This is a convenience for code that constructs the database first and

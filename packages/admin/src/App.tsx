@@ -6,6 +6,7 @@ import { TablesView } from "@/views/TablesView";
 import { SchemaView } from "@/views/SchemaView";
 import { TableDetailView } from "@/views/TableDetailView";
 import { UsersView } from "@/views/UsersView";
+import { AdminRequestsView } from "@/views/AdminRequestsView";
 import { StorageView } from "@/views/StorageView";
 import { StubView } from "@/views/StubView";
 
@@ -20,6 +21,7 @@ export default function App() {
           <Route path="tables/:table" element={<TableDetailView />} />
           <Route path="schema" element={<SchemaView />} />
           <Route path="users" element={<UsersView />} />
+          <Route path="admin-requests" element={<AdminRequestsView />} />
           <Route
             path="realtime"
             element={

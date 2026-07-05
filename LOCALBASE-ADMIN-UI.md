@@ -124,6 +124,20 @@ _users: {
 | `POST` | `/_api/admin/users` | Create user (`Auth.createUser`) |
 | `POST` | `/_api/admin/users/:id/reset-password` | Reset password (`Auth.setPassword`) |
 | `PATCH` | `/_api/admin/users/:id/role` | Promote/demote (`user` ↔ `admin`) |
+| `GET` | `/api/auth/admin-registration` | Public owner-bootstrap status |
+| `POST` | `/api/auth/admin-requests` | Submit a pending admin-account request |
+| `GET` | `/_api/admin/admin-requests` | Owner-only paginated request list |
+| `POST` | `/_api/admin/admin-requests/:id/approve` | Owner-only approval; creates the admin |
+| `DELETE` | `/_api/admin/admin-requests/:id` | Owner-only rejection |
+
+Admin request bodies are `{ email, password }`; successful submission returns
+`202` with `{ id, email, created_at }`. The list response is
+`{ requests, total }` and accepts bounded `limit`/`offset` parameters. Approval
+returns the created public user with `201`; rejection returns `{ deleted: true }`.
+Validation failures return `400`, duplicates and stale bootstrap attempts return
+`409`, missing requests return `404`, and non-owner administrators receive
+`403`. The generic system-table row endpoint refuses `_admin_requests` reads so
+password hashes cannot bypass the redacted owner API.
 
 All gated by `requireAdmin`. All return `{ data } | { error }` to match the existing API convention.
 

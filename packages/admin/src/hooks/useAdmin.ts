@@ -14,6 +14,9 @@ import {
   createUser,
   resetUserPassword,
   setUserRole,
+  getAdminRequests,
+  approveAdminRequest,
+  rejectAdminRequest,
   listStorageFiles,
   deleteStorageFile,
   type AuthUser,
@@ -110,6 +113,36 @@ export function useSetUserRole() {
     mutationFn: ({ id, role }: { id: number; role: UserRole }) =>
       setUserRole(id, role),
     onSuccess: () => invalidateUserData(qc),
+  });
+}
+
+export function useAdminRequests(enabled: boolean) {
+  return useQuery({
+    queryKey: ["admin", "admin-requests"],
+    queryFn: getAdminRequests,
+    enabled,
+  });
+}
+
+export function useApproveAdminRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => approveAdminRequest(id),
+    onSuccess: () => {
+      invalidateUserData(qc);
+      qc.invalidateQueries({ queryKey: ["admin", "admin-requests"] });
+    },
+  });
+}
+
+export function useRejectAdminRequest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => rejectAdminRequest(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "admin-requests"] });
+      qc.invalidateQueries({ queryKey: ["admin", "tables"] });
+    },
   });
 }
 

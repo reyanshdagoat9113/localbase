@@ -202,7 +202,7 @@ const adminCmd = program
   .command("admin")
   .description(
     "Admin role management (requires auth.enabled in config). The first " +
-      "user to sign up is automatically an admin; these commands manage the rest."
+      "user to sign up is automatically the owner; these commands manage admins."
   );
 
 adminCmd

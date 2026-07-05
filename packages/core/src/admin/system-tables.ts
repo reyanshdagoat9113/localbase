@@ -35,6 +35,7 @@ export const SYSTEM_TABLES: ReadonlySet<string> = new Set([
   // Auth subsystem — owned by packages/core/src/auth/schema.ts
   "_users",
   "_sessions",
+  "_admin_requests",
 
   // Storage subsystem — owned by Phase 9 (not yet implemented).
   // Listed here preemptively so the gate is ready the day P9 lands.

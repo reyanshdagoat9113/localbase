@@ -5,7 +5,7 @@ import {
   getSession,
   signIn as apiSignIn,
   signOut as apiSignOut,
-  signUp as apiSignUp,
+  createOwner as apiCreateOwner,
   subscribeSession,
   type AuthSession,
   type AuthUser,
@@ -16,7 +16,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   isAuthenticated: boolean;
   signIn: (email: string, password: string) => Promise<AuthSession>;
-  signUp: (email: string, password: string) => Promise<AuthSession>;
+  createOwner: (email: string, password: string) => Promise<AuthSession>;
   signOut: () => Promise<void>;
 }
 
@@ -40,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user: session?.user ?? null,
       isAuthenticated: session !== null,
       signIn: apiSignIn,
-      signUp: apiSignUp,
+      createOwner: apiCreateOwner,
       signOut: apiSignOut,
     }),
     [session]

@@ -43,6 +43,21 @@ interface UserRowWithHash extends AuthUser {
   password_hash: string;
 }
 
+interface AdminRequestRow {
+  id: number;
+  email: string;
+  password_hash: string;
+  user_id?: number | null;
+  created_at: string;
+}
+
+export interface AdminRequest {
+  id: number;
+  email: string;
+  kind: "create" | "promote";
+  created_at: string;
+}
+
 /** Error type that the router maps to an HTTP response. */
 export class AuthError extends Error {
   status: number;
@@ -163,6 +178,21 @@ export class Auth {
     };
   }
 
+  private publicAdminRequest(row: AdminRequestRow): AdminRequest {
+    return {
+      id: row.id,
+      email: row.email,
+      kind: row.user_id == null ? "create" : "promote",
+      created_at: row.created_at,
+    };
+  }
+
+  private assertOwner(actorRole: string | undefined): void {
+    if (actorRole !== "owner") {
+      throw new AuthError(403, "Owner access required");
+    }
+  }
+
   // ─── Session issuance ───────────────────────────────────────
 
   private async issueSession(user: AuthUser): Promise<AuthSession> {
@@ -191,7 +221,10 @@ export class Auth {
 
   // ─── Public API used by the router ─────────────────────────
 
-  async signUp(input: Record<string, unknown>): Promise<AuthSession> {
+  async signUp(
+    input: Record<string, unknown>,
+    requireOwnerBootstrap = false
+  ): Promise<AuthSession> {
     const email = validateEmail(input.email);
     const password = validatePassword(
       input.password,
@@ -223,6 +256,9 @@ export class Auth {
         throw new AuthError(409, "Email already registered");
       }
       const isFirstUser = this.countUsers() === 0;
+      if (requireOwnerBootstrap && !isFirstUser) {
+        throw new AuthError(409, "The owner account has already been created");
+      }
       const role: string = isFirstUser ? "owner" : "user";
       const inserted = this.db.insert("_users", {
         email,
@@ -273,6 +309,143 @@ export class Auth {
     }
 
     return this.issueSession(this.publicUser(row));
+  }
+
+  hasOwner(): boolean {
+    const row = this.db
+      .raw()
+      .prepare(`SELECT 1 FROM "_users" WHERE "role" = 'owner' LIMIT 1`)
+      .get();
+    return row !== undefined;
+  }
+
+  async requestAdmin(input: Record<string, unknown>): Promise<AdminRequest> {
+    const email = validateEmail(input.email);
+    const password = validatePassword(
+      input.password,
+      this.config.minPasswordLength
+    );
+    const existingUser = this.findUserByEmail(email);
+    if (existingUser && existingUser.role !== "user") {
+      throw new AuthError(409, "This account already has admin access");
+    }
+    if (
+      existingUser &&
+      !(await verifyPassword(existingUser.password_hash, password))
+    ) {
+      throw new AuthError(401, "Invalid email or password");
+    }
+    const passwordHash = existingUser
+      ? existingUser.password_hash
+      : await hashPassword(password);
+
+    const createRequest = this.db.raw().transaction((): AdminRequest => {
+      if (!this.hasOwner()) {
+        throw new AuthError(409, "Create the owner before requesting admin access");
+      }
+      const currentUser = this.findUserByEmail(email);
+      if (existingUser) {
+        if (
+          !currentUser ||
+          currentUser.id !== existingUser.id ||
+          currentUser.role !== "user" ||
+          currentUser.password_hash !== passwordHash
+        ) {
+          throw new AuthError(409, "Account changed while creating the request; try again");
+        }
+      } else if (currentUser) {
+        throw new AuthError(409, "Email was registered while creating the request; try again");
+      }
+      const pending = this.db.select("_admin_requests", {
+        filters: [{ column: "email", operator: "eq", value: email }],
+        limit: 1,
+      })[0] as AdminRequestRow | undefined;
+      if (pending) {
+        throw new AuthError(409, "An admin request is already pending for this email");
+      }
+      const inserted = this.db.insert("_admin_requests", {
+        email,
+        password_hash: passwordHash,
+        user_id: existingUser?.id ?? null,
+      })[0] as AdminRequestRow;
+      return this.publicAdminRequest(inserted);
+    });
+
+    return createRequest.immediate();
+  }
+
+  listAdminRequests(
+    actorRole: string | undefined,
+    limit = 100,
+    offset = 0
+  ): { requests: AdminRequest[]; total: number } {
+    this.assertOwner(actorRole);
+    const rows = this.db.select("_admin_requests", {
+      orderBy: [{ column: "created_at", direction: "asc" }],
+      limit,
+      offset,
+    }) as AdminRequestRow[];
+    return {
+      requests: rows.map((row) => this.publicAdminRequest(row)),
+      total: this.db.count("_admin_requests"),
+    };
+  }
+
+  approveAdminRequest(
+    idRaw: unknown,
+    actorRole: string | undefined
+  ): AuthUser {
+    this.assertOwner(actorRole);
+    const id = parseUserId(idRaw);
+    const approve = this.db.raw().transaction((): AuthUser => {
+      const request = this.db.selectById("_admin_requests", id) as
+        | AdminRequestRow
+        | undefined;
+      if (!request) {
+        throw new AuthError(404, `No admin request found with id ${id}`);
+      }
+      let approved: UserRowWithHash;
+      if (request.user_id != null) {
+        const existing = this.findUserById(request.user_id);
+        if (!existing || existing.email !== request.email) {
+          throw new AuthError(409, "The account for this request no longer exists");
+        }
+        if (existing.role !== "user") {
+          throw new AuthError(409, "This account already has admin access");
+        }
+        this.db.update(
+          "_users",
+          { role: "admin" },
+          [{ column: "id", operator: "eq", value: existing.id }]
+        );
+        approved = this.findUserById(existing.id)!;
+      } else {
+        if (this.findUserByEmail(request.email)) {
+          throw new AuthError(409, "Email already registered");
+        }
+        approved = this.db.insert("_users", {
+          email: request.email,
+          password_hash: request.password_hash,
+          role: "admin",
+        })[0] as UserRowWithHash;
+      }
+      this.db.delete("_admin_requests", [
+        { column: "id", operator: "eq", value: id },
+      ]);
+      return this.publicUser(approved);
+    });
+    return approve.immediate();
+  }
+
+  rejectAdminRequest(idRaw: unknown, actorRole: string | undefined): void {
+    this.assertOwner(actorRole);
+    const id = parseUserId(idRaw);
+    const deleted = this.db.delete("_admin_requests", [
+      { column: "id", operator: "eq", value: id },
+    ]);
+    if (deleted === 0) {
+      throw new AuthError(404, `No admin request found with id ${id}`);
+    }
   }
 
   async signOut(refreshToken: string | undefined | null): Promise<void> {

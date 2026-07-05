@@ -20,6 +20,18 @@ export interface AuthSession {
   expiresAt: number;
 }
 
+export interface AdminRequest {
+  id: number;
+  email: string;
+  kind: "create" | "promote";
+  created_at: string;
+}
+
+export interface AdminRequestsResponse {
+  requests: AdminRequest[];
+  total: number;
+}
+
 export interface TableSummary {
   name: string;
   rowCount: number;
@@ -195,6 +207,40 @@ export async function signUp(
   return session;
 }
 
+export async function createOwner(
+  email: string,
+  password: string
+): Promise<AuthSession> {
+  const session = await postAuth<AuthSession>("/api/auth/owner", {
+    email,
+    password,
+  });
+  setSession(session);
+  return session;
+}
+
+export async function getAdminRegistration(): Promise<{
+  ownerExists: boolean;
+}> {
+  return unwrap<{ ownerExists: boolean }>(
+    await rawFetch(
+      "/api/auth/admin-registration",
+      { method: "GET" },
+      { withAuth: false }
+    )
+  );
+}
+
+export function requestAdminAccess(
+  email: string,
+  password: string
+): Promise<AdminRequest> {
+  return postAuth<AdminRequest>("/api/auth/admin-requests", {
+    email,
+    password,
+  });
+}
+
 export async function signOut(): Promise<void> {
   const refreshToken = currentSession?.refreshToken;
   if (refreshToken) {
@@ -310,6 +356,26 @@ export function setUserRole(
   return request<AuthUser>(
     `/_api/admin/users/${encodeURIComponent(id)}/role`,
     { method: "PATCH", body: JSON.stringify({ role }) }
+  );
+}
+
+export function getAdminRequests(): Promise<AdminRequestsResponse> {
+  return request<AdminRequestsResponse>(
+    "/_api/admin/admin-requests?limit=100&offset=0"
+  );
+}
+
+export function approveAdminRequest(id: number): Promise<AuthUser> {
+  return request<AuthUser>(
+    `/_api/admin/admin-requests/${encodeURIComponent(id)}/approve`,
+    { method: "POST" }
+  );
+}
+
+export function rejectAdminRequest(id: number): Promise<{ deleted: boolean }> {
+  return request<{ deleted: boolean }>(
+    `/_api/admin/admin-requests/${encodeURIComponent(id)}`,
+    { method: "DELETE" }
   );
 }
 

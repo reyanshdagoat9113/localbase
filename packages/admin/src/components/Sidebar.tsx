@@ -1,20 +1,23 @@
 import { NavLink } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
-import { useTables } from "@/hooks/useAdmin";
+import { useAdminRequests, useTables } from "@/hooks/useAdmin";
 import { cn } from "@/lib/utils";
 
 const nav = [
-  ["Tables", "/tables"],
-  ["Schema", "/schema"],
-  ["Users", "/users"],
-  ["Realtime", "/realtime"],
-  ["Storage", "/storage"],
-  ["Jobs", "/jobs"],
+  { label: "Tables", href: "/tables", ownerOnly: false },
+  { label: "Schema", href: "/schema", ownerOnly: false },
+  { label: "Users", href: "/users", ownerOnly: false },
+  { label: "Admin Requests", href: "/admin-requests", ownerOnly: true },
+  { label: "Realtime", href: "/realtime", ownerOnly: false },
+  { label: "Storage", href: "/storage", ownerOnly: false },
+  { label: "Jobs", href: "/jobs", ownerOnly: false },
 ] as const;
 
 export function Sidebar() {
   const { user, signOut } = useAuth();
   const { data: tables } = useTables();
+  const isOwner = user?.role === "owner";
+  const { data: requests } = useAdminRequests(isOwner);
 
   return (
     <aside className="hidden w-72 shrink-0 border-r border-border bg-card/70 p-4 md:flex md:flex-col">
@@ -24,7 +27,7 @@ export function Sidebar() {
       </div>
 
       <nav className="mt-8 space-y-1">
-        {nav.map(([label, href]) => (
+        {nav.filter((item) => !item.ownerOnly || isOwner).map(({ label, href }) => (
           <NavLink
             key={href}
             to={href}
@@ -35,7 +38,14 @@ export function Sidebar() {
               )
             }
           >
-            {label}
+            <span className="flex items-center justify-between gap-2">
+              {label}
+              {href === "/admin-requests" && requests?.total ? (
+                <span className="min-w-5 rounded-full bg-primary px-1.5 py-0.5 text-center text-[10px] font-semibold text-primary-foreground">
+                  {requests.total}
+                </span>
+              ) : null}
+            </span>
           </NavLink>
         ))}
       </nav>

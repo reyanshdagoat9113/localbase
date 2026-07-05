@@ -114,6 +114,10 @@ localbase dev
 - **First-user bootstrap** — the first account to sign up is
   automatically the owner; everyone else starts as `user` and needs a
   promote from an existing admin (or via `localbase admin promote`).
+- **Admin approval** — after an owner exists, the signed-out Admin Studio
+  accepts admin-account requests instead of creating another owner. Passwords
+  are hashed immediately; existing users verify their current password and
+  request promotion. Only the owner can approve or reject requests.
 
 **Behind the scenes:** the admin UI is a React + Vite SPA built into
 `@localbase/core` at publish time. All edits go through the same
@@ -234,7 +238,8 @@ export default {
 };
 ```
 
-Restart `localbase dev` and two system tables — `_users` and `_sessions` —
+Restart `localbase dev` and the auth system tables — `_users`, `_sessions`,
+and `_admin_requests` —
 will be auto-provisioned alongside your own.
 
 ### SDK auth
@@ -354,7 +359,7 @@ AUTH_EMAIL=alice@example.com AUTH_PASSWORD=supersecret \
   `_sessions`. Long-lived (30 days by default). Rotated on every refresh
   — the old token is invalidated as soon as a new one is issued, so a
   stolen token has a tiny attack window.
-- **System tables** — `_users` and `_sessions` are filtered out of
+- **System tables** — `_users`, `_sessions`, and `_admin_requests` are filtered out of
   `db reset`, so resetting your app's data never wipes the auth subsystem.
 
 ---
