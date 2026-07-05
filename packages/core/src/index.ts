@@ -105,6 +105,14 @@ export {
   JobHandlerLoadError,
 } from "./jobs/runner.js";
 export type { JobRunnerOptions, JobRunResult } from "./jobs/runner.js";
+export { Scheduler } from "./jobs/scheduler.js";
+export type {
+  SchedulerOptions,
+  JobSummary,
+  JobRunRow,
+  GetRunsOptions,
+  GetRunsResult,
+} from "./jobs/scheduler.js";
 export type { JobContext, JobHandler } from "./jobs/types.js";
 
 // Re-export shared types
