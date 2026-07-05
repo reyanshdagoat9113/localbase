@@ -6,7 +6,7 @@ import type { Database } from "../db.js";
 export interface AuthenticatedUser {
   id: number;
   email: string;
-  /** Role snapshot from the access token (`"user"` | `"admin"`). */
+  /** Role snapshot from the access token (`"user"` | `"admin"` | `"owner"`). */
   role: string;
 }
 
@@ -113,7 +113,7 @@ export async function authenticate(
  * This does TWO checks, not one:
  *
  *   1. The access token is valid (signature + expiry). Same as `requireAuth`.
- *   2. The user identified by the token *currently* has `role = 'admin'` in
+ *   2. The user identified by the token currently has an administrative role
  *      `_users`, re-read from the database on every request.
  *
  * The second check is the important one. The JWT carries a `role` claim, but
@@ -178,7 +178,7 @@ export function requireAdmin(
     if (!row) {
       return c.json({ error: "Invalid token" }, 401);
     }
-    if (row.role !== "admin") {
+    if (row.role !== "admin" && row.role !== "owner") {
       return c.json({ error: "Admin access required" }, 403);
     }
 

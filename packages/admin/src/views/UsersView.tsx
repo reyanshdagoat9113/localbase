@@ -38,7 +38,9 @@ export function UsersView() {
   if (error) return <ErrorState error={error} />;
 
   const list = users ?? [];
-  const adminCount = list.filter((u) => u.role === "admin").length;
+  const adminCount = list.filter(
+    (u) => u.role === "admin" || u.role === "owner"
+  ).length;
 
   async function promote(user: AuthUser) {
     setBannerError(null);
@@ -90,6 +92,7 @@ export function UsersView() {
             <tbody>
               {list.map((user) => {
                 const isSelf = currentUser?.id === user.id;
+                const isOwner = user.role === "owner";
                 const isLastAdmin = user.role === "admin" && adminCount <= 1;
                 return (
                   <tr
@@ -117,12 +120,18 @@ export function UsersView() {
                       <div className="flex justify-end gap-2">
                         <button
                           type="button"
+                          disabled={isOwner && !isSelf}
+                          title={
+                            isOwner && !isSelf
+                              ? "The owner's password cannot be reset by another admin"
+                              : undefined
+                          }
                           onClick={() => setResetTarget(user)}
-                          className="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent"
+                          className="rounded-md border border-border px-2 py-1 text-xs hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           Reset password
                         </button>
-                        {user.role === "user" ? (
+                        {isOwner ? null : user.role === "user" ? (
                           <button
                             type="button"
                             disabled={setRole.isPending}
@@ -226,6 +235,13 @@ export function UsersView() {
 }
 
 function RoleBadge({ role }: { role: AuthUser["role"] }) {
+  if (role === "owner") {
+    return (
+      <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+        owner
+      </span>
+    );
+  }
   if (role === "admin") {
     return (
       <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">

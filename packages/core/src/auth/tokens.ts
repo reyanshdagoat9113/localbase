@@ -11,7 +11,7 @@ export interface AccessTokenClaims {
   /** User email at issuance time. */
   email: string;
   /**
-   * User role at issuance time (`"user"` | `"admin"`).
+   * User role at issuance time (`"user"` | `"admin"` | `"owner"`).
    *
    * ⚠️ This is a *snapshot* for convenience only. `requireAdmin` does NOT
    * trust it for authorization — it re-reads the current role from `_users`

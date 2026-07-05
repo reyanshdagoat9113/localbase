@@ -29,8 +29,8 @@ Ship a built-in dashboard at `http://localhost:5180/admin` that lets you browse 
 
 | # | Decision | Choice | Rationale |
 |---|---|---|---|
-| 1 | **Auth model** | `role` column on `_users` (`user` \| `admin`) + bootstrap | Per-user, auditable, single auth/JWT system. No second auth codebase to maintain. |
-| 2 | **Bootstrap** | First user to sign up becomes admin; `localbase admin:promote <email>` for the rest | Works on fresh installs; reliable CLI path for existing installs that already have users. |
+| 1 | **Auth model** | `role` column on `_users` (`user` \| `admin` \| `owner`) + bootstrap | Per-user, auditable, single auth/JWT system. No second auth codebase to maintain. |
+| 2 | **Bootstrap** | First user to sign up becomes owner; `localbase admin:promote <email>` grants admin to others | Works on fresh installs; reliable CLI path for existing installs that already have users. |
 | 3 | **Package layout** | New `packages/admin`; built `dist/` embedded into `@localbase/core/dist/admin` at publish | Keeps `@localbase/core` lean (no React/Vite/Tailwind in its deps); `npm i @localbase/core` stays self-contained. |
 | 4 | **Table grid** | `@tanstack/react-table` (headless) | ~10% the bundle of ag-grid; styles match shadcn/ui exactly; no visual clash. |
 | 5 | **First cut scope** | P0 (table browser + inline row editor + schema viewer) **+ Auth Manager** | Auth Manager is nearly free — `Auth.createUser / listUsers / setPassword` already exist. |
@@ -79,7 +79,7 @@ Ship a built-in dashboard at `http://localhost:5180/admin` that lets you browse 
 
 ## 🔐 Security Model: `role` on `_users`
 
-An admin is just a user whose JWT carries `role: "admin"`. No second auth system.
+Admins and the owner use the same JWT-based auth system. The owner has admin access but cannot be demoted, and another admin cannot reset the owner's password.
 
 `requireAdmin` must not trust only the JWT role claim. It should verify the session/user still exists and read the current role from `_users` before allowing access, so demotion takes effect immediately even if an old access token still contains `role: "admin"`.
 
@@ -96,8 +96,8 @@ _users: {
 
 **What changes:**
 - `tokens.ts` — `signAccessToken` embeds `role`; `verifyAccessToken` exposes it in claims.
-- `auth.ts` — `signUp` grants `admin` **only when `_users` is empty** (first-user bootstrap); `publicUser` surfaces `role`.
-- `auth/middleware.ts` — new `requireAdmin(secret)` factory, parallels `requireAuth`, validates token/session, loads current user role from DB, checks `role === "admin"` → 403 otherwise.
+- `auth.ts` — `signUp` grants `owner` **only when `_users` is empty** (first-user bootstrap); `publicUser` surfaces `role`.
+- `auth/middleware.ts` — `requireAdmin(secret)` validates token/session, loads the current user role from DB, and accepts `admin` or `owner`.
 - CLI — `localbase admin:promote <email>` / `admin:demote <email>` (reuses `Auth` class).
 
 **Fallback when auth is disabled:** if `auth.enabled === false`, the admin API is ungated **only when the server is bound to `127.0.0.1` / `localhost`**. Starting an ungated admin API on `0.0.0.0` or another public interface must fail unless the user passes an explicit unsafe flag such as `--admin-unsafe-public`.

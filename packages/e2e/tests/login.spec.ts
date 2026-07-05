@@ -28,7 +28,9 @@ test.describe("Admin login", () => {
     await page.getByLabel("Password").fill(USER_PASSWORD);
     await page.getByRole("button", { name: "Sign in" }).click();
 
-    await expect(page.getByText("not an admin", { exact: false })).toBeVisible();
+    await expect(
+      page.getByText("does not have admin access", { exact: false })
+    ).toBeVisible();
     await expect(page).toHaveURL(/\/admin\/login$/);
     // And no admin session is persisted to localStorage.
     const stored = await page.evaluate(() => localStorage.getItem("localbase.admin.session"));

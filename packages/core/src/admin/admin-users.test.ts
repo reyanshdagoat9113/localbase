@@ -251,6 +251,62 @@ describe("POST /_api/admin/users/:id/reset-password", () => {
     );
     assert.equal(res.status, 400);
   });
+
+  it("refuses to let another admin reset the owner's password", async () => {
+    const list = await app.request("/_api/admin/users", {
+      headers: bearer(admin.accessToken),
+    });
+    const owner = (await list.json()).data.find(
+      (user: AuthUser) => user.role === "owner"
+    );
+    const created = await app.request(
+      "/_api/admin/users",
+      jsonReq(
+        "POST",
+        { email: "other-admin@test.com", password: "password123" },
+        bearer(admin.accessToken)
+      )
+    );
+    const otherAdmin = (await created.json()).data as AuthUser;
+    await app.request(
+      `/_api/admin/users/${otherAdmin.id}/role`,
+      jsonReq("PATCH", { role: "admin" }, bearer(admin.accessToken))
+    );
+    const login = await app.request(
+      "/api/auth/signin",
+      jsonReq("POST", { email: otherAdmin.email, password: "password123" })
+    );
+    const otherAdminSession = (await login.json()).data;
+    const res = await app.request(
+      `/_api/admin/users/${owner.id}/reset-password`,
+      jsonReq(
+        "POST",
+        { password: "replacement1" },
+        bearer(otherAdminSession.accessToken)
+      )
+    );
+    const { status, body } = await parse(res);
+    assert.equal(status, 403);
+    assert.match(body.error, /owner/i);
+  });
+
+  it("allows the owner to reset their own password", async () => {
+    const list = await app.request("/_api/admin/users", {
+      headers: bearer(admin.accessToken),
+    });
+    const owner = (await list.json()).data.find(
+      (user: AuthUser) => user.role === "owner"
+    );
+    const res = await app.request(
+      `/_api/admin/users/${owner.id}/reset-password`,
+      jsonReq(
+        "POST",
+        { password: "ownerreplacement1" },
+        bearer(admin.accessToken)
+      )
+    );
+    assert.equal(res.status, 200);
+  });
 });
 
 // ─── PATCH /_api/admin/users/:id/role ──────────────────────────
@@ -298,11 +354,11 @@ describe("PATCH /_api/admin/users/:id/role", () => {
     assert.equal(body.data.role, "user");
   });
 
-  it("refuses to demote the last admin (409)", async () => {
-    // Fresh DB with a single admin.
+  it("refuses to change the owner's role (409)", async () => {
+    // Fresh DB with a single owner.
     const { app: app2, db: db2 } = newApp();
     try {
-      const only = await signup(app2, "solo@test.com"); // first → admin, only admin
+      const only = await signup(app2, "solo@test.com"); // first → owner
       const list = await app2.request("/_api/admin/users", {
         headers: bearer(only.accessToken),
       });
@@ -314,7 +370,7 @@ describe("PATCH /_api/admin/users/:id/role", () => {
       );
       const { status, body } = await parse(res);
       assert.equal(status, 409);
-      assert.match(body.error, /last admin/i);
+      assert.match(body.error, /owner role cannot be changed/i);
     } finally {
       db2.close();
     }

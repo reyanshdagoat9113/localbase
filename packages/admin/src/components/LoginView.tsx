@@ -22,8 +22,8 @@ export function LoginView() {
         mode === "signin"
           ? await signIn(email, password)
           : await signUp(email, password);
-      if (session.user.role !== "admin") {
-        setError("This account is not an admin.");
+      if (session.user.role !== "admin" && session.user.role !== "owner") {
+        setError("This account does not have admin access.");
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Authentication failed.");
@@ -42,7 +42,7 @@ export function LoginView() {
           <p className="text-sm font-medium text-muted-foreground">LocalBase</p>
           <h1 className="mt-1 text-2xl font-semibold">Admin Studio</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Sign in with an admin account, or create the first admin on a fresh
+            Sign in with an admin account, or create the owner on a fresh
             database.
           </p>
         </div>
@@ -81,7 +81,7 @@ export function LoginView() {
           disabled={loading}
           className="mt-6 w-full rounded-md bg-primary px-4 py-2 font-medium text-primary-foreground disabled:opacity-60"
         >
-          {loading ? "Working..." : mode === "signin" ? "Sign in" : "Create admin"}
+          {loading ? "Working..." : mode === "signin" ? "Sign in" : "Create owner"}
         </button>
 
         <button
@@ -89,7 +89,7 @@ export function LoginView() {
           onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
           className="mt-3 w-full text-sm text-muted-foreground hover:text-foreground"
         >
-          {mode === "signin" ? "Create the first admin" : "Use an existing admin"}
+          {mode === "signin" ? "Create the owner" : "Use an existing admin"}
         </button>
       </form>
     </div>
