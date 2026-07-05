@@ -2,7 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { serve } from "@hono/node-server";
 import type { ServerType } from "@hono/node-server";
-import { Database, createServer as createApi, createRealtimeServer } from "@localbase/core";
+import {
+  Database,
+  Scheduler,
+  createServer as createApi,
+  createRealtimeServer,
+} from "@localbase/core";
 import type { RealtimeServer } from "@localbase/core";
 import { loadConfig, ConfigError } from "./config.js";
 import { log } from "./log.js";
@@ -50,6 +55,7 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
   const host = opts.host ?? DEFAULT_HOST;
   let currentServer: ServerType | null = null;
   let currentRealtime: RealtimeServer | null = null;
+  let currentScheduler: Scheduler | null = null;
   let currentDb: Database | null = null;
   let reloading = false;
   let didOpenBrowser = false;
@@ -164,8 +170,33 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
             config: config.realtime,
           });
 
+    // Arm the scheduled-jobs scheduler when any jobs are declared. Like the
+    // realtime server, the scheduler is a long-running process (timers), not
+    // part of the HTTP router — so it lives here in `dev`, next to realtime,
+    // and is torn down + re-armed on config hot-reload. No-op when `jobs` is
+    // empty/absent (Decision #7).
+    const jobsMap = config.jobs ?? {};
+    const scheduler = Object.keys(jobsMap).length > 0
+      ? new Scheduler({ db, cwd, jobs: jobsMap })
+      : null;
+    if (scheduler) {
+      scheduler.start();
+      const armed = Object.entries(jobsMap)
+        .filter(([, j]) => j.enabled !== false)
+        .map(([n]) => n);
+      const paused = Object.entries(jobsMap)
+        .filter(([, j]) => j.enabled === false)
+        .map(([n]) => n);
+      log.info(
+        `Jobs: ${armed.length} armed${
+          paused.length > 0 ? `, ${paused.length} paused` : ""
+        }` + (armed.length > 0 ? ` (${armed.join(", ")})` : "")
+      );
+    }
+
     currentServer = server;
     currentRealtime = realtime;
+    currentScheduler = scheduler;
     currentDb = db;
 
     // Watch config file for changes
@@ -218,6 +249,14 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
   }
 
   function stop() {
+    // Tear down timers first so no new firing can race with the DB close.
+    // In-flight handlers run to completion (the runner finalizes their rows);
+    // `stop()` only prevents *future* firings. This mirrors the reverse of
+    // `start()`'s wiring order.
+    if (currentScheduler) {
+      currentScheduler.stop();
+      currentScheduler = null;
+    }
     if (currentRealtime) {
       currentRealtime.close();
       currentRealtime = null;
