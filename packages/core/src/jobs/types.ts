@@ -32,4 +32,4 @@ export interface JobContext {
  * A thrown error (sync or async) sets the run's `status` to `"failed"` and
  * records the message in `error`.
  */
-export type JobHandler = (ctx: JobContext) => void | Promise<void>;
+export type JobHandler = (ctx: JobContext) => unknown | Promise<unknown>;

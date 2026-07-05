@@ -133,54 +133,56 @@ export class JobRunner {
       if (typeof line === "string") logLines.push(line);
     };
 
-    // Insert the `running` row up-front so observers see the run immediately.
-    // `started_at` defaults to CURRENT_TIMESTAMP; we overwrite it with an ISO
-    // string so the value is stable across SQLite builds and matches `ended_at`.
-    const startedAtIso = new Date(startedAtMs).toISOString();
-    const inserted = this.db.insert("_job_runs", {
-      job_name: name,
-      status: "running",
-      started_at: startedAtIso,
-    }) as Array<{ id: number }>;
-    const runId = inserted[0].id;
-
     try {
-      const handler = await this.loadHandler(job.handler);
-      const returnValue = await handler({ db: this.db, log, name });
-      const output = buildOutput(logLines, returnValue);
+      // Insert the `running` row up-front so observers see the run immediately.
+      // `started_at` defaults to CURRENT_TIMESTAMP; we overwrite it with an ISO
+      // string so the value is stable across SQLite builds and matches `ended_at`.
+      const startedAtIso = new Date(startedAtMs).toISOString();
+      const inserted = this.db.insert("_job_runs", {
+        job_name: name,
+        status: "running",
+        started_at: startedAtIso,
+      }) as Array<{ id: number }>;
+      const runId = inserted[0].id;
 
-      this.db.update(
-        "_job_runs",
-        {
-          status: "success",
-          ended_at: new Date().toISOString(),
-          duration_ms: Date.now() - startedAtMs,
-          output,
-        },
-        [{ column: "id", operator: "eq", value: runId }]
-      );
-      return { runId, status: "success" };
-    } catch (err) {
-      // A handler-load failure is recorded as a normal failed run so the
-      // scheduler survives a broken handler file instead of crashing.
-      const message = errorMessage(err);
-      const output =
-        isLoadError(err) && logLines.length === 0
-          ? LOAD_ERROR_SENTINEL
-          : buildOutput(logLines, undefined);
+      try {
+        const handler = await this.loadHandler(job.handler);
+        const returnValue = await handler({ db: this.db, log, name });
+        const output = buildOutput(logLines, returnValue);
 
-      this.db.update(
-        "_job_runs",
-        {
-          status: "failed",
-          ended_at: new Date().toISOString(),
-          duration_ms: Date.now() - startedAtMs,
-          output,
-          error: message,
-        },
-        [{ column: "id", operator: "eq", value: runId }]
-      );
-      return { runId, status: "failed" };
+        this.db.update(
+          "_job_runs",
+          {
+            status: "success",
+            ended_at: new Date().toISOString(),
+            duration_ms: Date.now() - startedAtMs,
+            output,
+          },
+          [{ column: "id", operator: "eq", value: runId }]
+        );
+        return { runId, status: "success" };
+      } catch (err) {
+        // A handler-load failure is recorded as a normal failed run so the
+        // scheduler survives a broken handler file instead of crashing.
+        const message = errorMessage(err);
+        const output =
+          isLoadError(err) && logLines.length === 0
+            ? LOAD_ERROR_SENTINEL
+            : buildOutput(logLines, undefined);
+
+        this.db.update(
+          "_job_runs",
+          {
+            status: "failed",
+            ended_at: new Date().toISOString(),
+            duration_ms: Date.now() - startedAtMs,
+            output,
+            error: message,
+          },
+          [{ column: "id", operator: "eq", value: runId }]
+        );
+        return { runId, status: "failed" };
+      }
     } finally {
       this.running.delete(name);
     }

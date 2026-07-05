@@ -297,6 +297,25 @@ describe("JobRunner.run — output capping", () => {
 });
 
 describe("JobRunner.run — registry guards", () => {
+  it("releases the running guard if inserting the run row fails", async () => {
+    const cwd = writeHandler(`export default async () => {}`);
+    const jobs = { missingTable: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
+    // Deliberately omit `jobs` from DatabaseOptions so `_job_runs` is absent.
+    const db = new Database({ schema: baseSchema, dataDir: cwd });
+    const { runner } = makeRunner(cwd, jobs, db);
+
+    try {
+      await assert.rejects(() => runner.run("missingTable"), /_job_runs|no such table/i);
+      assert.equal(
+        runner.isRunning("missingTable"),
+        false,
+        "failed insert must not leave the job permanently marked running"
+      );
+    } finally {
+      db.close();
+    }
+  });
+
   it("throws JobError for an unknown job name", async () => {
     const cwd = writeHandler(`export default async () => {}`);
     const jobs = { known: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
