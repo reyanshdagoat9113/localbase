@@ -3,8 +3,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { fileURLToPath } from "node:url";
 import { loadConfig, ConfigError } from "./config.js";
 import type { LocalBaseConfig } from "@localbase/shared";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
  * M1 — config validation for the scheduled-jobs subsystem.
@@ -200,5 +203,24 @@ describe("validateJobs (via loadConfig) — rejections", () => {
       `jobs: { cleanup: "midnight" }`,
       /must be an object with "schedule" and "handler"/
     );
+  });
+});
+
+// ─── Example project configs ────────────────────────────────────
+
+describe("example configs load and validate", () => {
+  it("loads the task-board example config with auth + policies", async () => {
+    const exampleDir = path.resolve(__dirname, "../../../examples/task-board");
+    const { config } = await loadConfig(exampleDir);
+
+    assert.equal(config.auth?.enabled, true);
+    assert.equal(typeof config.auth?.jwtSecret, "string");
+    assert.ok(config.tables.projects);
+    assert.ok(config.tables.tasks);
+    assert.ok(config.tables.columns);
+    assert.ok(config.tables.labels);
+    assert.ok(config.tables.task_labels);
+    assert.ok(config.tables.comments);
+    assert.deepEqual(config.policies, { projects: { ownerColumn: "owner_id" } });
   });
 });

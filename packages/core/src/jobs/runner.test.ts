@@ -129,6 +129,50 @@ describe("JobRunner.run — happy path", () => {
     }
   });
 
+  it("ignores non-string log() values", async () => {
+    const cwd = writeHandler(
+      `export default async ({ log }) => {
+        log("valid line");
+        log(123);
+        log(null);
+        log({ object: true });
+      }`
+    );
+    const jobs = { logger: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
+    const { runner, db } = makeRunner(cwd, jobs);
+
+    try {
+      const result = await runner.run("logger");
+      assert.equal(result.status, "success");
+      const row = runs(db)[0];
+      assert.equal(row.output, "valid line");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("falls back to String() when the return value is not JSON-serializable", async () => {
+    const cwd = writeHandler(
+      `export default async () => {
+        const obj = { self: null };
+        obj.self = obj;
+        return obj;
+      }`
+    );
+    const jobs = { circular: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
+    const { runner, db } = makeRunner(cwd, jobs);
+
+    try {
+      const result = await runner.run("circular");
+      assert.equal(result.status, "success");
+      const row = runs(db)[0];
+      assert.ok(row.output);
+      assert.equal(row.output?.includes("[object Object]"), true);
+    } finally {
+      db.close();
+    }
+  });
+
   it("inserts a running row before updating it (lifecycle is two writes)", async () => {
     const cwd = writeHandler(`export default async () => {}`);
     const jobs = { probe: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
@@ -264,6 +308,30 @@ describe("JobRunner.run — concurrency guard", () => {
       // Exactly one run row — the overlapping firing was dropped, not queued.
       assert.equal(runs(db).length, 1);
       assert.equal(runs(db)[0].status, "success");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("does not block concurrent runs of different job names", async () => {
+    const cwd = writeHandler(
+      `const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      export default async ({ name, log }) => {
+        log(name);
+        await wait(50);
+      };`
+    );
+    const jobs = {
+      a: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" },
+      b: { schedule: "0 4 * * *", handler: "./jobs/handler.ts" },
+    };
+    const { runner, db } = makeRunner(cwd, jobs);
+
+    try {
+      const [a, b] = await Promise.all([runner.run("a"), runner.run("b")]);
+      assert.equal(a.status, "success");
+      assert.equal(b.status, "success");
+      assert.equal(runs(db).length, 2);
     } finally {
       db.close();
     }
