@@ -99,6 +99,13 @@ export type { StorageRouterOptions } from "./storage/router.js";
 
 // Jobs subsystem
 export { JOBS_SCHEMA } from "./jobs/schema.js";
+export {
+  JobRunner,
+  JobError,
+  JobHandlerLoadError,
+} from "./jobs/runner.js";
+export type { JobRunnerOptions, JobRunResult } from "./jobs/runner.js";
+export type { JobContext, JobHandler } from "./jobs/types.js";
 
 // Re-export shared types
 export type {
