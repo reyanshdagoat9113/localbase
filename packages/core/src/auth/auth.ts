@@ -365,6 +365,15 @@ export class Auth {
     return (rows as UserRowWithHash[]).map((r) => this.publicUser(r));
   }
 
+  /** List all admins, oldest first. Password hashes are never returned. */
+  listAdmins(): AuthUser[] {
+    const rows = this.db.select("_users", {
+      filters: [{ column: "role", operator: "eq", value: "admin" }],
+      orderBy: [{ column: "created_at", direction: "asc" }],
+    });
+    return (rows as UserRowWithHash[]).map((r) => this.publicUser(r));
+  }
+
   /** Reset a user's password by email. Used by `localbase auth reset-password`. */
   async setPassword(
     emailRaw: unknown,
