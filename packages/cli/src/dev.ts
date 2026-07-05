@@ -212,50 +212,60 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
       reloading = true;
       log.info("Config changed, reloading...");
 
-      // Stop current server and close DB
-      stop();
+      void (async () => {
+        // Stop current server, drain in-flight jobs, then close DB before
+        // reloading. The drain is important because Scheduler.stop() only
+        // prevents future firings; active handlers still need the DB to
+        // finalize their `_job_runs` rows.
+        await stop();
 
-      // Small delay to let file write complete
-      setTimeout(async () => {
-        try {
-          await start();
-          reloading = false;
-        } catch (err) {
-          if (err instanceof ConfigError) {
-            log.error(`Reload failed: ${err.message}`);
-            if (err.hint) log.hint(err.hint);
-          } else {
-            log.error(`Reload failed: ${err instanceof Error ? err.message : err}`);
+        // Small delay to let file write complete
+        setTimeout(async () => {
+          try {
+            await start();
+            reloading = false;
+          } catch (err) {
+            if (err instanceof ConfigError) {
+              log.error(`Reload failed: ${err.message}`);
+              if (err.hint) log.hint(err.hint);
+            } else {
+              log.error(`Reload failed: ${err instanceof Error ? err.message : err}`);
+            }
+            log.info("Fix the config and save again to retry.");
+            reloading = false;
           }
-          log.info("Fix the config and save again to retry.");
-          reloading = false;
-        }
-      }, 100);
+        }, 100);
+      })();
     });
 
     // Handle graceful shutdown
     process.on("SIGINT", () => {
-      log.info("\nShutting down...");
-      watcher.close();
-      stop();
-      process.exit(0);
+      void (async () => {
+        log.info("\nShutting down...");
+        watcher.close();
+        await stop();
+        process.exit(0);
+      })();
     });
 
     process.on("SIGTERM", () => {
-      watcher.close();
-      stop();
-      process.exit(0);
+      void (async () => {
+        watcher.close();
+        await stop();
+        process.exit(0);
+      })();
     });
   }
 
-  function stop() {
-    // Tear down timers first so no new firing can race with the DB close.
-    // In-flight handlers run to completion (the runner finalizes their rows);
-    // `stop()` only prevents *future* firings. This mirrors the reverse of
-    // `start()`'s wiring order.
+  async function stop() {
+    // Tear down timers first so no new firing can race with the DB close, then
+    // wait for already-started handlers to finish before closing the DB they
+    // need to finalize `_job_runs` rows.
     if (currentScheduler) {
-      currentScheduler.stop();
+      const scheduler = currentScheduler;
       currentScheduler = null;
+      scheduler.stop();
+      await scheduler.waitForIdle();
     }
     if (currentRealtime) {
       currentRealtime.close();
