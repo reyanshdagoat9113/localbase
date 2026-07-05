@@ -9,6 +9,7 @@ import {
   resetPasswordCommand,
 } from "./auth.js";
 import { promoteCommand, demoteCommand, listAdminsCommand } from "./admin.js";
+import { listJobsCommand, runJobCommand, jobLogsCommand } from "./jobs.js";
 import { ConfigError } from "./config.js";
 import { log } from "./log.js";
 
@@ -225,6 +226,40 @@ adminCmd
   .description("List all admin users")
   .action(async () => {
     await listAdminsCommand();
+  });
+
+// ── localbase jobs ... ──
+const jobsCmd = program
+  .command("jobs")
+  .description(
+    "Scheduled jobs (requires a `jobs` map in config). List registered " +
+      "jobs, trigger one manually, or inspect run history."
+  );
+
+jobsCmd
+  .command("list")
+  .description("List registered jobs with next/last run and status")
+  .action(async () => {
+    await listJobsCommand();
+  });
+
+jobsCmd
+  .command("run <name>")
+  .description("Trigger a registered job immediately and print its outcome")
+  .action(async (name: string) => {
+    await runJobCommand({ name });
+  });
+
+jobsCmd
+  .command("logs <name>")
+  .description("Show recent run history for a job (newest first)")
+  .option("-n, --limit <number>", "Number of runs to show (default 10)", "10")
+  .action(async (name: string, opts: { limit: string }) => {
+    const limit = Number.parseInt(opts.limit, 10);
+    await jobLogsCommand({
+      name,
+      limit: Number.isFinite(limit) && limit > 0 ? limit : undefined,
+    });
   });
 
 program.parse(process.argv);

@@ -338,6 +338,37 @@ describe("Scheduler.runNow — manual trigger", () => {
 });
 
 describe("Scheduler — concurrency (overlap is skipped)", () => {
+  it("waitForIdle drains an in-flight run after stop before DB close", async () => {
+    const cwd = writeHandler(
+      `const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      export default async ({ log }) => {
+        log("started");
+        await wait(150);
+        log("finished");
+      };`
+    );
+    const jobs = { slow: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
+    const { scheduler, db } = makeScheduler(cwd, jobs);
+
+    try {
+      const run = scheduler.runNow("slow");
+      await new Promise((r) => setImmediate(r));
+      assert.ok(scheduler.getRunner().isRunning("slow"));
+
+      scheduler.stop();
+      await scheduler.waitForIdle();
+      const result = await run;
+      assert.equal(result.status, "success");
+      assert.equal(scheduler.getRunner().isRunning("slow"), false);
+
+      const row = runs(db)[0];
+      assert.equal(row.status, "success");
+      assert.match(row.output as string, /finished/);
+    } finally {
+      db.close();
+    }
+  });
+
   it("runNow while the handler is still running returns skipped (no extra row)", async () => {
     const cwd = writeHandler(
       `const wait = (ms) => new Promise((r) => setTimeout(r, ms));

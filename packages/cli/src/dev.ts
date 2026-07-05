@@ -2,7 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { serve } from "@hono/node-server";
 import type { ServerType } from "@hono/node-server";
-import { Database, createServer as createApi, createRealtimeServer } from "@localbase/core";
+import {
+  Database,
+  Scheduler,
+  createServer as createApi,
+  createRealtimeServer,
+} from "@localbase/core";
 import type { RealtimeServer } from "@localbase/core";
 import { loadConfig, ConfigError } from "./config.js";
 import { log } from "./log.js";
@@ -50,6 +55,7 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
   const host = opts.host ?? DEFAULT_HOST;
   let currentServer: ServerType | null = null;
   let currentRealtime: RealtimeServer | null = null;
+  let currentScheduler: Scheduler | null = null;
   let currentDb: Database | null = null;
   let reloading = false;
   let didOpenBrowser = false;
@@ -164,8 +170,33 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
             config: config.realtime,
           });
 
+    // Arm the scheduled-jobs scheduler when any jobs are declared. Like the
+    // realtime server, the scheduler is a long-running process (timers), not
+    // part of the HTTP router — so it lives here in `dev`, next to realtime,
+    // and is torn down + re-armed on config hot-reload. No-op when `jobs` is
+    // empty/absent (Decision #7).
+    const jobsMap = config.jobs ?? {};
+    const scheduler = Object.keys(jobsMap).length > 0
+      ? new Scheduler({ db, cwd, jobs: jobsMap })
+      : null;
+    if (scheduler) {
+      scheduler.start();
+      const armed = Object.entries(jobsMap)
+        .filter(([, j]) => j.enabled !== false)
+        .map(([n]) => n);
+      const paused = Object.entries(jobsMap)
+        .filter(([, j]) => j.enabled === false)
+        .map(([n]) => n);
+      log.info(
+        `Jobs: ${armed.length} armed${
+          paused.length > 0 ? `, ${paused.length} paused` : ""
+        }` + (armed.length > 0 ? ` (${armed.join(", ")})` : "")
+      );
+    }
+
     currentServer = server;
     currentRealtime = realtime;
+    currentScheduler = scheduler;
     currentDb = db;
 
     // Watch config file for changes
@@ -181,43 +212,61 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
       reloading = true;
       log.info("Config changed, reloading...");
 
-      // Stop current server and close DB
-      stop();
+      void (async () => {
+        // Stop current server, drain in-flight jobs, then close DB before
+        // reloading. The drain is important because Scheduler.stop() only
+        // prevents future firings; active handlers still need the DB to
+        // finalize their `_job_runs` rows.
+        await stop();
 
-      // Small delay to let file write complete
-      setTimeout(async () => {
-        try {
-          await start();
-          reloading = false;
-        } catch (err) {
-          if (err instanceof ConfigError) {
-            log.error(`Reload failed: ${err.message}`);
-            if (err.hint) log.hint(err.hint);
-          } else {
-            log.error(`Reload failed: ${err instanceof Error ? err.message : err}`);
+        // Small delay to let file write complete
+        setTimeout(async () => {
+          try {
+            await start();
+            reloading = false;
+          } catch (err) {
+            if (err instanceof ConfigError) {
+              log.error(`Reload failed: ${err.message}`);
+              if (err.hint) log.hint(err.hint);
+            } else {
+              log.error(`Reload failed: ${err instanceof Error ? err.message : err}`);
+            }
+            log.info("Fix the config and save again to retry.");
+            reloading = false;
           }
-          log.info("Fix the config and save again to retry.");
-          reloading = false;
-        }
-      }, 100);
+        }, 100);
+      })();
     });
 
     // Handle graceful shutdown
     process.on("SIGINT", () => {
-      log.info("\nShutting down...");
-      watcher.close();
-      stop();
-      process.exit(0);
+      void (async () => {
+        log.info("\nShutting down...");
+        watcher.close();
+        await stop();
+        process.exit(0);
+      })();
     });
 
     process.on("SIGTERM", () => {
-      watcher.close();
-      stop();
-      process.exit(0);
+      void (async () => {
+        watcher.close();
+        await stop();
+        process.exit(0);
+      })();
     });
   }
 
-  function stop() {
+  async function stop() {
+    // Tear down timers first so no new firing can race with the DB close, then
+    // wait for already-started handlers to finish before closing the DB they
+    // need to finalize `_job_runs` rows.
+    if (currentScheduler) {
+      const scheduler = currentScheduler;
+      currentScheduler = null;
+      scheduler.stop();
+      await scheduler.waitForIdle();
+    }
     if (currentRealtime) {
       currentRealtime.close();
       currentRealtime = null;

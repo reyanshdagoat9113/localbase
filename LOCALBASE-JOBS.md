@@ -220,7 +220,7 @@ Index on `(job_name, started_at DESC)` for the history/`logs` query (created ide
 
 Each milestone is independently shippable and verifiable. Tests use **Node's built-in `node:test`** (the repo standard — no vitest), colocated next to source as `*.test.ts`.
 
-### M1 — Schema, config types, validation (no runtime)
+### ✅ M1 — Schema, config types, validation (no runtime)
 **Goal:** the data model and config contract exist and are validated at startup; nothing runs yet.
 
 **Files:**
@@ -230,15 +230,15 @@ Each milestone is independently shippable and verifiable. Tests use **Node's bui
 - `packages/cli/src/config.ts` — add `validateJobs(config)`: each entry must have a non-empty `schedule` (parse with `croner` to reject invalid expressions), a non-empty `handler` string, optional `timezone`/`enabled`/`description`; call it from `loadConfig` next to `validateStorage`/`validateBuckets`/`validatePolicies`.
 
 **Tasks:**
-- [ ] Add `JobConfig` type + `jobs?` field to `LocalBaseConfig` in shared; re-export from `packages/core/src/index.ts` shared block.
-- [ ] Create `packages/core/src/jobs/schema.ts` exporting `JOBS_SCHEMA`.
-- [ ] Merge `JOBS_SCHEMA` into `effectiveSchema` in the `Database` constructor (conditional on jobs config).
-- [ ] Add `validateJobs` to the CLI config loader (validates cron syntax via `croner`, rejects duplicate names, requires `handler` string).
-- [ ] Write tests: `_job_runs` exists after migrate when jobs configured; bad cron rejected at `loadConfig`; duplicate/missing handler path rejected.
+- [x] Add `JobConfig` type + `jobs?` field to `LocalBaseConfig` in shared; re-export from `packages/core/src/index.ts` shared block.
+- [x] Create `packages/core/src/jobs/schema.ts` exporting `JOBS_SCHEMA`.
+- [x] Merge `JOBS_SCHEMA` into `effectiveSchema` in the `Database` constructor (conditional on jobs config).
+- [x] Add `validateJobs` to the CLI config loader (validates cron syntax via `croner`, rejects duplicate names, requires `handler` string).
+- [x] Write tests: `_job_runs` exists after migrate when jobs configured; bad cron rejected at `loadConfig`; duplicate/missing handler path rejected.
 
 **Done when:** a config with a `jobs` map loads; a malformed schedule/handler fails at `localbase dev` startup with an actionable `ConfigError`; `_job_runs` is present in the DB.
 
-### M2 — Job runner (load, execute, log)
+### ✅ M2 — Job runner (load, execute, log)
 **Goal:** a single job can be invoked by name, its handler loaded and run, and the outcome recorded in `_job_runs`.
 
 **Files:**
@@ -248,30 +248,30 @@ Each milestone is independently shippable and verifiable. Tests use **Node's bui
 - `packages/core/src/jobs/index.ts` — barrel exporting `JOBS_SCHEMA`, `JobRunner`, types.
 
 **Tasks:**
-- [ ] Add `jiti` + `croner` to `packages/core` dependencies.
-- [ ] Implement `JobRunner.run(name)` with full `_job_runs` lifecycle (running → success/failed).
-- [ ] Concurrency guard: maintain an in-memory `Set<string>` of running names; reject re-entry with a `skipped` note (return early, do not insert a `running` row).
-- [ ] Validate handler export shape; emit a clear error into `error` if the default export is not a function.
-- [ ] Write runner tests (in-memory DB): success path records `output`; thrown error records `status: "failed"` + message; non-function export records error; re-entry while running is skipped.
+- [x] Add `jiti` + `croner` to `packages/core` dependencies.
+- [x] Implement `JobRunner.run(name)` with full `_job_runs` lifecycle (running → success/failed).
+- [x] Concurrency guard: maintain an in-memory `Set<string>` of running names; reject re-entry with a `skipped` note (return early, do not insert a `running` row).
+- [x] Validate handler export shape; emit a clear error into `error` if the default export is not a function.
+- [x] Write runner tests (in-memory DB): success path records `output`; thrown error records `status: "failed"` + message; non-function export records error; re-entry while running is skipped.
 
 **Done when:** `runner.run("foo")` loads `./jobs/foo.ts`, executes the default export, and `_job_runs` contains one completed row reflecting the outcome.
 
-### M3 — Scheduler (cron-driven, process lifecycle)
+### ✅ M3 — Scheduler (cron-driven, process lifecycle)
 **Goal:** jobs fire on their cron schedule inside a long-running process.
 
 **Files:**
 - `packages/core/src/jobs/scheduler.ts` — `Scheduler` class: constructed with `{ db, cwd, jobs }`; `start()` creates a `croner.Cron` per enabled job whose callback calls `runner.run(name)`; `stop()` destroys all cron instances; `runNow(name)` delegates to the runner (used by CLI + admin manual trigger); `listJobs()` returns `{ name, schedule, timezone, enabled, nextRun, lastRun, lastStatus }` by combining the config map with `_job_runs` queries; `getNextRun(name)`, `getRuns(name, { limit, offset })` helpers for CLI/admin.
 
 **Tasks:**
-- [ ] Implement `Scheduler.start()` / `.stop()` over `croner.Cron` instances.
-- [ ] Implement `runNow(name)` (manual trigger path) — same concurrency guard as the runner.
-- [ ] Implement `listJobs()` / `getNextRun(name)` / `getRuns(name, opts)` readers.
-- [ ] **No backfill:** on `start()`, schedule the next *future* run only (croner default); never replay missed runs.
-- [ ] Write scheduler tests: a sub-minute/fake-clock schedule fires and writes a row; `stop()` cancels future firings; `runNow` triggers immediately; an overlapping firing is skipped.
+- [x] Implement `Scheduler.start()` / `.stop()` over `croner.Cron` instances.
+- [x] Implement `runNow(name)` (manual trigger path) — same concurrency guard as the runner.
+- [x] Implement `listJobs()` / `getNextRun(name)` / `getRuns(name, opts)` readers.
+- [x] **No backfill:** on `start()`, schedule the next *future* run only (croner default); never replay missed runs.
+- [x] Write scheduler tests: a sub-minute/fake-clock schedule fires and writes a row; `stop()` cancels future firings; `runNow` triggers immediately; an overlapping firing is skipped.
 
 **Done when:** a registered job with a short schedule produces `_job_runs` rows on its own, and `stop()` halts it.
 
-### M4 — CLI commands + dev integration
+### ✅ M4 — CLI commands + dev integration
 **Goal:** developers inspect and trigger jobs from the terminal; the scheduler starts with `localbase dev`.
 
 **Files:**
@@ -280,11 +280,11 @@ Each milestone is independently shippable and verifiable. Tests use **Node's bui
 - `packages/cli/src/dev.ts` — construct `Scheduler` after the HTTP server is up (next to `createRealtimeServer`); hold it in a module-level `currentScheduler`; call `.stop()` in `stop()` and on config hot-reload teardown.
 
 **Tasks:**
-- [ ] Implement `localbase jobs list` (name, schedule, enabled, next run, last run + status).
-- [ ] Implement `localbase jobs run <name>` (manual trigger via `scheduler.runNow`, prints the resulting run id/status).
-- [ ] Implement `localbase jobs logs <name>` (last N runs from `_job_runs`, newest first).
-- [ ] Integrate `Scheduler` into `dev.ts` lifecycle (start on boot, stop on teardown + hot-reload, no-op when `config.jobs` is empty).
-- [ ] Write CLI tests: `jobs list` output shape against a fixture config; `jobs run` writes a `_job_runs` row; `jobs logs` renders history.
+- [x] Implement `localbase jobs list` (name, schedule, enabled, next run, last run + status).
+- [x] Implement `localbase jobs run <name>` (manual trigger via `scheduler.runNow`, prints the resulting run id/status).
+- [x] Implement `localbase jobs logs <name>` (last N runs from `_job_runs`, newest first).
+- [x] Integrate `Scheduler` into `dev.ts` lifecycle (start on boot, stop on teardown + hot-reload, no-op when `config.jobs` is empty).
+- [x] Write CLI tests: `jobs list` output shape against a fixture config; `jobs run` writes a `_job_runs` row; `jobs logs` renders history.
 
 **Done when:** `localbase jobs list` shows next/last run; `localbase jobs run foo` triggers immediately; `localbase dev` runs registered jobs on schedule.
 

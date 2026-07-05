@@ -92,6 +92,8 @@ export class Scheduler {
   private runner: JobRunner;
   /** Active `croner.Cron` instances, keyed by job name. */
   private crons = new Map<string, Cron>();
+  /** Runner promises currently executing (scheduled or manual). */
+  private inFlight = new Set<Promise<JobRunResult>>();
   private started = false;
 
   constructor(options: SchedulerOptions) {
@@ -129,7 +131,7 @@ export class Scheduler {
           // Handler failures are recorded as failed runs by the runner; this
           // catch only guards against truly unexpected rejections (e.g. a
           // corrupt `_job_runs`) so one bad firing can't kill the scheduler.
-          void this.runner.run(name).catch(() => {
+          void this.runTracked(name).catch(() => {
             /* swallow — see comment above */
           });
         }
@@ -157,6 +159,19 @@ export class Scheduler {
     this.started = false;
   }
 
+  /**
+   * Wait for every run already handed to the runner to finish. `stop()` only
+   * disarms future cron firings; callers that are about to close the Database
+   * (notably `localbase dev` hot-reload/shutdown) must await this first so an
+   * in-flight handler can finalize its `_job_runs` row before the connection
+   * disappears under it.
+   */
+  async waitForIdle(): Promise<void> {
+    while (this.inFlight.size > 0) {
+      await Promise.allSettled([...this.inFlight]);
+    }
+  }
+
   /** True after {@link start} and before {@link stop}. */
   isStarted(): boolean {
     return this.started;
@@ -173,7 +188,7 @@ export class Scheduler {
    * @throws {JobError} if `name` is not a registered job.
    */
   async runNow(name: string): Promise<JobRunResult> {
-    return this.runner.run(name);
+    return this.runTracked(name);
   }
 
   /** The underlying runner (exposed for advanced/admin introspection). */
@@ -275,6 +290,16 @@ export class Scheduler {
       CREATE INDEX IF NOT EXISTS "_job_runs_name_started_idx"
         ON "_job_runs" ("job_name", "started_at" DESC);
     `);
+  }
+
+  /** Run through the shared runner while tracking the promise for shutdown drains. */
+  private runTracked(name: string): Promise<JobRunResult> {
+    const promise = this.runner.run(name);
+    this.inFlight.add(promise);
+    // Observe the cleanup promise so a rejected runner call cannot become an
+    // unhandled rejection when this was fired from a cron callback.
+    promise.finally(() => this.inFlight.delete(promise)).catch(() => {});
+    return promise;
   }
 
   /** Throw {@link JobError} unless `name` is a registered job. */
