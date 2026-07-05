@@ -650,7 +650,7 @@ function hasLiveAdminRole(db: Database, userId: number): boolean {
   const row = db.selectById("_users", userId) as
     | { role?: unknown }
     | undefined;
-  return row?.role === "admin";
+  return row?.role === "admin" || row?.role === "owner";
 }
 
 // ─── Error handler ─────────────────────────────────────────────

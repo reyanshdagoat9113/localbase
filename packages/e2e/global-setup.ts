@@ -30,7 +30,7 @@ export default async function globalSetup(): Promise<void> {
   const ctx = await request.newContext();
   try {
     const session = await signIn(ctx, BASE_URL, ADMIN_EMAIL, ADMIN_PASSWORD);
-    if (session.user.role !== "admin") {
+    if (session.user.role !== "admin" && session.user.role !== "owner") {
       throw new Error(
         `Seed account ${ADMIN_EMAIL} is not an admin (role=${session.user.role}). ` +
           "The global setup promotes it; check `localbase admin promote` output."

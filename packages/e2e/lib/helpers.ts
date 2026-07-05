@@ -1,7 +1,7 @@
 import { expect, type APIRequestContext } from "@playwright/test";
 
 export interface AuthSession {
-  user: { id: number; email: string; role: "user" | "admin"; created_at?: string };
+  user: { id: number; email: string; role: "user" | "admin" | "owner"; created_at?: string };
   accessToken: string;
   refreshToken: string;
   expiresAt: number;

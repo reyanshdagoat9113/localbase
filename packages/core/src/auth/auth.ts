@@ -14,7 +14,7 @@ export interface AuthUser {
   id: number;
   email: string;
   /**
-   * `"user"` or `"admin"`. Surfaced to clients (the admin SPA uses it to
+   * `"user"`, `"admin"`, or `"owner"`. Surfaced to clients (the admin SPA uses it to
    * decide what to render) and embedded in the access-token claim.
    */
   role: string;
@@ -88,7 +88,9 @@ function validatePassword(
 }
 
 /**
- * The only two roles LocalBase knows about. Kept as a closed set so a typo
+ * Roles assignable through role-management operations. `owner` is deliberately
+ * excluded: it is assigned only by the first-user bootstrap and cannot be
+ * granted or removed through the admin API or CLI.
  * like `"adminn"` can't silently create an un-assignable role.
  */
 const VALID_ROLES = new Set(["user", "admin"]);
@@ -199,10 +201,10 @@ export class Auth {
 
     // Race-safe first-user bootstrap.
     //
-    // "First user becomes admin" is fundamentally a check-then-act: count
-    // `_users`, and if 0, grant admin. Two concurrent first signups (two
+    // "First user becomes owner" is fundamentally a check-then-act: count
+    // `_users`, and if 0, grant owner. Two concurrent first signups (two
     // different emails, two near-simultaneous requests) could both observe
-    // an empty table and both end up admin if the check isn't atomic with
+    // an empty table and both end up owner if the check isn't atomic with
     // the insert.
     //
     // We close that window by running the count-check and the insert
@@ -221,7 +223,7 @@ export class Auth {
         throw new AuthError(409, "Email already registered");
       }
       const isFirstUser = this.countUsers() === 0;
-      const role: string = isFirstUser ? "admin" : "user";
+      const role: string = isFirstUser ? "owner" : "user";
       const inserted = this.db.insert("_users", {
         email,
         password_hash: passwordHash,
@@ -365,13 +367,14 @@ export class Auth {
     return (rows as UserRowWithHash[]).map((r) => this.publicUser(r));
   }
 
-  /** List all admins, oldest first. Password hashes are never returned. */
+  /** List all users with administrative access, oldest first. */
   listAdmins(): AuthUser[] {
     const rows = this.db.select("_users", {
-      filters: [{ column: "role", operator: "eq", value: "admin" }],
       orderBy: [{ column: "created_at", direction: "asc" }],
     });
-    return (rows as UserRowWithHash[]).map((r) => this.publicUser(r));
+    return (rows as UserRowWithHash[])
+      .filter((r) => r.role === "admin" || r.role === "owner")
+      .map((r) => this.publicUser(r));
   }
 
   /** Reset a user's password by email. Used by `localbase auth reset-password`. */
@@ -402,16 +405,24 @@ export class Auth {
    * Reset a user's password by id. The admin API identifies users by `:id`
    * (the `_users.id` primary key), but the password logic is email-keyed; this
    * resolves id → email and delegates to {@link setPassword} so the hashing,
-   * min-length, and not-found semantics stay in one place.
+   * min-length, and not-found semantics stay in one place. An owner may reset
+   * their own password, but no other administrator may reset it.
    */
   async setPasswordById(
     idRaw: unknown,
-    newPasswordRaw: unknown
+    newPasswordRaw: unknown,
+    actorId?: number
   ): Promise<void> {
     const id = parseUserId(idRaw);
     const user = this.findUserById(id);
     if (!user) {
       throw new AuthError(404, `No user found with id ${id}`);
+    }
+    if (user.role === "owner" && actorId !== user.id) {
+      throw new AuthError(
+        403,
+        "The owner's password cannot be reset by an admin"
+      );
     }
     await this.setPassword(user.email, newPasswordRaw);
   }
@@ -427,11 +438,13 @@ export class Auth {
     return row?.n ?? 0;
   }
 
-  /** Number of admins. Used by the last-admin lockout. */
+  /** Number of users with administrative access, including the owner. */
   countAdmins(): number {
     const row = this.db
       .raw()
-      .prepare(`SELECT COUNT(*) AS n FROM "_users" WHERE "role" = 'admin'`)
+      .prepare(
+        `SELECT COUNT(*) AS n FROM "_users" WHERE "role" IN ('admin', 'owner')`
+      )
       .get() as { n: number } | undefined;
     return row?.n ?? 0;
   }
@@ -453,6 +466,10 @@ export class Auth {
       const user = this.findUserByEmail(email);
       if (!user) {
         throw new AuthError(404, `No user found with email "${email}"`);
+      }
+
+      if (user.role === "owner") {
+        throw new AuthError(409, "The owner role cannot be changed");
       }
 
       if (user.role === role) {

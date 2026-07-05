@@ -15,7 +15,7 @@ export const AUTH_SCHEMA: DatabaseSchema = {
     email: { type: "text", nullable: false, unique: true },
     password_hash: { type: "text", nullable: false },
     /**
-     * User role: `"user"` (default) or `"admin"`.
+     * User role: `"user"` (default), `"admin"`, or the bootstrap-only `"owner"`.
      *
      * Added in Phase 10/M2. For databases created before this column
      * existed, the additive migration adds it via

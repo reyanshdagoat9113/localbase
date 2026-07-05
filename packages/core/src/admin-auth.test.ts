@@ -41,11 +41,11 @@ async function signUp(auth: Auth, email: string, password = "password123") {
 // ─── First-user bootstrap ──────────────────────────────────────
 
 describe("First-user bootstrap", () => {
-  it("the very first signup becomes an admin", async () => {
+  it("the very first signup becomes the owner", async () => {
     const { db, auth } = newAuthDb();
     try {
       const session = await signUp(auth, "first@test.com");
-      assert.equal(session.user.role, "admin");
+      assert.equal(session.user.role, "owner");
 
       // The token carries the admin role claim.
       assert.equal(session.accessToken.length > 0, true);
@@ -71,7 +71,7 @@ describe("First-user bootstrap", () => {
     }
   });
 
-  it("the admin claim is actually embedded in the JWT", async () => {
+  it("the owner claim is actually embedded in the JWT", async () => {
     const { db, auth } = newAuthDb();
     try {
       const session = await signUp(auth, "first@test.com");
@@ -81,7 +81,7 @@ describe("First-user bootstrap", () => {
         session.accessToken,
         new TextEncoder().encode(SECRET)
       );
-      assert.equal(payload.role, "admin");
+      assert.equal(payload.role, "owner");
     } finally {
       db.close();
     }
@@ -104,25 +104,27 @@ describe("setRole + last-admin lockout", () => {
     }
   });
 
-  it("is idempotent when the role is unchanged", async () => {
+  it("refuses to change the owner role", async () => {
     const { db, auth } = newAuthDb();
     try {
       await signUp(auth, "first@test.com"); // admin
-      const result = auth.setRole("first@test.com", "admin");
-      assert.equal(result.role, "admin");
+      assert.throws(
+        () => auth.setRole("first@test.com", "admin"),
+        /owner role cannot be changed/i
+      );
       assert.equal(auth.countAdmins(), 1);
     } finally {
       db.close();
     }
   });
 
-  it("demotes an admin when other admins remain", async () => {
+  it("demotes an admin while the owner remains", async () => {
     const { db, auth } = newAuthDb();
     try {
       await signUp(auth, "first@test.com"); // admin
       await signUp(auth, "second@test.com");
       auth.setRole("second@test.com", "admin");
-      const demoted = auth.setRole("first@test.com", "user");
+      const demoted = auth.setRole("second@test.com", "user");
       assert.equal(demoted.role, "user");
       assert.equal(auth.countAdmins(), 1);
     } finally {
@@ -130,7 +132,7 @@ describe("setRole + last-admin lockout", () => {
     }
   });
 
-  it("REFUSES to demote the last admin (lockout protection)", async () => {
+  it("REFUSES to demote the owner", async () => {
     const { db, auth } = newAuthDb();
     try {
       await signUp(auth, "only@test.com"); // the sole admin
@@ -139,9 +141,9 @@ describe("setRole + last-admin lockout", () => {
         (err: unknown) =>
           err instanceof Error &&
           (err as { status?: number }).status === 409 &&
-          /last admin/i.test(err.message)
+          /owner role cannot be changed/i.test(err.message)
       );
-      // Still an admin.
+      // Still has administrative access.
       assert.equal(auth.countAdmins(), 1);
     } finally {
       db.close();
@@ -395,7 +397,7 @@ describe("requireAdmin middleware", () => {
 
   it("returns 403 for a user whose role is an unexpected value (superuser)", async () => {
     // Guards against a future refactor that swaps strict-equality for
-    // "anything but 'user' is admin". Only role === "admin" is admin.
+    // "anything but 'user' is admin". Only explicit administrative roles pass.
     const { app, db, auth } = gatedApp();
     try {
       await signUp(auth, "admin@test.com");

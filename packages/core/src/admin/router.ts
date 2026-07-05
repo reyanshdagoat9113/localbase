@@ -270,7 +270,11 @@ export function createAdminRouter(
     router.post("/_api/admin/users/:id/reset-password", async (c) => {
       try {
         const body = await readJson(c);
-        await auth.setPasswordById(c.req.param("id"), body.password);
+        await auth.setPasswordById(
+          c.req.param("id"),
+          body.password,
+          c.get("adminUser")?.id
+        );
         return c.json({ data: { success: true } });
       } catch (err) {
         return adminErrorResponse(c, err);

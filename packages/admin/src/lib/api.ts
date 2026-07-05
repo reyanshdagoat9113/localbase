@@ -1,6 +1,10 @@
 import type { IntrospectedSchema } from "@localbase/shared";
 
-export type UserRole = "user" | "admin";
+export type UserRole = "user" | "admin" | "owner";
+
+function hasAdminAccess(role: UserRole): boolean {
+  return role === "admin" || role === "owner";
+}
 
 export interface AuthUser {
   id: number;
@@ -52,7 +56,7 @@ function readSession(): AuthSession | null {
     if (
       parsed?.accessToken &&
       parsed.refreshToken &&
-      parsed.user?.role === "admin"
+      parsed.user && hasAdminAccess(parsed.user.role)
     ) {
       return parsed;
     }
@@ -175,7 +179,7 @@ export async function signIn(
     email,
     password,
   });
-  setSession(session.user.role === "admin" ? session : null);
+  setSession(hasAdminAccess(session.user.role) ? session : null);
   return session;
 }
 
@@ -187,7 +191,7 @@ export async function signUp(
     email,
     password,
   });
-  setSession(session.user.role === "admin" ? session : null);
+  setSession(hasAdminAccess(session.user.role) ? session : null);
   return session;
 }
 

@@ -109,9 +109,10 @@ localbase dev
 - **Schema viewer** — see columns, types, primary keys, foreign keys,
   and indexes for every table.
 - **Auth Manager** — list users, create users, reset passwords, promote
-  or demote admins (only available when `auth.enabled` is on).
+  or demote admins (only available when `auth.enabled` is on). The owner
+  cannot be demoted, and other admins cannot reset the owner's password.
 - **First-user bootstrap** — the first account to sign up is
-  automatically an admin; everyone else starts as `user` and needs a
+  automatically the owner; everyone else starts as `user` and needs a
   promote from an existing admin (or via `localbase admin promote`).
 
 **Behind the scenes:** the admin UI is a React + Vite SPA built into
@@ -121,7 +122,7 @@ fires a realtime event that subscribed clients see instantly. See
 [`LOCALBASE-ADMIN-UI.md`](LOCALBASE-ADMIN-UI.md) for the full design.
 
 **Safety:** when auth is enabled, every admin route is gated by a JWT
-admin claim that is *re-read from the database on every request* — so
+admin or owner role that is *re-read from the database on every request* — so
 demoting a user takes effect on their very next admin call, even with
 a still-valid access token. When auth is *disabled*, the admin API is
 ungated and LocalBase refuses to bind it to a non-loopback interface
