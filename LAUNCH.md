@@ -1,191 +1,179 @@
-# 🚀 LocalBase Launch Strategy
+# LocalBase Launch Strategy
 
-> **TL;DR:** Launch now as a **developer preview / public beta**, not a "big bang" production launch. The MVP is a viable developer tool. Let real users tell you which post-MVP feature to build first.
+> Launch target: a **developer preview/public beta** for local development,
+> prototypes, and internal tools. LocalBase is not currently positioned as a
+> production backend.
 
----
+## Current state
 
-## Current State
+LocalBase now includes the complete MVP and post-MVP feature set:
 
-- **MVP is complete.** All 6 phases (Project Scaffolding, Database Layer, REST API, CLI, SDK, Polish) are done.
-- **Examples prove real-world viability.** The `task-board` example handles 6 tables, foreign keys, many-to-many relationships, compound filtering, and manual hydration — patterns that come up in real applications.
-- **README is excellent.** Clear quickstart, good API docs, honest disclosure of MVP vs. post-MVP features.
-- **Not yet published to npm.** `npm view @localbase/cli` returns 404. The `npx @localbase/cli init` workflow in the README does not work yet.
+- SQLite with schema-driven migrations and generated REST CRUD APIs
+- TypeScript SDK and hot reload
+- email/password auth, rotating refresh tokens, roles, and owner-scoped policies
+- realtime subscriptions and presence over WebSockets
+- local file Storage with private buckets and signed URLs
+- Admin Studio for data, users, Storage, and Jobs
+- scheduled TypeScript Jobs with run history
+- a task-board example that exercises relational application patterns
 
----
+The implementation is substantial enough for external testing. The remaining
+work is launch hardening: closing known security boundaries, making validation
+reproducible, completing package/repository metadata, and proving the published
+npm artifacts in clean environments.
 
-## Why Launch Now
+The detailed work breakdown and authoritative go/no-go checklist are in
+[`LOCALBASE-LAUNCH-READINESS.md`](LOCALBASE-LAUNCH-READINESS.md).
 
-| Reason | Detail |
-|--------|--------|
-| **Examples are solid proof** | The `task-board` demo is genuinely complex. If LocalBase handles that, it handles a lot of real use cases. |
-| **README is ready** | Clear quickstart, good API docs, honest roadmap. It sets the right expectations. |
-| **Value prop is clear** | "Define a schema → get a running API → query it with an SDK." That's a specific, real pain point. |
-| **You don't know what users want** | Is it Realtime? Auth? Storage? Jobs? You won't know until real users tell you. Building all three in a vacuum is risky. |
-| **Feedback > guessing** | Early adopters will tell you what the "MVP" was actually missing. That's cheaper than building the wrong thing. |
+## Product position
 
----
+LocalBase occupies the space between a mock API and a hosted backend platform:
 
-## Why NOT a "Big Bang" Launch Yet
+- more structured than JSON Server because it provides SQLite, schemas,
+  migrations, auth, Storage, realtime, Jobs, and an SDK;
+- more code-first than PocketBase or no-code database tools because the schema
+  and Jobs live in TypeScript configuration and source files;
+- lighter for local development than a cloud account or multi-service Docker
+  stack;
+- intentionally narrower than production platforms built around PostgreSQL,
+  horizontal scaling, managed backups, and operational guarantees.
 
-| Gap | Impact |
-|-----|--------|
-| **Missing auth** | A backend platform without auth is a dev tool, not a production platform. Fine for a developer preview, but limits audience. |
-| **Missing realtime** | Your own post-MVP doc says this is the "biggest perceived value." Without it, some people bounce immediately. |
-| **SQLite only** | Many developers want PostgreSQL for production parity. |
-| **Version 0.1.0** | Psychologically, `1.0.0` signals "ready." `0.1.0` signals "check it out, give feedback." |
-| **Not on npm** | The `npx @localbase/cli init` workflow is the core promise. It must work. |
+The launch message should be direct:
 
----
+> Define a schema and get a local SQLite backend with a REST API, TypeScript
+> SDK, auth, realtime, Storage, scheduled Jobs, and an Admin Studio—without
+> Docker or a cloud account.
 
-## The Exact Launch Plan
+Do not describe the preview as a production Supabase replacement.
 
-### Step 1: Publish to npm (Critical)
+## Why not launch immediately?
 
-Your packages are not published yet. The `npx @localbase/cli init` workflow in the README does not work.
+The feature roadmap is complete, but feature completion is not the same as
+release readiness. These are the current release gates:
 
-**Actions:**
-- [ ] Create an npm organization `@localbase` (if not already owned).
-- [ ] Add `.npmrc` with `access=public` for scoped packages.
-- [ ] Publish all four packages in dependency order:
-  1. `@localbase/shared`
-  2. `@localbase/core`
-  3. `@localbase/sdk`
-  4. `@localbase/cli`
-- [ ] Bump to `0.1.0` (or `0.2.0`) and tag as `latest`.
-- [ ] Test the exact README quickstart in a fresh directory:
-  ```bash
-  npx @localbase/cli init my-project
-  cd my-project
-  localbase dev
-  # open http://localhost:5180/api/...
-  ```
+1. **Realtime authorization.** The server must authenticate WebSocket clients
+   and enforce the same owner policies used by REST, including replayed events.
+2. **Network hardening.** Public-facing configurations need controlled CORS,
+   abuse limits, bounded WebSocket behavior, and clear TLS guidance.
+3. **Deterministic validation.** Browser tests must run against isolated state
+   and pass repeatedly from a clean checkout.
+4. **Release infrastructure.** CI, supported Node versions, package metadata,
+   legal/community files, and registry smoke tests must exist.
+5. **Accurate documentation.** Every quickstart, security statement, limitation,
+   and package command must describe the release artifact users actually get.
+6. **External validation.** A small private beta must prove that developers can
+   install and complete the quickstart without maintainer assistance.
 
-**Tip:** If the org name is taken, consider `@localbasejs` or `localbase-cli` (unscoped). But `@localbase` is the best match.
+## Staged launch
 
----
+### Stage 1 — Close engineering gates
 
-### Step 2: Polish the GitHub Repo
+Complete the P0 gates in the launch-readiness plan. The release commit must pass
+the build, unit/integration suites, browser suite, Admin bundle verification,
+and fresh-tarball consumer tests from a clean checkout.
 
-- [ ] Ensure the repo README is the same (or better) than the package README.
-- [ ] Add screenshots or a short GIF of the `task-board` or `reading-list` example running.
-  - A 10-second GIF of `init` → `dev` → API in browser is worth more than paragraphs.
-- [ ] Add a `CONTRIBUTING.md` so early adopters know how to report issues.
-- [ ] Add a `CHANGELOG.md` starting at `0.1.0`.
-- [ ] Tag the current commit as `v0.1.0`.
-- [ ] Add a `LICENSE` file (MIT, as stated in README).
-- [ ] Add GitHub issue templates for:
-  - Bug reports
-  - Feature requests
-  - "What are you using LocalBase for?" (feedback template)
+### Stage 2 — Publish a prerelease
 
----
+Publish the four public packages as one coherent prerelease set under a
+non-default npm dist-tag:
 
-### Step 3: Write a Launch Post
+1. `@localbase/shared`
+2. `@localbase/core`
+3. `@localbase/sdk`
+4. `@localbase/cli`
 
-Write one concise post for Hacker News / Reddit / X. Suggested angle:
+Use a version such as `0.1.0-beta.1`. Install the packages back from the public
+registry and run the exact documented quickstart before inviting testers. Do
+not promote the packages to `latest` merely because publication succeeded.
 
-> **I built a local-first Supabase alternative.**
->
-> Define a schema, get a REST API + TypeScript SDK instantly. SQLite, hot-reload, zero-config.
->
-> ```bash
-> npx @localbase/cli init
-> localbase dev
-> ```
->
-> It is not a 1:1 Supabase replacement (no auth, no realtime yet), but it is perfect for local development, prototyping, and small tools.
->
-> The `task-board` demo shows it handles real complexity: 6 tables, foreign keys, many-to-many, compound filtering.
->
-> Roadmap: Realtime, Scheduled Jobs, Storage.
+### Stage 3 — Private beta
 
-**Key:** Set expectations honestly. The post-MVP doc actually *helps* you here — it proves you have a roadmap.
+Invite 5–10 developers who were not involved in implementation. Ask them to
+install from npm, complete the quickstart without synchronous help, use Admin
+Studio and the SDK, and exercise auth, realtime, and Storage.
 
----
+The beta is successful when:
 
-### Step 4: Share in Targeted Communities
+- no critical/high security or data-loss issue remains;
+- at least 80% complete the quickstart without intervention;
+- claimed Node/OS combinations install reliably;
+- repeated onboarding problems are fixed or removed from the supported scope;
+- registry smoke tests and required CI remain green.
 
-| Platform | Format | Why |
-|----------|--------|-----|
-| **Hacker News** | "Show HN" post | The "local-first" and "build your own backend" angles play well there |
-| **r/javascript** | Text post + link | Focused on developer experience |
-| **r/webdev** | Text post + link | Frontend devs who need a quick backend |
-| **Twitter/X** | 30-second screen recording | `init` → `dev` → API in browser. Tag @supabase for visibility. |
-| **Discord / Slack** | Local-first web dev groups, indie hacker groups | Direct feedback, early champions |
-| **Dev.to / Medium** | "How I built LocalBase" | Longer-form, SEO-friendly, establishes credibility |
+### Stage 4 — Public developer preview
 
-**Do not spam.** Post once per platform, respond to comments, and let the product speak.
+After an explicit go decision:
 
----
+1. freeze and verify the release commit;
+2. promote the verified package set to the intended public dist-tag;
+3. tag that exact commit and publish GitHub release notes;
+4. verify all public links and the unauthenticated clean-room quickstart;
+5. publish one canonical launch post, then adapt it for selected communities;
+6. keep a maintainer available for installation, security, and data-loss
+   reports during the first 24–48 hours.
 
-### Step 5: Collect Feedback for 2-3 Weeks
+Suggested channels, used sequentially rather than all at once:
 
-Set up a simple GitHub issue template for feedback. Ask:
+- existing network and beta users;
+- GitHub and npm;
+- Show HN;
+- technically relevant JavaScript, web development, and local-first
+  communities;
+- a longer walkthrough on a developer blog;
+- a short current-product demo on social media.
 
-1. What are you using LocalBase for?
-2. What is the first feature you looked for and could not find?
-3. Would you use this for production, or just local dev?
-4. What would make you choose LocalBase over X?
+## Launch assets
 
-This feedback tells you whether to prioritize:
-- **Realtime** (Phase 7)
-- **Auth** (was in original vision, not in post-MVP yet — but foundational)
-- **Storage** (Phase 9)
-- **PostgreSQL support** (was in original vision)
+Prepare these before public promotion:
 
----
+- one current Admin Studio screenshot;
+- a 15–30 second `init → studio → edit row` recording;
+- a repeatable task-board demonstration;
+- GitHub release notes and an initial changelog;
+- bug, feature, beta-feedback, and private security-reporting paths;
+- a concise FAQ covering SQLite, single-process behavior, backups, production
+  suitability, and comparisons with PocketBase and Supabase.
 
-## What Happens After the Soft Launch?
+## Feedback and measurement
 
-| Scenario | What It Means | Next Step |
-|----------|---------------|-----------|
-| **Good traction, lots of "where is auth?"** | People want to build real apps | Add auth before Realtime. Auth is foundational. |
-| **Good traction, lots of "where is realtime?"** | People want live dashboards, chat, etc. | Build Phase 7 (Realtime) first. |
-| **People love it for local dev / prototyping** | It fills a niche | Keep it niche. Don't over-engineer. Add Storage (Phase 9) or Jobs (Phase 8). |
-| **Crickets / confused users** | Messaging or onboarding is off | Fix onboarding. The `init` → `dev` flow might need to be even simpler. Add a video. |
-| **"Why not just use Supabase?"** | Positioning is unclear | Double down on the "local-first" angle. No Docker, no cloud account, no internet required. |
+Do not add runtime telemetry for the developer preview. Use explicit beta
+feedback, GitHub issues, npm download trends, and repository traffic.
 
----
+Ask users:
 
-## Competitor Landscape
+1. What were you trying to build?
+2. How long did it take to get the first API response?
+3. What was the first confusing or broken step?
+4. Which feature did you expect but could not find?
+5. Would you use LocalBase again for local development or an internal tool?
 
-See `COMPETITION.md` for a detailed analysis of:
-- Supabase
-- PocketBase
-- Directus
-- JSON Server / JSON Server Auth
-- LocalStack
-- NocoDB / Baserow
-- Low-code backends (Appwrite, Firebase, Parse)
+Review evidence after two weeks and prioritize repeated problems over raw
+feature requests.
 
-Key insight: **LocalBase sits in a specific gap** — it is more structured than JSON Server, more code-centric than NocoDB, and more local-first than Supabase. That is the positioning to own.
+## Stop and rollback conditions
 
----
+Stop promotion immediately for:
 
-## Bottom Line
+- an auth, role, policy, realtime, or Admin authorization bypass;
+- data corruption, migration loss, or unsafe restore behavior;
+- package installation failure on a supported runtime;
+- a missing Admin Studio bundle or broken documented quickstart;
+- accidental public exposure under documented safe defaults;
+- a critical dependency or supply-chain issue.
 
-The MVP is a **viable developer tool**. It is not a **viable production backend platform** yet.
+npm versions are immutable. Rollback means moving the affected dist-tag to the
+last coherent package set, deprecating the bad versions, publishing a fixed
+version, and communicating the problem. Never overwrite or silently reuse a
+published version.
 
-**Launch it as the former.** Get feedback. Let the community tell you what the "MVP" was actually missing. Then build the post-MVP features with confidence instead of guessing.
+## Production positioning
 
-Do not wait for Realtime, Jobs, or Storage to be "ready." The best way to know what to build next is to watch what people complain about.
+Production readiness is a separate milestone. It requires authenticated and
+policy-safe realtime, tested backup/restore and crash recovery, explicit
+deployment constraints, operational health and observability, secrets rotation,
+capacity testing, supported-platform guarantees, and a vulnerability response
+process.
 
----
-
-## Pre-Launch Checklist
-
-- [ ] Packages published to npm (`@localbase/cli`, `@localbase/core`, `@localbase/sdk`, `@localbase/shared`)
-- [ ] `npx @localbase/cli init` works in a fresh directory
-- [ ] `localbase dev` starts and serves the API
-- [ ] README has a screenshot or GIF
-- [ ] `LICENSE` file added
-- [ ] `CHANGELOG.md` added
-- [ ] `CONTRIBUTING.md` added
-- [ ] GitHub issue templates added
-- [ ] Git tag `v0.1.0` pushed
-- [ ] Launch post drafted
-- [ ] Screen recording / GIF recorded
-
----
-
-*This document was generated as part of the LocalBase project planning.*
+Until those requirements are complete, launch LocalBase honestly as a
+developer preview: a capable local backend that is ready for real users to test,
+not a managed or highly available production platform.

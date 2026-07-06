@@ -1,6 +1,8 @@
 # 🏆 LocalBase Competition Analysis
 
-> An honest look at the tools that solve similar problems to LocalBase.
+> An honest positioning guide for the LocalBase developer preview. Product and
+> competitor details change; verify time-sensitive figures before publishing
+> them externally.
 
 ---
 
@@ -48,10 +50,13 @@ PocketBase is the closest thing to LocalBase in the wild. It is a single Go bina
 - **TypeScript-first.** LocalBase is built in TypeScript, with a TypeScript SDK and a CLI that feels like a modern JS tool. PocketBase is Go-based; its JS SDK is a wrapper over the REST API.
 - **SDK style.** LocalBase SDK mimics Supabase (`.from().select().eq()`). PocketBase SDK is more traditional.
 - **Hot-reload.** LocalBase watches the config file and reloads the server. PocketBase requires a restart or UI changes.
-- **Admin UI.** PocketBase has one. LocalBase does not (yet). This is a gap.
-- **Auth & Storage.** PocketBase has them. LocalBase MVP does not. This is the biggest gap.
+- **Product maturity.** Both provide auth, realtime, file storage, and an admin
+  UI. PocketBase is established and production-oriented; LocalBase is still a
+  developer preview focused on the TypeScript workflow.
 
-**Key takeaway:** PocketBase is the incumbent. It is the tool people will compare LocalBase to. The advantage LocalBase has is the **code-first, schema-as-config, TypeScript-native** experience. PocketBase feels more like a "product"; LocalBase feels more like a "dev tool."
+**Key takeaway:** PocketBase is the closest established comparison. LocalBase's
+case is not feature absence; it is the **code-first, schema-as-config,
+TypeScript-native** workflow. PocketBase is the safer mature choice today.
 
 ---
 
@@ -125,10 +130,15 @@ Supabase is the 800-pound gorilla. It is an open-source Firebase alternative bui
 **Where LocalBase differs:**
 - **Local-first vs Cloud-first.** Supabase requires a Docker stack or a cloud account to start. LocalBase runs with `localbase dev` and no other dependencies.
 - **SQLite vs PostgreSQL.** Supabase is Postgres. LocalBase is SQLite. SQLite is simpler for local dev, but people worry about production scale.
-- **Feature completeness.** Supabase has auth, realtime, storage, edge functions. LocalBase MVP has none of these.
-- **Scope.** Supabase is a platform. LocalBase is a dev tool.
+- **Feature depth.** Both cover database, auth, realtime, storage, and a
+  dashboard. Supabase additionally offers PostgreSQL, managed infrastructure,
+  serverless functions, mature integrations, and production operations.
+- **Scope.** Supabase is a production platform. LocalBase is currently a local
+  development tool and developer preview.
 
-**Key takeaway:** Supabase is the "reference" competitor. LocalBase is not trying to replace Supabase for production. It is trying to replace Supabase for **local development and prototyping.** The pitch is: "Use LocalBase for your local dev; migrate to Supabase when you need auth and production scale."
+**Key takeaway:** Supabase is the reference production platform. LocalBase is
+not claiming production parity. Its current value is a fast local workflow
+without Docker or a cloud account.
 
 ---
 
@@ -191,7 +201,7 @@ NocoDB is an "Airtable alternative" that turns any database into a smart spreads
 **Where LocalBase differs:**
 - **No-code vs code.** NocoDB is a no-code tool. LocalBase is a code-first tool for developers.
 - **UI vs SDK.** NocoDB users build in the spreadsheet. LocalBase users build in React/Vue/etc. using the SDK.
-- **Database support.** NocoDB supports many DBs. LocalBase MVP is SQLite-only.
+- **Database support.** NocoDB supports many databases. LocalBase is SQLite-only.
 - **License.** NocoDB uses a "Sustainable Use License" (not fully open source). LocalBase uses MIT.
 
 **Key takeaway:** NocoDB is not a direct competitor, but it is in the "auto-generate an API from a database" space. LocalBase should differentiate by being **developer-native, not no-code.**
@@ -219,7 +229,9 @@ JSON Server is the grandfather of "zero-config REST API." You create a `db.json`
 **Where LocalBase differs:**
 - **Real database vs JSON file.** JSON Server stores data in a JSON file. LocalBase uses SQLite with migrations, foreign keys, and real schema.
 - **SDK.** JSON Server has no SDK. LocalBase has a TypeScript SDK.
-- **Production.** JSON Server is explicitly for prototyping. LocalBase aims to be a real dev backend.
+- **Product depth.** JSON Server is intentionally a mock/prototyping tool.
+  LocalBase is a fuller development backend with auth, realtime, Storage,
+  scheduled Jobs, and an Admin Studio.
 - **Schema.** JSON Server has no schema. LocalBase has a typed config file.
 
 **Key takeaway:** JSON Server is the "lightweight" option. LocalBase is the "structured" option. The pitch is: "If JSON Server is too simple (no schema, no real DB), and Supabase is too heavy (needs Docker, cloud account), LocalBase is the sweet spot."
@@ -258,7 +270,9 @@ InstantDB is a **client-side database** that syncs to a server:
 - **Server-first vs Client-first.** LocalBase is a traditional server + REST API. InstantDB is a client-side database that syncs.
 - **Self-hosting.** LocalBase is fully self-hosted. InstantDB is primarily a hosted service (though self-hosting exists).
 - **Architecture.** InstantDB uses a triple store (datalog-like). LocalBase uses relational SQL (SQLite).
-- **Maturity.** InstantDB is newer and still evolving. LocalBase MVP is simpler and more predictable.
+- **Maturity and model.** InstantDB uses a different data and synchronization
+  model. LocalBase keeps a conventional relational server/API shape, but is
+  earlier in its public product lifecycle.
 
 **Key takeaway:** InstantDB is a **paradigm shift** (client-side DB). LocalBase is an **incremental improvement** (better local dev server). They can coexist. Some developers will want InstantDB's sync magic; others will want LocalBase's simplicity and SQL familiarity.
 
@@ -284,7 +298,7 @@ These are **local-first sync engines.** They sync a server-side database (Postgr
 
 ## Comparison Matrix
 
-| Feature | LocalBase (MVP) | PocketBase | TrailBase | Supabase | Directus | NocoDB | JSON Server |
+| Feature | LocalBase (preview) | PocketBase | TrailBase | Supabase | Directus | NocoDB | JSON Server |
 |---|---|---|---|---|---|---|---|
 | **Self-hosted** | Yes | Yes | Yes | Yes (hard) | Yes | Yes | Yes |
 | **Single binary** | No (npm) | Yes | Yes | No | No | No | No (npm) |
@@ -292,14 +306,14 @@ These are **local-first sync engines.** They sync a server-side database (Postgr
 | **Auto REST API** | Yes | Yes | Yes | Yes | Yes | Yes | Yes |
 | **GraphQL** | No | No | No | No | Yes | No | No |
 | **SDK** | Yes (TS) | Yes (JS, Dart) | Yes (many) | Yes (many) | Yes | Yes | No |
-| **Auth** | No | Yes | Yes | Yes | Yes | Yes | No |
-| **Realtime** | No | Yes | Yes | Yes | Yes | No | No |
-| **Storage** | No | Yes | No | Yes | Yes | Yes | No |
-| **Admin UI** | No | Yes | Yes | Yes | Yes | Yes | No |
+| **Auth** | Yes | Yes | Yes | Yes | Yes | Yes | No |
+| **Realtime** | Yes | Yes | Yes | Yes | Yes | No | No |
+| **Storage** | Yes | Yes | No | Yes | Yes | Yes | No |
+| **Admin UI** | Yes | Yes | Yes | Yes | Yes | Yes | No |
+| **Scheduled Jobs** | Yes | Hooks/cron integrations | WASM/runtime options | Cron/functions | Flows | Automations | No |
 | **Schema as config** | Yes (TS) | Partial | Yes | No | No | No | No |
 | **Hot reload** | Yes | No | No | No | No | No | No |
 | **License** | MIT | MIT | OSL-3.0 | Apache 2.0 | GPL v3 | SUL | MIT |
-| **Stars** | TBD | ~59k | ~5.3k | ~78k | ~30k | ~63k | ~75k |
 
 ---
 
@@ -317,16 +331,22 @@ These are **local-first sync engines.** They sync a server-side database (Postgr
 1. **Schema as TypeScript config.** Your database schema is a file you commit to Git. Hot-reload on save. No UI clicking.
 2. **TypeScript-native.** CLI, SDK, and server are all TypeScript. No context-switching to Go or Rust.
 3. **Supabase-style SDK.** `.from().select().eq().single()` — familiar to modern frontend developers.
-4. **Zero dependencies.** `npx @localbase/cli init` → `localbase dev` → API is live. No Docker, no Postgres, no cloud account.
+4. **Low setup overhead.** `npx @localbase/cli init` → `localbase dev` → API is live. No Docker, Postgres service, or cloud account.
 5. **Local dev focus.** Not trying to be a production platform (yet). Trying to be the best local dev backend.
 
 **The Honest Weaknesses:**
 
-1. **No auth.** PocketBase, TrailBase, Supabase, and InstantDB all have auth. This is the #1 missing feature.
-2. **No realtime.** Again, all competitors have it. It is the "biggest perceived value" per your own post-MVP doc.
-3. **No admin UI.** Competitors have this. LocalBase requires you to use the SDK or raw API.
-4. **SQLite only.** Many developers want PostgreSQL for production parity.
-5. **New and unproven.** PocketBase has 59k stars. LocalBase has 0.
+1. **New and unproven.** The project has not yet earned the installation base,
+   compatibility history, or operational confidence of established tools.
+2. **Developer-preview security boundary.** Realtime authorization and public
+   network hardening must be completed before protected or internet-facing use.
+3. **SQLite only.** This keeps local setup simple but does not provide
+   PostgreSQL production parity or horizontal database scaling.
+4. **Single-process architecture.** Realtime and scheduled Jobs are not
+   distributed across multiple LocalBase processes.
+5. **No production operations story yet.** Backup/restore, disaster recovery,
+   observability, capacity limits, and long-term compatibility need dedicated
+   work and evidence.
 
 ---
 
@@ -336,7 +356,10 @@ These are **local-first sync engines.** They sync a server-side database (Postgr
 > "PocketBase is great if you want a single binary and an admin UI. LocalBase is for developers who want a schema-as-code workflow, a TypeScript-native tool, and a Supabase-style SDK. If you live in the JS ecosystem, LocalBase feels more natural."
 
 **When someone asks "Why not just use Supabase?"**
-> "Supabase is the best production backend. But for local development, it is overkill. You need Docker or a cloud account. LocalBase gives you the same API feel with zero setup. Use LocalBase for local dev; migrate to Supabase when you ship."
+> "Supabase is a mature production platform. LocalBase is a lightweight local
+> TypeScript backend: no Docker or cloud account, with a familiar API style.
+> Choose LocalBase for its development workflow, not as a claim of production
+> parity."
 
 **When someone asks "Why not just use JSON Server?"**
 > "JSON Server is perfect for mocking, but it uses a JSON file, not a real database. No migrations, no foreign keys, no schema validation. LocalBase gives you a real SQLite backend with all of that, plus a typed SDK."
@@ -350,8 +373,8 @@ These are **local-first sync engines.** They sync a server-side database (Postgr
 
 | Competitor Feature | What It Means for LocalBase |
 |---|---|
-| PocketBase's admin UI | LocalBase needs an admin UI eventually. It is a major differentiator. |
-| PocketBase's auth | Auth is table stakes. It should be the #1 post-MVP priority if users demand it. |
+| PocketBase's maturity | Feature presence is not enough; LocalBase needs dependable installation, upgrades, security, and documentation. |
+| PocketBase's extension model | LocalBase should make trusted TypeScript Jobs and future extension points predictable without weakening its security boundary. |
 | TrailBase's WASM runtime | Edge functions are not a priority, but extensibility matters. |
 | Supabase's Postgres | PostgreSQL support is on the roadmap. It validates that people want production parity. |
 | Directus's GraphQL | GraphQL is nice-to-have. REST is the MVP. |
@@ -360,4 +383,5 @@ These are **local-first sync engines.** They sync a server-side database (Postgr
 
 ---
 
-*This analysis is current as of June 2026.*
+*LocalBase status reviewed in July 2026. Competitor metrics and capabilities are
+time-sensitive and should be verified before external use.*
