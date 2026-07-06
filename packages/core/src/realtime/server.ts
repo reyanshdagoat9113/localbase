@@ -4,6 +4,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import type { Database } from "../db.js";
 import type { RealtimeConfig, RealtimeEvent, RealtimeFilter } from "@localbase/shared";
 import { SubscriptionManager } from "./subscription-manager.js";
+import { isSystemTable } from "../admin/system-tables.js";
 
 export interface RealtimeServerOptions {
   /** HTTP/HTTPS server to attach the WebSocket server to. */
@@ -121,6 +122,18 @@ export function createRealtimeServer(
       }
 
       if (message.type === "subscribe") {
+        // Realtime sockets are not authenticated, so allowing internal tables
+        // here would bypass their dedicated admin HTTP APIs and expose data
+        // such as password hashes, sessions, and job output.
+        if (isSystemTable(message.table)) {
+          socket.send(
+            JSON.stringify({
+              type: "error",
+              message: "System tables are not subscribable",
+            })
+          );
+          return;
+        }
         const id = message.id ?? generateId();
         const filters = normalizeFilters(message.filters);
         subscriptions.subscribe(socket, id, message.table, filters);

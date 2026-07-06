@@ -19,6 +19,7 @@ import { createAdminRouter } from "./admin/router.js";
 import { mountAdminStatic } from "./admin/static.js";
 import { AdminError } from "./admin/system-tables.js";
 import { createStorageRouter, type StorageRouterOptions } from "./storage/router.js";
+import type { Scheduler } from "./jobs/scheduler.js";
 
 const RESERVED_PARAMS = new Set(["order", "limit", "offset"]);
 const VALID_OPERATORS: FilterOperator[] = [
@@ -312,6 +313,8 @@ export interface CreateServerOptions {
   policies?: PoliciesConfig;
   /** Storage REST API options. */
   storage?: StorageRouterOptions;
+  /** Live scheduler exposed through the admin jobs API when admin is enabled. */
+  scheduler?: Scheduler;
 }
 
 export function createServer(
@@ -403,6 +406,7 @@ export function createServer(
       // same requireAdmin secret above. When auth is off there are no users to
       // manage, so this stays undefined and the user endpoints aren't mounted.
       auth,
+      scheduler: normalized.scheduler,
     });
     app.route("/", adminRouter);
     const { servingPlaceholder } = mountAdminStatic(app, { enabled: true });

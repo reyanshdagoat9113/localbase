@@ -30,6 +30,7 @@ where you can browse and edit your data without writing code.
 - **TypeScript SDK** with a Supabase-style query builder
 - **Built-in admin UI** at `/admin/` — browse tables, edit rows, manage users
 - **Realtime subscriptions** — `db.from('x').subscribe(...)` over WebSockets
+- **Scheduled jobs** — cron-driven TypeScript handlers with run history
 - **Optional auth** — JWT sessions, Argon2id passwords, refresh-token rotation
 - **Hot-reload** on schema changes
 - **Zero config** — define tables, everything else is automatic
@@ -78,6 +79,9 @@ localbase auth list-users               List all users
 localbase auth reset-password           Reset a user's password
 localbase admin promote <email>         Grant admin rights to a user
 localbase admin demote <email>          Revoke admin rights from a user
+localbase jobs list                     Show registered jobs and next/last runs
+localbase jobs run <name>               Trigger a registered job now
+localbase jobs logs <name>              Show recent run output and failures
 localbase --help                        Show all commands
 ```
 
@@ -447,6 +451,60 @@ and deleting files.
 
 ---
 
+## Scheduled Jobs
+
+Declare recurring server-side work in `localbase.config.ts`. LocalBase runs
+enabled jobs inside `localbase dev`, prevents overlapping runs of the same job,
+and records every attempt in `_job_runs`.
+
+```ts
+// localbase.config.ts
+export default {
+  tables: { ... },
+  jobs: {
+    cleanup_sessions: {
+      schedule: "0 3 * * *", // standard 5-field cron: 3:00 AM daily
+      handler: "./jobs/cleanup-sessions.ts",
+      timezone: "Asia/Kolkata", // optional; defaults to server local time
+      description: "Delete expired application sessions",
+    },
+  },
+};
+```
+
+Job handlers default-export a function and receive the live `Database`
+instance. This is trusted server code: it intentionally bypasses HTTP-layer
+row-level security.
+
+```ts
+// jobs/cleanup-sessions.ts
+import type { JobHandler } from "@localbase/core";
+
+export default (async ({ db, log, name }) => {
+  const deleted = db.delete("sessions", [
+    { column: "expires_at", operator: "lt", value: new Date().toISOString() },
+  ]);
+  log(`${name}: deleted ${deleted} expired sessions`);
+}) satisfies JobHandler;
+```
+
+Inspect and trigger jobs from either LocalBase Studio's **Jobs** view or the
+CLI:
+
+```bash
+localbase jobs list
+localbase jobs run cleanup_sessions
+localbase jobs logs cleanup_sessions --limit 20
+```
+
+Schedules do not backfill missed runs, failed runs are not retried, and a run
+is skipped if the previous invocation of that job is still active. Handler
+modules are cached; restart `localbase dev` after editing a handler file. Avoid
+logging secrets because handler output and error messages are retained in
+`_job_runs` and visible to admins.
+
+---
+
 ## Column types
 
 | Type | SQLite mapping | Notes |
@@ -499,14 +557,13 @@ your-project/
 
 ## Roadmap
 
-MVP is complete. Phase 7 (Auth) and Phase 9 (Storage) are also done — see the
-relevant sections above. See [`LOCALBASE-POST-MVP.md`](LOCALBASE-POST-MVP.md)
-for what's next:
+MVP and post-MVP phases 7–11 are complete. See the relevant sections above
+and [`LOCALBASE-POST-MVP.md`](LOCALBASE-POST-MVP.md) for the detailed plans:
 
 - **Phase 8:** Realtime (WebSockets + subscriptions)
-- **Phase 9:** Scheduled Jobs (cron + handlers)
-- **Phase 10:** Storage (file uploads + signed URLs)
-- **Phase 11:** Admin UI
+- **Phase 9:** Storage (file uploads + signed URLs)
+- **Phase 10:** Admin UI
+- **Phase 11:** Scheduled Jobs (cron + handlers)
 
 ---
 

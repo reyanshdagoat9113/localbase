@@ -107,12 +107,21 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
       );
     }
 
+    // Construct the process-owned scheduler before the API so the admin
+    // router can share the same registry/runner used by cron callbacks.
+    const jobsMap = config.jobs ?? {};
+    const hasJobs = Object.keys(jobsMap).length > 0;
+    // Keep an inert scheduler even for an empty registry so the admin Jobs
+    // endpoint can return `[]` and render its setup guidance instead of 404.
+    const scheduler = new Scheduler({ db, cwd, jobs: jobsMap });
+
     // Create API server
     const app = createApi(db, config.tables, {
       auth: config.auth,
       admin: { enabled: true },
       policies: config.policies,
       storage: config.storage,
+      scheduler,
     });
 
     // Start HTTP server
@@ -175,11 +184,7 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
     // part of the HTTP router — so it lives here in `dev`, next to realtime,
     // and is torn down + re-armed on config hot-reload. No-op when `jobs` is
     // empty/absent (Decision #7).
-    const jobsMap = config.jobs ?? {};
-    const scheduler = Object.keys(jobsMap).length > 0
-      ? new Scheduler({ db, cwd, jobs: jobsMap })
-      : null;
-    if (scheduler) {
+    if (hasJobs) {
       scheduler.start();
       const armed = Object.entries(jobsMap)
         .filter(([, j]) => j.enabled !== false)

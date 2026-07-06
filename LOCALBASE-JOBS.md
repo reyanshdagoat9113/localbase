@@ -22,7 +22,7 @@ Evidence from `COMPETITION.md` and the existing plans:
 
 ## 📌 Thesis
 
-A `jobs` map in `localbase.config.ts` maps a name to `{ schedule, handler }`. On `localbase dev` startup, a `Scheduler` process (lived alongside the realtime server, not inside the HTTP router) parses each schedule, wakes on next-due, imports the handler file via the same `jiti` loader already used for config, and calls it with `{ db, log, name }`. Every run — scheduled or manual — is recorded in `_job_runs`. The Admin UI and CLI read that table to show history and next-run times. Writing runs through `Database.insert` so realtime broadcasts run-status changes to the dashboard for free.
+A `jobs` map in `localbase.config.ts` maps a name to `{ schedule, handler }`. On `localbase dev` startup, a `Scheduler` process (lived alongside the realtime server, not inside the HTTP router) parses each schedule, wakes on next-due, imports the handler file via the same `jiti` loader already used for config, and calls it with `{ db, log, name }`. Every run — scheduled or manual — is recorded in `_job_runs`. The Admin UI and CLI read that table to show history and next-run times. The dashboard refreshes its admin-gated job endpoints while open so status changes appear without a page reload.
 
 ---
 
@@ -101,7 +101,7 @@ A `jobs` map in `localbase.config.ts` maps a name to `{ schedule, handler }`. On
 - Jobs are **declared in config only.** There is no runtime registration API; the map is the source of truth, loaded and validated at startup.
 - Handler files are loaded **relative to the project cwd** via the same `jiti` + `interopDefault` path the config loader uses. They are trusted operator code — exactly as `localbase.config.ts` is — never remotely supplied.
 - Every run — scheduled, manual (CLI), or manual (admin) — funnels through the **same** `JobRunner.run(name)`, so `_job_runs` is always consistent.
-- Run-status writes go through `Database.insert/update`, so the **realtime server broadcasts run changes for free** (Phase 8). The admin Jobs viewer can live-update without polling.
+- Run-status writes go through `Database.insert/update`, preserving normal database change events. Because system-table realtime subscriptions are intentionally blocked, the admin Jobs viewer polls its admin-gated endpoints while open.
 - `_job_runs` is a `_`-prefixed system table: `resetDatabase()` preserves it, and the generic admin row-CRUD endpoints refuse to write to it.
 
 ---
@@ -128,7 +128,7 @@ All gated by `requireAdmin` (inherits the existing admin router gate). All retur
 |---|---|---|
 | `GET` | `/_api/admin/jobs` | List registered jobs: `{ name, schedule, timezone, nextRun, lastRun, lastStatus }` |
 | `GET` | `/_api/admin/jobs/:name/runs` | Paginated run history for a job → `{ runs, total }` (newest first) |
-| `POST` | `/_api/admin/jobs/:name/run` | Trigger a registered job now → `{ runId }` (runs async; status observable via `_job_runs`/realtime) |
+| `POST` | `/_api/admin/jobs/:name/run` | Trigger a registered job now → `{ runId }` (runs async; status observable through the run-history endpoint) |
 
 **Name safety rules (non-negotiable):**
 
@@ -288,7 +288,7 @@ Each milestone is independently shippable and verifiable. Tests use **Node's bui
 
 **Done when:** `localbase jobs list` shows next/last run; `localbase jobs run foo` triggers immediately; `localbase dev` runs registered jobs on schedule.
 
-### M5 — Admin run viewer + README
+### ✅ M5 — Admin run viewer + README
 **Goal:** the dashboard's reserved Jobs viewer goes live; docs are current.
 
 **Files:**
@@ -297,14 +297,14 @@ Each milestone is independently shippable and verifiable. Tests use **Node's bui
 - `README.md` — new `## Scheduled Jobs` quickstart section (mirror the Auth/Storage sections); fix the stale roadmap line that mis-numbers the phases.
 
 **Tasks:**
-- [ ] Add the three admin endpoints (read + trigger), gated by `requireAdmin`, returning `{ data } | { error }`.
-- [ ] Validate `:name` against the job registry (404 on unknown; never a path lookup on the trigger endpoint).
-- [ ] Enable the Jobs viewer in the admin SPA: job list (with next/last run + status), run-now button, paginated run history with output/error.
-- [ ] Verify realtime live-update: a scheduled or manual run updates the viewer without a manual refresh (relies on Phase 8 broadcasting `_job_runs` change events).
-- [ ] Write admin endpoint tests: unknown name 404; non-admin 403; manual trigger inserts a run; history pagination.
-- [ ] Update README: scheduled-jobs quickstart; correct the phase-numbering roadmap line.
+- [x] Add the three admin endpoints (read + trigger), gated by `requireAdmin`, returning `{ data } | { error }`.
+- [x] Validate `:name` against the job registry (404 on unknown; never a path lookup on the trigger endpoint).
+- [x] Enable the Jobs viewer in the admin SPA: job list (with next/last run + status), run-now button, paginated run history with output/error.
+- [x] Verify live update: a scheduled or manual run updates the viewer without a manual refresh through admin-gated polling.
+- [x] Write admin endpoint tests: unknown name 404; non-admin 403; manual trigger inserts a run; history pagination.
+- [x] Update README: scheduled-jobs quickstart; correct the phase-numbering roadmap line.
 
-**Done when:** an admin can browse jobs, trigger one, and watch its run appear and complete in the dashboard in realtime.
+**Done when:** an admin can browse jobs, trigger one, and watch its run appear and complete in the dashboard without a page refresh.
 
 ---
 
@@ -345,4 +345,4 @@ Each milestone is independently shippable and verifiable. Tests use **Node's bui
 
 ## 📊 First-cut success metric
 
-> A developer adds a `cleanup_sessions` job to `localbase.config.ts`, runs `localbase dev`, and sees it fire on schedule — its run history visible in `localbase jobs logs` and, after opening the admin dashboard, appearing and completing in realtime without a page refresh.
+> A developer adds a `cleanup_sessions` job to `localbase.config.ts`, runs `localbase dev`, and sees it fire on schedule — its run history visible in `localbase jobs logs` and, after opening the admin dashboard, appearing and completing without a page refresh.

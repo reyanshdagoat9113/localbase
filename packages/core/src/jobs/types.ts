@@ -6,8 +6,8 @@ import type { Database } from "../db.js";
  * to the HTTP request layer.
  *
  * - `db` is the live {@link Database} instance. Writes go through the same
- *   class realtime/admin use, so they emit `change` events (the dashboard
- *   live-updates for free). `db` bypasses HTTP-layer RLS **by design**:
+ *   class realtime/admin use, so they emit normal `change` events. `db`
+ *   bypasses HTTP-layer RLS **by design**:
  *   a nightly session-cleanup job is not a user request and must touch
  *   rows regardless of owner. Document this loudly so developers do not
  *   expect `ownerColumn` stamping inside jobs.

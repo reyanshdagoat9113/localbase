@@ -197,6 +197,27 @@ describe("Realtime", () => {
       socket.close();
     });
 
+    it("rejects subscriptions to system tables", async () => {
+      const socket = new WebSocket(`ws://localhost:${port}/realtime`);
+      await waitForSocket(socket, WebSocket.OPEN);
+
+      socket.send(
+        JSON.stringify({
+          type: "subscribe",
+          id: "system-table-sub",
+          table: "_job_runs",
+        })
+      );
+
+      const response = await nextMessage(socket);
+      assert.deepEqual(response, {
+        type: "error",
+        message: "System tables are not subscribable",
+      });
+
+      socket.close();
+    });
+
     it("filters events by subscription filters", async () => {
       const socket = new WebSocket(`ws://localhost:${port}/realtime`);
       await waitForSocket(socket, WebSocket.OPEN);

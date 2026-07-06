@@ -112,6 +112,7 @@ export type {
   JobRunRow,
   GetRunsOptions,
   GetRunsResult,
+  TriggerJobResult,
 } from "./jobs/scheduler.js";
 export type { JobContext, JobHandler } from "./jobs/types.js";
 
