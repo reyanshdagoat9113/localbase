@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { useJobRuns, useJobs, useRunJob } from "@/hooks/useAdmin";
-import { ApiError, getSession, type JobRun, type JobSummary } from "@/lib/api";
+import { ApiError, type JobRun, type JobSummary } from "@/lib/api";
 import { ErrorState, LoadingState, PageHeader, Panel } from "@/views/State";
 
 const PAGE_SIZE = 10;
@@ -12,8 +11,6 @@ export function JobsView() {
   const [page, setPage] = useState(0);
   const [actionError, setActionError] = useState<string | null>(null);
   const runJob = useRunJob();
-
-  useJobRunRealtime();
 
   const list = jobs.data ?? [];
   const activeName = list.some((job) => job.name === selectedName)
@@ -278,46 +275,6 @@ function StatusDot({ status }: { status: string | null }) {
         ? "bg-amber-500 animate-pulse"
         : "bg-slate-400";
   return <span className={`size-2 shrink-0 rounded-full ${color}`} title={status ?? "Never run"} />;
-}
-
-function useJobRunRealtime() {
-  const queryClient = useQueryClient();
-
-  useEffect(() => {
-    let socket: WebSocket | null = null;
-    let reconnect: ReturnType<typeof setTimeout> | null = null;
-    let closed = false;
-
-    const connect = () => {
-      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const token = getSession()?.accessToken;
-      const url = `${protocol}//${window.location.host}/realtime${token ? `?token=${encodeURIComponent(token)}` : ""}`;
-      socket = new WebSocket(url);
-      socket.addEventListener("open", () => {
-        socket?.send(JSON.stringify({ type: "subscribe", id: "admin-jobs", table: "_job_runs" }));
-      });
-      socket.addEventListener("message", (event) => {
-        try {
-          const message = JSON.parse(String(event.data)) as { type?: string; event?: { table?: string } };
-          if (message.type === "event" && message.event?.table === "_job_runs") {
-            queryClient.invalidateQueries({ queryKey: ["admin", "jobs"] });
-          }
-        } catch {
-          // Ignore malformed/non-JSON realtime messages.
-        }
-      });
-      socket.addEventListener("close", () => {
-        if (!closed) reconnect = setTimeout(connect, 1500);
-      });
-    };
-
-    connect();
-    return () => {
-      closed = true;
-      if (reconnect) clearTimeout(reconnect);
-      socket?.close();
-    };
-  }, [queryClient]);
 }
 
 function formatDate(value: string | null): string {

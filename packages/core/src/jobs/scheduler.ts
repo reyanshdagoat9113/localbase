@@ -79,7 +79,7 @@ export interface TriggerJobResult {
  * each schedule and arms a timer whose callback funnels through the shared
  * {@link JobRunner.run} — the single write path for `_job_runs`. Because the
  * runner writes run-status rows through `Database.insert/update`, every fire
- * is broadcast to realtime subscribers for free (the dashboard live-updates).
+ * follows the normal database change-event lifecycle.
  *
  * Invariants (see the jobs plan, Decisions #7–#9):
  *
@@ -189,8 +189,8 @@ export class Scheduler {
    * Trigger a registered job immediately, outside its cron schedule. This is
    * the manual-run funnel shared by the CLI (`localbase jobs run`) and the
    * admin API (`POST /_api/admin/jobs/:name/run`). It delegates to the runner,
-   * so the same concurrency guard, `_job_runs` lifecycle, and realtime
-   * broadcasts apply — a manual run is indistinguishable from a scheduled one
+   * so the same concurrency guard and `_job_runs` lifecycle apply — a manual
+   * run is indistinguishable from a scheduled one
    * in the history table.
    *
    * @throws {JobError} if `name` is not a registered job.
@@ -202,7 +202,7 @@ export class Scheduler {
   /**
    * Start a registered job and return as soon as its `running` row exists.
    * The admin trigger endpoint uses this so it can return a run id immediately
-   * while realtime subscribers observe the eventual success/failure update.
+   * while readers observe the eventual success/failure update.
    */
   triggerNow(name: string): TriggerJobResult {
     this.requireJob(name);

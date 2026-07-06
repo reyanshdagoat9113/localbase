@@ -178,7 +178,11 @@ export function useDeleteStorageFile(bucket: string) {
 // ─── Scheduled jobs ───────────────────────────────────────────
 
 export function useJobs() {
-  return useQuery({ queryKey: ["admin", "jobs"], queryFn: getJobs });
+  return useQuery({
+    queryKey: ["admin", "jobs"],
+    queryFn: getJobs,
+    refetchInterval: 1500,
+  });
 }
 
 export function useJobRuns(name: string, limit: number, offset: number) {
@@ -186,6 +190,7 @@ export function useJobRuns(name: string, limit: number, offset: number) {
     queryKey: ["admin", "jobs", name, "runs", { limit, offset }],
     queryFn: () => getJobRuns(name, limit, offset),
     enabled: name.length > 0,
+    refetchInterval: 1500,
   });
 }
 

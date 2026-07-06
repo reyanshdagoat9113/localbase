@@ -59,9 +59,8 @@ export class JobError extends Error {
  * The runner is the sole writer of `_job_runs`: it inserts a `running` row
  * when a job fires and updates it to `success` | `failed` when it finishes.
  * History is append-only — there is no PATCH/DELETE surface. All writes go
- * through {@link Database.insert}/{@link Database.update} so the realtime
- * server broadcasts run-status changes for free (the dashboard live-updates
- * without polling).
+ * through {@link Database.insert}/{@link Database.update} so the standard
+ * database change-event lifecycle remains intact.
  *
  * Concurrency: an in-memory `Set` of running names enforces one execution at
  * a time per job. If a job is still running when its next schedule fires,
