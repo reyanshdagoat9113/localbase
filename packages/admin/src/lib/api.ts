@@ -38,6 +38,33 @@ export interface TableSummary {
   system: boolean;
 }
 
+export interface JobSummary {
+  name: string;
+  schedule: string;
+  timezone?: string;
+  enabled: boolean;
+  description?: string;
+  nextRun: string | null;
+  lastRun: string | null;
+  lastStatus: string | null;
+}
+
+export interface JobRun {
+  id: number;
+  job_name: string;
+  status: "running" | "success" | "failed";
+  started_at: string;
+  ended_at: string | null;
+  duration_ms: number | null;
+  output: string | null;
+  error: string | null;
+}
+
+export interface JobRunsResponse {
+  runs: JobRun[];
+  total: number;
+}
+
 interface ApiEnvelope<T> {
   data: T | null;
   error?: string | null;
@@ -425,5 +452,32 @@ export function createStorageSignedUrl(
   return request<{ signedUrl: string }>(
     `/api/storage/${encodeURIComponent(bucket)}/${encodeURIComponent(storedName)}/sign`,
     { method: "POST", body: JSON.stringify({ expiresIn: 300 }) }
+  );
+}
+
+// ─── Scheduled Jobs (/_api/admin/jobs/*) ──────────────────────
+
+export function getJobs(): Promise<JobSummary[]> {
+  return request<JobSummary[]>("/_api/admin/jobs");
+}
+
+export function getJobRuns(
+  name: string,
+  limit: number,
+  offset: number
+): Promise<JobRunsResponse> {
+  const query = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return request<JobRunsResponse>(
+    `/_api/admin/jobs/${encodeURIComponent(name)}/runs?${query}`
+  );
+}
+
+export function runJob(name: string): Promise<{ runId: number }> {
+  return request<{ runId: number }>(
+    `/_api/admin/jobs/${encodeURIComponent(name)}/run`,
+    { method: "POST" }
   );
 }

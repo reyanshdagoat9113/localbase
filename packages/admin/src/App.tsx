@@ -9,6 +9,7 @@ import { UsersView } from "@/views/UsersView";
 import { AdminRequestsView } from "@/views/AdminRequestsView";
 import { StorageView } from "@/views/StorageView";
 import { StubView } from "@/views/StubView";
+import { JobsView } from "@/views/Jobs";
 
 export default function App() {
   return (
@@ -33,16 +34,7 @@ export default function App() {
             }
           />
           <Route path="storage" element={<StorageView />} />
-          <Route
-            path="jobs"
-            element={
-              <StubView
-                title="Jobs viewer"
-                badge="P11"
-                description="Background job inspection is gated on Phase 11."
-              />
-            }
-          />
+          <Route path="jobs" element={<JobsView />} />
           <Route path="*" element={<StubView title="Not found" />} />
         </Route>
       </Route>

@@ -64,6 +64,14 @@ export interface GetRunsResult {
   total: number;
 }
 
+/** Result of starting a manual run without waiting for its handler to finish. */
+export interface TriggerJobResult {
+  /** The new run id, or `null` when the job is already running. */
+  runId: number | null;
+  /** Final outcome, useful to process owners that need to drain or observe it. */
+  completion: Promise<JobRunResult>;
+}
+
 /**
  * Cron-driven process lifecycle for scheduled jobs.
  *
@@ -189,6 +197,26 @@ export class Scheduler {
    */
   async runNow(name: string): Promise<JobRunResult> {
     return this.runTracked(name);
+  }
+
+  /**
+   * Start a registered job and return as soon as its `running` row exists.
+   * The admin trigger endpoint uses this so it can return a run id immediately
+   * while realtime subscribers observe the eventual success/failure update.
+   */
+  triggerNow(name: string): TriggerJobResult {
+    this.requireJob(name);
+    if (this.runner.isRunning(name)) {
+      return {
+        runId: null,
+        completion: Promise.resolve({ runId: null, status: "skipped" }),
+      };
+    }
+
+    // JobRunner inserts the running row synchronously before its first await.
+    const completion = this.runTracked(name);
+    const runId = this.latestRun(name)?.id ?? null;
+    return { runId, completion };
   }
 
   /** The underlying runner (exposed for advanced/admin introspection). */

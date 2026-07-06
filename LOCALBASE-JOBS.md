@@ -288,7 +288,7 @@ Each milestone is independently shippable and verifiable. Tests use **Node's bui
 
 **Done when:** `localbase jobs list` shows next/last run; `localbase jobs run foo` triggers immediately; `localbase dev` runs registered jobs on schedule.
 
-### M5 — Admin run viewer + README
+### ✅ M5 — Admin run viewer + README
 **Goal:** the dashboard's reserved Jobs viewer goes live; docs are current.
 
 **Files:**
@@ -297,12 +297,12 @@ Each milestone is independently shippable and verifiable. Tests use **Node's bui
 - `README.md` — new `## Scheduled Jobs` quickstart section (mirror the Auth/Storage sections); fix the stale roadmap line that mis-numbers the phases.
 
 **Tasks:**
-- [ ] Add the three admin endpoints (read + trigger), gated by `requireAdmin`, returning `{ data } | { error }`.
-- [ ] Validate `:name` against the job registry (404 on unknown; never a path lookup on the trigger endpoint).
-- [ ] Enable the Jobs viewer in the admin SPA: job list (with next/last run + status), run-now button, paginated run history with output/error.
-- [ ] Verify realtime live-update: a scheduled or manual run updates the viewer without a manual refresh (relies on Phase 8 broadcasting `_job_runs` change events).
-- [ ] Write admin endpoint tests: unknown name 404; non-admin 403; manual trigger inserts a run; history pagination.
-- [ ] Update README: scheduled-jobs quickstart; correct the phase-numbering roadmap line.
+- [x] Add the three admin endpoints (read + trigger), gated by `requireAdmin`, returning `{ data } | { error }`.
+- [x] Validate `:name` against the job registry (404 on unknown; never a path lookup on the trigger endpoint).
+- [x] Enable the Jobs viewer in the admin SPA: job list (with next/last run + status), run-now button, paginated run history with output/error.
+- [x] Verify realtime live-update: a scheduled or manual run updates the viewer without a manual refresh (relies on Phase 8 broadcasting `_job_runs` change events).
+- [x] Write admin endpoint tests: unknown name 404; non-admin 403; manual trigger inserts a run; history pagination.
+- [x] Update README: scheduled-jobs quickstart; correct the phase-numbering roadmap line.
 
 **Done when:** an admin can browse jobs, trigger one, and watch its run appear and complete in the dashboard in realtime.
 

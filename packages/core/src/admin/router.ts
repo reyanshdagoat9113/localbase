@@ -13,6 +13,7 @@ import {
 } from "../query.js";
 import { requireAdmin, type AdminVariables } from "../auth/middleware.js";
 import type { Auth } from "../auth/index.js";
+import type { Scheduler } from "../jobs/scheduler.js";
 import {
   assertNotSystemTable,
   assertNotVirtualTable,
@@ -48,6 +49,9 @@ export interface AdminRouterOptions {
    * mode and the user endpoints simply aren't registered.
    */
   auth?: Auth;
+
+  /** Live scheduled-jobs registry and runner used by the Jobs viewer. */
+  scheduler?: Scheduler;
 }
 
 /**
@@ -349,6 +353,50 @@ export function createAdminRouter(
       } catch (err) {
         return adminErrorResponse(c, err);
       }
+    });
+  }
+
+  // ── Scheduled Jobs: /_api/admin/jobs/* ─────────────────────
+  // Only registered config names are accepted. A request parameter is never
+  // interpreted as a handler path, preserving the code-execution boundary.
+  if (options.scheduler) {
+    const scheduler = options.scheduler;
+
+    router.get("/_api/admin/jobs", (c) => {
+      return c.json({ data: scheduler.listJobs() });
+    });
+
+    router.get("/_api/admin/jobs/:name/runs", (c) => {
+      const name = c.req.param("name");
+      if (!scheduler.getJob(name)) {
+        return c.json({ error: `Unknown job: "${name}"` }, 404);
+      }
+
+      const url = new URL(c.req.url);
+      const limit = parseBoundedInteger(url.searchParams.get("limit"), 25, 1, 100);
+      const offset = parseBoundedInteger(
+        url.searchParams.get("offset"),
+        0,
+        0,
+        Number.MAX_SAFE_INTEGER
+      );
+      return c.json({ data: scheduler.getRuns(name, { limit, offset }) });
+    });
+
+    router.post("/_api/admin/jobs/:name/run", (c) => {
+      const name = c.req.param("name");
+      if (!scheduler.getJob(name)) {
+        return c.json({ error: `Unknown job: "${name}"` }, 404);
+      }
+
+      const triggered = scheduler.triggerNow(name);
+      // Observe completion so a future unexpected runner rejection cannot
+      // become unhandled after this request has returned.
+      void triggered.completion.catch(() => {});
+      if (triggered.runId === null) {
+        return c.json({ error: `Job "${name}" is already running` }, 409);
+      }
+      return c.json({ data: { runId: triggered.runId } }, 202);
     });
   }
 

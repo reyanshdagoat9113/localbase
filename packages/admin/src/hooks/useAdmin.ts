@@ -19,6 +19,9 @@ import {
   rejectAdminRequest,
   listStorageFiles,
   deleteStorageFile,
+  getJobs,
+  getJobRuns,
+  runJob,
   type AuthUser,
   type UserRole,
   type GetRowsParams,
@@ -168,6 +171,31 @@ export function useDeleteStorageFile(bucket: string) {
     mutationFn: (storedName: string) => deleteStorageFile(bucket, storedName),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "storage", bucket] });
+    },
+  });
+}
+
+// ─── Scheduled jobs ───────────────────────────────────────────
+
+export function useJobs() {
+  return useQuery({ queryKey: ["admin", "jobs"], queryFn: getJobs });
+}
+
+export function useJobRuns(name: string, limit: number, offset: number) {
+  return useQuery({
+    queryKey: ["admin", "jobs", name, "runs", { limit, offset }],
+    queryFn: () => getJobRuns(name, limit, offset),
+    enabled: name.length > 0,
+  });
+}
+
+export function useRunJob() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: runJob,
+    onSuccess: (_result, name) => {
+      qc.invalidateQueries({ queryKey: ["admin", "jobs"] });
+      qc.invalidateQueries({ queryKey: ["admin", "jobs", name, "runs"] });
     },
   });
 }
