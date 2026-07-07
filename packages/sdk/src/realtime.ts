@@ -29,10 +29,12 @@ interface PresenceSubscription {
 }
 
 interface ServerMessage {
-  type: "event" | "presence" | "error" | "subscribed" | "unsubscribed";
+  type: "event" | "presence" | "error" | "subscribed" | "unsubscribed" | "auth:ok" | "auth:error" | "resync:required";
   event?: RealtimeEvent | PresenceEvent;
   id?: string;
   message?: string;
+  reason?: string;
+  user?: { id: number; email: string };
 }
 
 /**
@@ -52,7 +54,38 @@ export class RealtimeClient {
   private reconnectDelay = 1000;
   private closed = false;
   private lastEventId = 0;
+  /**
+   * Opaque, epoch-aware replay cursor echoed back on reconnect. Reset on
+   * `resync-required` so the next reconnect replays from the current state.
+   */
+  private cursor: string | null = null;
   private getToken: () => string | undefined;
+  /**
+   * Per-connection auth state. The token is NEVER sent in the URL (it would
+   * leak into proxy logs and browser history); instead the first frame after
+   * open is `{ type: "auth", token }`. Subscriptions are only flushed once the
+   * server acknowledges with `auth:ok`. When no token is available the client
+   * skips the handshake (local-development servers with auth disabled).
+   */
+  private authed = false;
+  /**
+   * Set when the most recent socket was closed for an unrecoverable auth
+   * reason (bad/expired-at-handshake token). Suppresses the reconnect loop so a
+   * bad token can't drive a tight failure spin; the application must re-auth.
+   */
+  private authFailed = false;
+  /**
+   * Optional callback invoked when the server rejects authentication. Wired by
+   * `createClient` so the application can react (e.g. redirect to sign-in).
+   */
+  onAuthError: ((message: string) => void) | null = null;
+  /**
+   * Optional callback invoked when the server signals `resync-required`
+   * (server restarted, or the replay buffer evicted the client's position).
+   * The application should refetch REST state; the SDK resets its cursor and
+   * keeps delivering live events from the resync point onward.
+   */
+  onResync: ((reason: string) => void) | null = null;
 
   constructor(
     baseUrl: string,
@@ -127,13 +160,15 @@ export class RealtimeClient {
       this.ensureConnected();
     }
 
-    if (this.socket?.readyState === WebSocket.OPEN) {
+    // If the socket is already privileged, register the subscription now;
+    // otherwise it is buffered in `this.subscriptions` and flushed on auth:ok.
+    if (this.socket?.readyState === WebSocket.OPEN && this.authed) {
       this.sendSubscribe(sub);
     }
 
     return () => {
       this.subscriptions.delete(id);
-      if (this.socket?.readyState === WebSocket.OPEN) {
+      if (this.socket?.readyState === WebSocket.OPEN && this.authed) {
         this.socket.send(JSON.stringify({ type: "unsubscribe", id }));
       }
       this.closeIfIdle();
@@ -158,7 +193,7 @@ export class RealtimeClient {
       this.ensureConnected();
     }
 
-    if (this.socket?.readyState === WebSocket.OPEN) {
+    if (this.socket?.readyState === WebSocket.OPEN && this.authed) {
       this.sendPresenceJoin(channel, key, metadata);
     }
 
@@ -167,13 +202,13 @@ export class RealtimeClient {
         const sub = this.presenceSubscriptions.get(id);
         if (!sub) return;
         sub.metadata = nextMetadata;
-        if (this.socket?.readyState === WebSocket.OPEN) {
+        if (this.socket?.readyState === WebSocket.OPEN && this.authed) {
           this.sendPresenceJoin(channel, key, nextMetadata);
         }
       },
       leave: () => {
         this.presenceSubscriptions.delete(id);
-        if (this.socket?.readyState === WebSocket.OPEN) {
+        if (this.socket?.readyState === WebSocket.OPEN && this.authed) {
           this.socket.send(
             JSON.stringify({ type: "presence:leave", channel, key })
           );
@@ -209,22 +244,52 @@ export class RealtimeClient {
     const url = this.buildUrl();
     const socket = new WebSocket(url);
     this.socket = socket;
+    this.authed = false;
 
     socket.addEventListener("open", () => {
       this.reconnectDelay = 1000;
-      for (const sub of this.subscriptions.values()) {
-        this.sendSubscribe(sub);
-      }
-      for (const sub of this.presenceSubscriptions.values()) {
-        this.sendPresenceJoin(sub.channel, sub.key, sub.metadata);
+      const token = this.getToken();
+      if (token) {
+        // Authenticated handshake: send the token as the first frame. The
+        // server keeps the connection unprivileged until it replies auth:ok,
+        // at which point we flush the live subscriptions + presence.
+        this.authed = false;
+        socket.send(JSON.stringify({ type: "auth", token }));
+      } else {
+        // No token → assume an auth-disabled (local-dev) server and subscribe
+        // immediately. If the server actually requires auth, it will close the
+        // socket and the close handler surfaces the auth error.
+        this.authed = true;
+        this.flushPending();
       }
     });
 
     socket.addEventListener("message", (event) => {
       let message: ServerMessage;
       try {
-        message = JSON.parse(event.data) as ServerMessage;
+        message = JSON.parse(event.data as string) as ServerMessage;
       } catch {
+        return;
+      }
+
+      if (message.type === "auth:ok") {
+        this.authed = true;
+        this.flushPending();
+        return;
+      }
+      if (message.type === "auth:error") {
+        this.authed = false;
+        this.authFailed = true;
+        this.onAuthError?.(message.message ?? "Realtime authentication failed");
+        return;
+      }
+      if (message.type === "resync:required") {
+        // The client's stored position no longer maps to a contiguous
+        // history. Forget it so the next reconnect starts fresh, and let the
+        // application refetch canonical state.
+        this.cursor = null;
+        this.lastEventId = 0;
+        this.onResync?.(message.reason ?? "resync");
         return;
       }
 
@@ -232,6 +297,9 @@ export class RealtimeClient {
         const realtimeEvent = message.event as RealtimeEvent;
         if (typeof realtimeEvent.id === "number") {
           this.lastEventId = Math.max(this.lastEventId, realtimeEvent.id);
+        }
+        if (typeof realtimeEvent.cursor === "string") {
+          this.cursor = realtimeEvent.cursor;
         }
         for (const sub of this.subscriptions.values()) {
           if (sub.table !== realtimeEvent.table) continue;
@@ -253,13 +321,31 @@ export class RealtimeClient {
       }
     });
 
-    socket.addEventListener("close", () => {
+    socket.addEventListener("close", (event) => {
       // Ignore close events from sockets we've already moved on from.
       if (this.socket === socket) {
         this.socket = null;
       }
-      // Only reconnect if there are still active subscriptions. An
-      // intentional unsubscribe may have closed the socket.
+
+      // A clean auth rejection: the server closed because the token was bad or
+      // absent. Surface it once and stop retrying — a reconnect with the same
+      // token would just fail again. 4001 = auth failed, 4002 = auth timeout.
+      // (If the auth:error frame already surfaced this, `authFailed` guards the
+      // duplicate.)
+      if (event.code === 4001 || event.code === 4002) {
+        if (!this.authFailed) {
+          this.authFailed = true;
+          this.onAuthError?.(
+            event.code === 4002
+              ? "Realtime authentication timed out"
+              : "Realtime authentication failed"
+          );
+        }
+        return;
+      }
+
+      // 4003 = token expired mid-session. Reconnect so getToken() can supply a
+      // refreshed token. Any other close is treated as transient network churn.
       if (this.hasActiveWork()) {
         this.scheduleReconnect();
       }
@@ -270,10 +356,20 @@ export class RealtimeClient {
     });
   }
 
+  /** Send all live subscriptions + presence joins on a privileged socket. */
+  private flushPending(): void {
+    const socket = this.socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    for (const sub of this.subscriptions.values()) {
+      this.sendSubscribe(sub);
+    }
+    for (const sub of this.presenceSubscriptions.values()) {
+      this.sendPresenceJoin(sub.channel, sub.key, sub.metadata);
+    }
+  }
+
   private buildUrl(): string {
-    const token = this.getToken();
-    if (!token) return `${this.baseUrl}${this.path}`;
-    return `${this.baseUrl}${this.path}?token=${encodeURIComponent(token)}`;
+    return `${this.baseUrl}${this.path}`;
   }
 
   private sendSubscribe(sub: Subscription): void {
@@ -283,7 +379,10 @@ export class RealtimeClient {
         id: sub.id,
         table: sub.table,
         filters: sub.filters,
-        lastEventId: this.lastEventId,
+        // Send the opaque cursor (epoch-aware) when available; fall back to the
+        // numeric lastEventId so older servers still replay correctly.
+        cursor: this.cursor ?? undefined,
+        lastEventId: this.cursor ? undefined : this.lastEventId,
       })
     );
   }

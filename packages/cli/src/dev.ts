@@ -7,6 +7,8 @@ import {
   Scheduler,
   createServer as createApi,
   createRealtimeServer,
+  resolveAuthConfig,
+  resolvePolicies,
 } from "@localbase/core";
 import type { RealtimeServer } from "@localbase/core";
 import { loadConfig, ConfigError } from "./config.js";
@@ -121,6 +123,7 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
       admin: { enabled: true },
       policies: config.policies,
       storage: config.storage,
+      security: config.security,
       scheduler,
     });
 
@@ -170,6 +173,14 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
     );
 
     // Attach realtime WebSocket server to the same HTTP server when enabled.
+    //
+    // Security wiring (Workstream 1.1): when auth is enabled the realtime
+    // handshake authenticates the access token (sent as an initial message, not
+    // in the URL), and any owner-protected policies are enforced on every
+    // subscription and replayed event — mirroring the REST RLS path. Resolving
+    // the secret + policy map here (rather than inside `createServer`) keeps
+    // the realtime server's authz source-of-truth explicit and lets the startup
+    // guard inside `createRealtimeServer` refuse an unprotected socket.
     const realtime =
       config.realtime?.enabled === false
         ? null
@@ -177,6 +188,12 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
             server,
             database: db,
             config: config.realtime,
+            authSecret: authEnabled
+              ? resolveAuthConfig(config.auth!).config.jwtSecret
+              : undefined,
+            policies: config.policies
+              ? resolvePolicies(config.policies, config.tables)
+              : undefined,
           });
 
     // Arm the scheduled-jobs scheduler when any jobs are declared. Like the

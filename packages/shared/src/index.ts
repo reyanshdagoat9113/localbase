@@ -123,6 +123,84 @@ export interface JobConfig {
   description?: string;
 }
 
+/**
+ * CORS policy. See {@link SecurityConfig}.
+ *
+ * By default (when `allowedOrigins` is unset or empty) the server reflects
+ * only loopback origins — `http(s)://localhost:*` and `http(s)://127.0.0.1:*`,
+ * any port — so a fresh `localbase dev` works for a local frontend without
+ * opening the API up to every site the operator visits. To accept requests
+ * from a deployed frontend, list its exact origin(s) here.
+ *
+ * Credentials (cookies / `Authorization`) are echoed only when
+ * `allowCredentials` is explicitly `true`; the default is `false` so a random
+ * public page cannot read authenticated responses even if its origin were to
+ * be allowed.
+ */
+export interface CorsConfig {
+  /**
+   * Exact origin strings allowed cross-origin, e.g.
+   * `["https://app.example.com"]`. When unset/empty the loopback-safe
+   * default applies. The literal `"*"` is honored as-is, but note it is
+   * incompatible with `allowCredentials` per the CORS spec.
+   */
+  allowedOrigins?: string[];
+  /** Methods advertised on preflight. Defaults to the standard REST set. */
+  allowedMethods?: string[];
+  /**
+   * Request headers advertised on preflight. When omitted the server
+   * reflects the client's `Access-Control-Request-Headers` (dev-friendly).
+   */
+  allowedHeaders?: string[];
+  /** When `true`, sets `Access-Control-Allow-Credentials: true`. Default `false`. */
+  allowCredentials?: boolean;
+}
+
+/**
+ * Per-IP rate-limit policy applied to abuse-sensitive routes (sign-up,
+ * sign-in, refresh, admin-account requests, password operations, signed-URL
+ * creation). A single policy is shared; each route counts independently per
+ * client IP, so exhausting the budget on `/signin` does not block `/signup`.
+ */
+export interface RateLimitsConfig {
+  /** Fixed-window length in milliseconds. Default 60000 (1 minute). */
+  windowMs?: number;
+  /** Max requests per window, per route, per IP. Default 20. */
+  max?: number;
+}
+
+/**
+ * HTTP-exposure hardening options (NET-P0).
+ *
+ * Every field is optional with loopback-safe defaults, so a localhost
+ * `localbase dev` keeps working out of the box, while a deployment on a
+ * non-loopback interface is locked down unless explicitly opened up.
+ *
+ * NOTE ON TLS: these controls operate at the HTTP layer and assume the
+ * operator terminates TLS upstream (a reverse proxy, or an explicit TLS
+ * listener). Serving access tokens or admin traffic over plain HTTP on a
+ * non-loopback interface is unsafe regardless of CORS or rate-limiting —
+ * configure TLS termination before exposing the server beyond localhost.
+ */
+export interface SecurityConfig {
+  /** CORS policy. Defaults to loopback-only origins. See {@link CorsConfig}. */
+  cors?: CorsConfig;
+  /** Per-IP rate limits for abuse-sensitive routes. See {@link RateLimitsConfig}. */
+  rateLimits?: RateLimitsConfig;
+  /**
+   * Maximum request body size in bytes for JSON API routes (auth, CRUD,
+   * admin). Storage uploads are exempt — they enforce their own
+   * `storage.maxFileSize`. Default ~1 MiB (1048576).
+   */
+  bodyLimitBytes?: number;
+  /**
+   * Optional extra security headers merged on top of the defaults
+   * (`X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`).
+   * Entries here override a default of the same header name.
+   */
+  headers?: { extra?: Record<string, string> };
+}
+
 export interface LocalBaseConfig {
   tables: DatabaseSchema;
   auth?: AuthConfig;
@@ -135,6 +213,11 @@ export interface LocalBaseConfig {
   storage?: StorageConfig;
   /** Cron-scheduled jobs. Keys are job names. See {@link JobConfig}. */
   jobs?: Record<string, JobConfig>;
+  /**
+   * HTTP-exposure hardening (CORS, rate limits, body size, security headers).
+   * All optional with loopback-safe defaults. See {@link SecurityConfig}.
+   */
+  security?: SecurityConfig;
 }
 
 export interface RealtimeConfig {
@@ -146,6 +229,51 @@ export interface RealtimeConfig {
   eventLogSize?: number;
   /** Whether presence messages are accepted. Default: true. */
   presence?: boolean;
+  /**
+   * Seconds the server waits for the initial authentication message before
+   * closing the socket. Only meaningful when auth is enabled (a JWT secret is
+   * supplied to the realtime server). Default: 10.
+   */
+  authTimeoutMs?: number;
+  /**
+   * Milliseconds between server-initiated pings used for liveness and idle
+   * cleanup. A socket that neither pongs nor sends application traffic within
+   * roughly 2x this interval is terminated. Default: 30000 (30s). Set to 0 to
+   * disable.
+   */
+  pingIntervalMs?: number;
+  /** Abuse/DoS bounds for realtime sockets. See {@link RealtimeLimits}. */
+  limits?: RealtimeLimits;
+}
+
+/**
+ * Tunable bounds that keep a single realtime socket from exhausting server
+ * memory or CPU. All default to conservative values suitable for a
+ * single-process preview; override per-deployment in `localbase.config.ts`.
+ */
+export interface RealtimeLimits {
+  /** Max simultaneous subscriptions per socket. Default: 100. */
+  maxSubscriptionsPerSocket?: number;
+  /** Max filters in a single subscription. Default: 16. */
+  maxFiltersPerSubscription?: number;
+  /** Max presence channels joined per socket. Default: 32. */
+  maxPresenceChannelsPerSocket?: number;
+  /** Max byte length of a presence channel or key string. Default: 128. */
+  maxPresenceKeyLength?: number;
+  /** Max serialized size (bytes) of presence metadata. Default: 4096. */
+  maxPresenceMetadataBytes?: number;
+  /**
+   * Max inbound application messages per second per socket before the socket is
+   * closed as abusive. Default: 50.
+   */
+  maxMessagesPerSecond?: number;
+  /**
+   * Max outbound bytes buffered on a slow consumer's socket before the
+   * connection is terminated (backpressure protection). Default: 1 MiB.
+   */
+  maxBufferedBytes?: number;
+  /** Max inbound frame size in bytes (WS payload). Default: 1 MiB. */
+  maxPayloadBytes?: number;
 }
 
 export interface ApiResponse<T = unknown> {
@@ -167,10 +295,18 @@ export interface RealtimeEvent<T = unknown> {
   type: ChangeEventType;
   table: string;
   row: T;
-  /** Monotonic server-assigned id used to replay missed events. */
+  /** Monotonic server-assigned sequence number within the current epoch. */
   id?: number;
   /** ISO timestamp assigned by the realtime server. */
   timestamp?: string;
+  /**
+   * Opaque, epoch-aware cursor clients echo back to request replay. Unlike a
+   * bare sequence id, it encodes the server epoch so a reconnect after a
+   * server restart — or after events have fallen out of the bounded replay
+   * buffer — produces an explicit `resync-required` instead of a silently
+   * incomplete history.
+   */
+  cursor?: string;
 }
 
 export interface PresenceState<T = unknown> {

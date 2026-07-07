@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
 import type {
   AdminConfig,
   IntrospectedColumn,
@@ -52,6 +52,14 @@ export interface AdminRouterOptions {
 
   /** Live scheduled-jobs registry and runner used by the Jobs viewer. */
   scheduler?: Scheduler;
+
+  /**
+   * Per-IP rate limiter built by {@link createServer} from
+   * `security.rateLimits`. When supplied it is mounted on abuse-sensitive
+   * admin endpoints (password reset) — these are gated by `requireAdmin` but
+   * still run password hashing, so bounding them protects CPU.
+   */
+  rateLimit?: MiddlewareHandler;
 }
 
 /**
@@ -257,6 +265,12 @@ export function createAdminRouter(
     }
   });
 
+  // `rateLimit` is captured here so the password-reset endpoint (a "password
+  // operation" per NET-P0) can mount it. It remains optional: when the host
+  // supplies no `security.rateLimits`, no limiter is wired and the route runs
+  // ungated by rate (still gated by `requireAdmin`).
+  const rl = options.rateLimit;
+
   // ── Auth Manager: /_api/admin/users/* ──────────────────────
   // Mounted only when an `Auth` instance is wired in. These endpoints are the
   // *only* way to mutate `_users` through the admin API — the generic row
@@ -285,6 +299,10 @@ export function createAdminRouter(
     });
 
     // POST /_api/admin/users/:id/reset-password — set a new password.
+    // Rate-limited as a "password operation": it runs argon2 hashing and an
+    // authenticated admin could otherwise be abused to burn server CPU. The
+    // limiter is registered as path-scoped middleware ahead of the handler.
+    if (rl) router.use("/_api/admin/users/:id/reset-password", rl);
     router.post("/_api/admin/users/:id/reset-password", async (c) => {
       try {
         const body = await readJson(c);
