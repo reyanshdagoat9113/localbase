@@ -82,14 +82,18 @@ export function createClient(url: string, options: CreateClientOptions = {}): Lo
   // Session state lives in the closure. Both `auth` and the query builder
   // read through the getter, so signIn → query always picks up the new token.
   let session: StoredSession | null = null;
+  let realtime: RealtimeClient | null = null;
   const getSession = () => session;
   const setSession = (s: StoredSession | null) => {
     session = s;
+    if (s) {
+      realtime?.retryAuth();
+    }
   };
 
   const auth = createAuthClient(baseUrl, getSession, setSession);
   const storage = createStorageClient(baseUrl, () => session?.accessToken);
-  const realtime = new RealtimeClient(
+  realtime = new RealtimeClient(
     baseUrl,
     () => session?.accessToken,
     options.realtime?.path ?? "/realtime",

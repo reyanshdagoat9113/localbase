@@ -235,6 +235,18 @@ export class RealtimeClient {
     this.presenceSubscriptions.clear();
   }
 
+  /**
+   * Called by the owning SDK client after a new session is installed. If a
+   * previous handshake failed, active subscriptions should get one fresh
+   * connection attempt with the new token instead of staying permanently idle.
+   */
+  retryAuth(): void {
+    this.authFailed = false;
+    if (this.hasActiveWork()) {
+      this.ensureConnected();
+    }
+  }
+
   private ensureConnected(): void {
     if (!this.enabled) return;
     if (this.socket?.readyState === WebSocket.CONNECTING) return;
@@ -274,6 +286,7 @@ export class RealtimeClient {
 
       if (message.type === "auth:ok") {
         this.authed = true;
+        this.authFailed = false;
         this.flushPending();
         return;
       }

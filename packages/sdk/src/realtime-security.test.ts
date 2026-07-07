@@ -178,6 +178,38 @@ describe("SDK realtime security", () => {
     }
   });
 
+  it("retries active subscriptions when a valid session replaces a rejected one", async () => {
+    const h = await setup();
+    try {
+      let authErrors = 0;
+      const alice = createClient(`http://localhost:${h.port}`, {
+        onAuthError: () => {
+          authErrors++;
+        },
+      });
+      alice.auth.setSession(await makeSession("not-a-valid-token", 1, "alice@x.com"));
+
+      const events: string[] = [];
+      alice.subscribe<{ title: string }>("posts", (e) => events.push(e.row.title));
+      await wait(300);
+      assert.equal(authErrors, 1, "the initial bad token should fail once");
+
+      alice.auth.setSession(await makeSession(h.aliceToken, 1, "alice@x.com"));
+      await wait(250);
+
+      await h.app.request(
+        "/api/posts",
+        { method: "POST", headers: { "Content-Type": "application/json", ...bearer(h.aliceToken) }, body: JSON.stringify({ title: "after-valid-session" }) }
+      );
+      await wait(300);
+
+      assert.deepEqual(events, ["after-valid-session"]);
+      alice.close();
+    } finally {
+      await h.close();
+    }
+  });
+
   it("reconnects with the refreshed token after expiry and keeps delivering", async () => {
     // Short-lived token so the server closes (4003) within ~1s.
     const shortToken = await signAccessToken({ id: 1, email: "alice@x.com", role: "user" }, SECRET, "1s");
