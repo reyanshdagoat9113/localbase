@@ -16,7 +16,7 @@
   "scripts": {
     "build": "tsup",
     "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
-    "test": "tsx --test src/**/*.test.ts"
+    "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@localbase/shared": "0.1.0"

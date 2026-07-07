@@ -24,7 +24,7 @@ export { select, selectById, insert, update, remove } from "./query.js";
 export type { Filter, FilterOperator, OrderBy, QueryOptions } from "./query.js";
 
 // Row-Level Security
-export { resolvePolicies, ownerFilter, stampOwner } from "./rls.js";
+export { resolvePolicies, ownerFilter, stampOwner, liveAdminRole } from "./rls.js";
 export type { ResolvedPolicy } from "./rls.js";
 
 // Auth subsystem
@@ -116,6 +116,24 @@ export type {
 } from "./jobs/scheduler.js";
 export type { JobContext, JobHandler } from "./jobs/types.js";
 
+// Backup & recovery subsystem
+export {
+  createBackup,
+  restoreBackup,
+  BackupError,
+  isDatabaseLocked,
+  BACKUP_MANIFEST_VERSION,
+  BACKUP_DB_FILENAME,
+  BACKUP_STORAGE_DIRNAME,
+} from "./backup.js";
+export type {
+  BackupManifest,
+  BackupManifestEntry,
+  BackupResult,
+  RestoreResult,
+  BackupErrorCode,
+} from "./backup.js";
+
 // Re-export shared types
 export type {
   ColumnType,
@@ -142,4 +160,8 @@ export type {
   ChangeEventType,
   StorageConfig,
   JobConfig,
+  SecurityConfig,
+  CorsConfig,
+  RateLimitsConfig,
+  RealtimeLimits,
 } from "@localbase/shared";

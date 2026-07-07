@@ -71,6 +71,13 @@ export class Database extends EventEmitter<DatabaseEvents> {
   private authConfig?: AuthConfig;
   /** Whether the jobs subsystem (_job_runs table) has been provisioned. */
   private jobsEnabled: boolean;
+  /**
+   * Resolved root directory for local file storage. The storage tree lives
+   * at `<dataDir>/storage/<bucket>/<file>`. Exposed via {@link getDataDir}
+   * so the backup module can locate the on-disk storage tree without the
+   * storage engine having to publish its internal root.
+   */
+  private dataDir: string;
   /** Storage engine for file uploads/downloads. */
   storage: StorageEngine;
 
@@ -103,11 +110,38 @@ export class Database extends EventEmitter<DatabaseEvents> {
       this.effectiveSchema = { ...this.effectiveSchema, ...JOBS_SCHEMA };
     }
 
-    const resolvedDataDir =
+    this.dataDir =
       dataDir ?? (path === ":memory:" ? process.cwd() : nodePath.dirname(path));
 
-    // Enable foreign keys
+    // Enable foreign keys — cascades and RESTRICT still apply under WAL, and
+    // keeping this on before any DDL means migrations are checked against the
+    // declared references.
     this.db.pragma("foreign_keys = ON");
+
+    // Write-Ahead Logging: writers don't block readers, and committed
+    // transactions survive an ordinary process crash because the -wal is
+    // replayed on the next open. Chosen over the default rollback journal
+    // because LocalBase is a long-running single-process server where
+    // concurrent reads during writes (admin, realtime, jobs) are the common
+    // case. `pragma("journal_mode = WAL")` returns the mode that SQLite
+    // actually engaged; on a few filesystems (network mounts, some mobile
+    // FS) SQLite silently keeps DELETE mode — that is still safe, just
+    // without read concurrency, so we don't treat it as fatal.
+    this.db.pragma("journal_mode = WAL");
+
+    // synchronous = NORMAL under WAL: a commit is acknowledged as soon as the
+    // write is handed to the OS, without an fsync per transaction. A process
+    // crash never loses committed work (the WAL is replayed); only a power-
+    // loss / OS crash can drop the last handful of commits, and it can never
+    // corrupt the database. That is the right durability/perf tradeoff for a
+    // single-process preview server. (FULL would fsync every commit.)
+    this.db.pragma("synchronous = NORMAL");
+
+    // Wait up to 5s on a locked database before raising SQLITE_BUSY. With a
+    // single-writer process this mostly covers the WAL checkpoint window
+    // during backups and the brief contention between user writes and the
+    // realtime/jobs readers.
+    this.db.pragma("busy_timeout = 5000");
 
     // Auto-migrate on open
     if (autoMigrate) {
@@ -117,9 +151,18 @@ export class Database extends EventEmitter<DatabaseEvents> {
     // Storage engine is created after migrations so the `_files` table exists.
     this.storage = new StorageEngine({
       db: this,
-      root: resolvedDataDir,
+      root: this.dataDir,
       buckets,
     });
+  }
+
+  /**
+   * Returns the resolved root directory for local file storage. The on-disk
+   * storage tree lives at `<dataDir>/storage/`. Used by the backup module to
+   * snapshot and restore uploaded files alongside the SQLite database.
+   */
+  getDataDir(): string {
+    return this.dataDir;
   }
 
   /** Returns the effective auth config, or undefined if auth is not enabled. */

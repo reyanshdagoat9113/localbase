@@ -85,6 +85,7 @@ export async function loadConfig(
   validateBuckets(config);
   validateStorage(config);
   validateJobs(config);
+  validateSecurity(config);
 
   return { configPath, dbPath, dbDir, config };
 }
@@ -378,6 +379,140 @@ function isValidTimezone(tz: string): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Validate the optional `security` (HTTP-exposure hardening) section of the
+ * config. Failures throw {@link ConfigError} with an actionable hint so CORS /
+ * rate-limit / body-size misconfiguration is caught at `localbase dev` startup,
+ * not silently at request time. This guards shape only — the deeper per-
+ * request enforcement lives in core's `createServer`.
+ */
+function validateSecurity(config: LocalBaseConfig): void {
+  const security = (config as { security?: unknown }).security;
+  if (security === undefined) return;
+  if (typeof security !== "object" || security === null || Array.isArray(security)) {
+    throw new ConfigError(
+      `Invalid config: "security" must be an object.`,
+      `Example: security: { cors: { allowedOrigins: ["https://app.example.com"] } }`
+    );
+  }
+  const s = security as Record<string, unknown>;
+
+  const corsCfg = s.cors;
+  if (corsCfg !== undefined) {
+    if (
+      typeof corsCfg !== "object" ||
+      corsCfg === null ||
+      Array.isArray(corsCfg)
+    ) {
+      throw new ConfigError(
+        `Invalid config: "security.cors" must be an object.`,
+        `Example: cors: { allowedOrigins: ["https://app.example.com"], allowCredentials: true }`
+      );
+    }
+    const c = corsCfg as Record<string, unknown>;
+    if (
+      c.allowedOrigins !== undefined &&
+      !Array.isArray(c.allowedOrigins)
+    ) {
+      throw new ConfigError(
+        `Invalid config: "security.cors.allowedOrigins" must be an array of origin strings.`,
+        `Example: ["https://app.example.com"]`
+      );
+    }
+    if (Array.isArray(c.allowedOrigins)) {
+      for (const o of c.allowedOrigins) {
+        if (typeof o !== "string" || o.length === 0) {
+          throw new ConfigError(
+            `Invalid config: every entry in "security.cors.allowedOrigins" must be a non-empty string.`,
+            `Example: ["https://app.example.com"]`
+          );
+        }
+      }
+    }
+    if (
+      c.allowCredentials !== undefined &&
+      typeof c.allowCredentials !== "boolean"
+    ) {
+      throw new ConfigError(
+        `Invalid config: "security.cors.allowCredentials" must be a boolean.`,
+        `Omit it for the default (false), or set true to allow cookies/Authorization cross-origin.`
+      );
+    }
+  }
+
+  const rl = s.rateLimits;
+  if (rl !== undefined) {
+    if (typeof rl !== "object" || rl === null || Array.isArray(rl)) {
+      throw new ConfigError(
+        `Invalid config: "security.rateLimits" must be an object.`,
+        `Example: rateLimits: { windowMs: 60000, max: 20 }`
+      );
+    }
+    const r = rl as Record<string, unknown>;
+    if (
+      r.windowMs !== undefined &&
+      (typeof r.windowMs !== "number" || !Number.isFinite(r.windowMs) || r.windowMs <= 0)
+    ) {
+      throw new ConfigError(
+        `Invalid config: "security.rateLimits.windowMs" must be a positive number of milliseconds.`,
+        `Example: windowMs: 60000`
+      );
+    }
+    if (
+      r.max !== undefined &&
+      (typeof r.max !== "number" || !Number.isFinite(r.max) || r.max < 1)
+    ) {
+      throw new ConfigError(
+        `Invalid config: "security.rateLimits.max" must be a positive integer.`,
+        `Example: max: 20`
+      );
+    }
+  }
+
+  if (
+    s.bodyLimitBytes !== undefined &&
+    (typeof s.bodyLimitBytes !== "number" ||
+      !Number.isFinite(s.bodyLimitBytes) ||
+      s.bodyLimitBytes <= 0)
+  ) {
+    throw new ConfigError(
+      `Invalid config: "security.bodyLimitBytes" must be a positive number of bytes.`,
+      `Example: bodyLimitBytes: 1048576`
+    );
+  }
+
+  const headers = s.headers;
+  if (headers !== undefined) {
+    if (
+      typeof headers !== "object" ||
+      headers === null ||
+      Array.isArray(headers)
+    ) {
+      throw new ConfigError(
+        `Invalid config: "security.headers" must be an object.`,
+        `Example: headers: { extra: { "X-Custom": "value" } }`
+      );
+    }
+    const extra = (headers as Record<string, unknown>).extra;
+    if (extra !== undefined) {
+      if (typeof extra !== "object" || extra === null || Array.isArray(extra)) {
+        throw new ConfigError(
+          `Invalid config: "security.headers.extra" must be an object of header name -> string value.`,
+          `Example: extra: { "Cross-Origin-Opener-Policy": "same-origin" }`
+        );
+      }
+      for (const [k, v] of Object.entries(extra as Record<string, unknown>)) {
+        if (typeof v !== "string") {
+          throw new ConfigError(
+            `Invalid config: "security.headers.extra" entry "${k}" must be a string.`,
+            `Every extra header value must be a string.`
+          );
+        }
+      }
+    }
   }
 }
 

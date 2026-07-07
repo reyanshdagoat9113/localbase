@@ -1,4 +1,4 @@
-import { Hono, type Context } from "hono";
+import { Hono, type Context, type MiddlewareHandler } from "hono";
 import type { Database } from "../db.js";
 import { authenticate } from "../auth/index.js";
 import { StorageError, type StoredFile } from "./engine.js";
@@ -35,6 +35,14 @@ export interface StorageRouterOptions {
    * the more specific secrets are omitted.
    */
   secret?: string;
+  /**
+   * Per-IP rate limiter built by {@link createServer} from
+   * `security.rateLimits`. When supplied it is mounted on the signed-URL
+   * creation endpoint — issuing URLs is abuse-sensitive (each one grants
+   * time-limited read access to a private file) so bounding it limits
+   * exposure if an attacker obtains a valid Bearer token.
+   */
+  rateLimit?: MiddlewareHandler;
 }
 
 /**
@@ -260,7 +268,13 @@ export function createStorageRouter(
   // Disabled when there is no signing secret. It still requires Bearer auth,
   // so `storage.secret` alone can verify externally-issued URLs but cannot
   // expose the server-side sign endpoint without auth enabled.
-  router.post("/api/storage/:bucket/:filename/sign", async (c) => {
+  //
+  // Rate-limited (when a limiter is wired): issuing URLs is abuse-sensitive
+  // because each grants time-limited read access to a private file. The
+  // limiter is registered as path-scoped middleware ahead of the handler.
+  const signPath = "/api/storage/:bucket/:filename/sign";
+  if (options.rateLimit) router.use(signPath, options.rateLimit);
+  router.post(signPath, async (c) => {
     const bucket = c.req.param("bucket");
     const filename = c.req.param("filename");
 
@@ -293,7 +307,7 @@ export function createStorageRouter(
         bucket,
         storedName: filename,
         expiresIn,
-        secret: signedUrlSecret!,
+        secret: signedUrlSecret,
         baseUrl: origin,
         now,
       });

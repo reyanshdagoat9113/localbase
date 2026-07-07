@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { initCommand } from "./init.js";
 import { devCommand } from "./dev.js";
 import { studioCommand } from "./studio.js";
-import { migrateCommand, resetCommand } from "./db.js";
+import { migrateCommand, resetCommand, backupCommand, restoreCommand } from "./db.js";
 import {
   createUserCommand,
   listUsersCommand,
@@ -163,6 +163,36 @@ dbCmd
   .action(async () => {
     try {
       await resetCommand();
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+// ── localbase db backup [out] ──
+dbCmd
+  .command("backup [out]")
+  .description(
+    "Create a backup (SQLite + storage + manifest with SHA-256 checksums). " +
+      "Safe to run while the server is up."
+  )
+  .action(async (out: string | undefined) => {
+    try {
+      await backupCommand({ out: out ?? "" });
+    } catch (err) {
+      fail(err);
+    }
+  });
+
+// ── localbase db restore <backup> ──
+dbCmd
+  .command("restore <backup>")
+  .description(
+    "Restore a backup over the live database + storage. Verifies checksums " +
+      "and integrity first; the server MUST be stopped."
+  )
+  .action(async (backup: string) => {
+    try {
+      await restoreCommand({ backup });
     } catch (err) {
       fail(err);
     }

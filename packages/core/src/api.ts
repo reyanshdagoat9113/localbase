@@ -1,10 +1,12 @@
-import { Hono, type Context } from "hono";
+import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
+import { bodyLimit } from "hono/body-limit";
 import type {
   AdminConfig,
   AuthConfig,
   DatabaseSchema,
   PoliciesConfig,
+  SecurityConfig,
 } from "@localbase/shared";
 import type { Database } from "./db.js";
 import type { Filter, FilterOperator, OrderBy, QueryOptions } from "./query.js";
@@ -14,12 +16,13 @@ import {
   resolveAuthConfig,
   authenticate,
 } from "./auth/index.js";
-import { resolvePolicies, ownerFilter, stampOwner } from "./rls.js";
+import { resolvePolicies, ownerFilter, stampOwner, liveAdminRole } from "./rls.js";
 import { createAdminRouter } from "./admin/router.js";
 import { mountAdminStatic } from "./admin/static.js";
 import { AdminError } from "./admin/system-tables.js";
 import { createStorageRouter, type StorageRouterOptions } from "./storage/router.js";
 import type { Scheduler } from "./jobs/scheduler.js";
+import { rateLimit } from "./rate-limit.js";
 
 const RESERVED_PARAMS = new Set(["order", "limit", "offset"]);
 const VALID_OPERATORS: FilterOperator[] = [
@@ -281,6 +284,129 @@ class HttpError extends Error {
   }
 }
 
+// ─── Security middleware (NET-P0) ──────────────────────────────
+//
+// These helpers turn a `SecurityConfig` into the global middlewares mounted
+// by `createServer`: configurable CORS (loopback-safe by default), consistent
+// security headers, and a bounded request-body size. Rate limiting is wired
+// separately because it targets specific abuse-sensitive routes, not every
+// request.
+
+/**
+ * Default max size for a JSON request body on the public/admin API. ~1 MiB is
+ * generous for auth payloads and row edits while capping a single request's
+ * memory footprint. Storage uploads are exempt — they enforce their own
+ * `storage.maxFileSize`.
+ */
+const DEFAULT_BODY_LIMIT_BYTES = 1024 * 1024;
+
+/**
+ * Default response headers applied to every response. These are baseline
+ * browser-protection headers; `security.headers.extra` can add more or
+ * override any of them by name.
+ */
+const DEFAULT_SECURITY_HEADERS: Readonly<Record<string, string>> = {
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "no-referrer",
+  "X-Frame-Options": "DENY",
+};
+
+/**
+ * True when `origin` is a loopback origin: `http(s)://localhost` or
+ * `http(s)://127.0.0.1`, with an optional `:port`. This is the development-
+ * friendly default CORS surface — a fresh `localbase dev` bound to loopback
+ * serves a local frontend cross-origin without configuration, but a request
+ * from any other site is denied. `::1` is intentionally excluded to keep the
+ * default minimal and predictable.
+ */
+function isLoopbackOrigin(origin: string): boolean {
+  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+}
+
+/**
+ * Decide which origin (if any) to reflect back as `Access-Control-Allow-Origin`.
+ *
+ * - When the operator configures an allowlist, only an exact match is echoed;
+ *   any other origin returns `null` (no ACAO header → browser blocks it).
+ * - With no allowlist the loopback-safe default applies.
+ *
+ * Returning `null` is what suppresses the header: `hono/cors` only writes
+ * `Access-Control-Allow-Origin` when the origin resolver returns a truthy
+ * value.
+ */
+function resolveCorsOrigin(
+  origin: string,
+  allowedOrigins: string[] | undefined
+): string | null {
+  if (allowedOrigins && allowedOrigins.length > 0) {
+    return allowedOrigins.includes(origin) ? origin : null;
+  }
+  return isLoopbackOrigin(origin) ? origin : null;
+}
+
+/**
+ * Build the CORS middleware from {@link SecurityConfig}. Uses `hono/cors`
+ * under the hood with a computed origin resolver so disallowed origins get no
+ * `Access-Control-Allow-Origin` header. Credentials are enabled only when the
+ * operator explicitly sets `allowCredentials: true`.
+ */
+function buildCorsMiddleware(security?: SecurityConfig): MiddlewareHandler {
+  const corsCfg = security?.cors;
+  const allowedOrigins = corsCfg?.allowedOrigins;
+  return cors({
+    origin: (origin) => resolveCorsOrigin(origin, allowedOrigins),
+    allowMethods:
+      corsCfg?.allowedMethods ??
+      ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS", "HEAD"],
+    allowHeaders: corsCfg?.allowedHeaders,
+    credentials: corsCfg?.allowCredentials === true,
+    maxAge: 600,
+  });
+}
+
+/**
+ * Build the security-headers middleware. Defaults are merged with any
+ * `security.headers.extra` (extra wins on name collision). Headers are applied
+ * after `next()` so they land on the real response, matching the pattern used
+ * by `hono/secure-headers`.
+ */
+function buildSecurityHeadersMiddleware(
+  security?: SecurityConfig
+): MiddlewareHandler {
+  const extra = security?.headers?.extra;
+  const headers = extra
+    ? { ...DEFAULT_SECURITY_HEADERS, ...extra }
+    : { ...DEFAULT_SECURITY_HEADERS };
+  const entries = Object.entries(headers);
+  return async (c, next) => {
+    await next();
+    for (const [key, value] of entries) {
+      c.res.headers.set(key, value);
+    }
+  };
+}
+
+/**
+ * Build the request-body-size guard. Returns 413 on oversize JSON bodies.
+ * Storage paths are exempt because uploads enforce their own
+ * `storage.maxFileSize` (which may be many MiB); every other route — auth,
+ * CRUD, admin — is bounded by the JSON limit.
+ */
+function buildBodyLimitMiddleware(security?: SecurityConfig): MiddlewareHandler {
+  const maxSize = security?.bodyLimitBytes ?? DEFAULT_BODY_LIMIT_BYTES;
+  const limit = bodyLimit({
+    maxSize,
+    onError: (c) => c.json({ error: "Request body too large" }, 413),
+  });
+  return async (c, next) => {
+    if (c.req.path.startsWith("/api/storage/")) {
+      return next();
+    }
+    return limit(c, next);
+  };
+}
+
+
 // ─── Server factory ────────────────────────────────────────────
 
 export interface CreateServerOptions {
@@ -315,6 +441,11 @@ export interface CreateServerOptions {
   storage?: StorageRouterOptions;
   /** Live scheduler exposed through the admin jobs API when admin is enabled. */
   scheduler?: Scheduler;
+  /**
+   * HTTP-exposure hardening (CORS, rate limits, body size, security headers).
+   * Optional; defaults are loopback-safe. See {@link SecurityConfig}.
+   */
+  security?: SecurityConfig;
 }
 
 export function createServer(
@@ -346,8 +477,22 @@ export function createServer(
 
   const app = new Hono();
 
-  // Allow requests from any origin (dev server consumed by local frontends)
-  app.use("*", cors());
+  // ── Global security middleware (NET-P0) ──
+  // Order matters: security headers and CORS run on every response; the body
+  // limit guards every non-storage route. These are registered before any
+  // router so they wrap all downstream handlers. Rate limiting is wired per-
+  // route below (it targets only abuse-sensitive endpoints).
+  app.use("*", buildSecurityHeadersMiddleware(normalized.security));
+  app.use("*", buildCorsMiddleware(normalized.security));
+  app.use("*", buildBodyLimitMiddleware(normalized.security));
+
+  // One shared rate-limit instance, keyed by `routePath|ip`, so each abuse-
+  // sensitive route counts independently per client IP. Built from
+  // `security.rateLimits` (defaults: 60s window, 20 requests).
+  const rateLimitMiddleware = rateLimit({
+    windowMs: normalized.security?.rateLimits?.windowMs ?? 60_000,
+    max: normalized.security?.rateLimits?.max ?? 20,
+  });
 
   // ── Auth router (optional) ──
   // Mounted first so its specific paths (`/api/auth/signup`, etc.) take
@@ -376,7 +521,9 @@ export function createServer(
       );
     }
     auth = new Auth(db, config);
-    authRouter = createAuthRouter(auth, config.jwtSecret);
+    authRouter = createAuthRouter(auth, config.jwtSecret, {
+      rateLimit: rateLimitMiddleware,
+    });
     app.route("/", authRouter);
   }
 
@@ -407,6 +554,7 @@ export function createServer(
       // manage, so this stays undefined and the user endpoints aren't mounted.
       auth,
       scheduler: normalized.scheduler,
+      rateLimit: rateLimitMiddleware,
     });
     app.route("/", adminRouter);
     const { servingPlaceholder } = mountAdminStatic(app, { enabled: true });
@@ -434,6 +582,7 @@ export function createServer(
       ...normalized.storage,
       authSecret: resolvedSecret,
       signedUrlSecret,
+      rateLimit: rateLimitMiddleware,
     })
   );
 
@@ -451,7 +600,7 @@ export function createServer(
     if (!policy) return { userId: null, reject: false };
     const user = await authenticate(c, resolvedSecret!);
     if (!user) return { userId: null, reject: true };
-    if (policy.adminBypass && hasLiveAdminRole(db, user.id)) {
+    if (policy.adminBypass && liveAdminRole(db, user.id)) {
       return { userId: null, reject: false };
     }
     return { userId: user.id, reject: false };
@@ -644,18 +793,9 @@ export function createServer(
 
 // ─── Admin bypass helper ───────────────────────────────────────
 
-/**
- * `adminBypass` must not trust the JWT role claim: that claim is only a
- * snapshot from token issue time. Re-read `_users.role` so demoting/deleting an
- * admin revokes bypass immediately, matching the admin API's authorization
- * semantics. Missing/deleted users simply do not bypass and remain scoped.
- */
-function hasLiveAdminRole(db: Database, userId: number): boolean {
-  const row = db.selectById("_users", userId) as
-    | { role?: unknown }
-    | undefined;
-  return row?.role === "admin" || row?.role === "owner";
-}
+// `liveAdminRole` now lives in rls.ts and is shared with the realtime
+// subscription resolver, so the REST and realtime surfaces agree on what
+// "is this user an admin right now?" means. See packages/core/src/rls.ts.
 
 // ─── Error handler ─────────────────────────────────────────────
 

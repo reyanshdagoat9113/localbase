@@ -1,4 +1,5 @@
 import type { DatabaseSchema, PoliciesConfig } from "@localbase/shared";
+import type { Database } from "./db.js";
 import type { Filter } from "./query.js";
 
 /**
@@ -81,4 +82,24 @@ export function stampOwner(
   userId: number
 ): void {
   body[policy.ownerColumn] = userId;
+}
+
+/**
+ * Re-read the calling user's role from `_users` at request/delivery time.
+ *
+ * `adminBypass` (and admin API authorization) must not trust the JWT `role`
+ * claim: that claim is only a snapshot from token-issue time. Re-reading
+ * `_users.role` means a demotion or deletion takes effect immediately
+ * instead of waiting for the token to expire. A deleted user has no row and
+ * is treated as a non-admin (the caller decides whether to reject outright).
+ *
+ * Shared by the REST `resolveOwnerScope` path and the realtime subscription
+ * resolver so the two surfaces cannot drift on what "is this user an admin
+ * right now?" means.
+ */
+export function liveAdminRole(db: Database, userId: number): boolean {
+  const row = db.selectById("_users", userId) as
+    | { role?: unknown }
+    | undefined;
+  return row?.role === "admin" || row?.role === "owner";
 }

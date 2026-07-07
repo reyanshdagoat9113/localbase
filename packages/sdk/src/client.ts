@@ -34,10 +34,31 @@ export interface LocalBaseClient {
     metadata: T,
     callback: PresenceCallback<T>
   ): { update(metadata: T): void; leave(): void };
+  /**
+   * Tear down the realtime connection and drop in-memory session state. Safe to
+   * call multiple times. Useful in tests, server-side usage, and before
+   * navigation/unload. Data/query methods become no-ops once the session is
+   * cleared; realtime subscriptions stop firing.
+   */
+  close(): void;
 }
 
 export interface CreateClientOptions {
   realtime?: RealtimeConfig;
+  /**
+   * Called when the realtime WebSocket is rejected by the server (bad/expired
+   * token at handshake, or the token expired mid-session and cannot be
+   * refreshed). Use it to surface a re-auth prompt. Reconnect attempts for
+   * transient failures are handled internally and do not invoke this.
+   */
+  onAuthError?: (message: string) => void;
+  /**
+   * Called when the realtime server signals `resync-required` (it restarted,
+   * or the client's replay position fell out of the bounded event buffer).
+   * The application should refetch REST state; live events continue from the
+   * resync point.
+   */
+  onResync?: (reason: string) => void;
 }
 
 /**
@@ -61,19 +82,29 @@ export function createClient(url: string, options: CreateClientOptions = {}): Lo
   // Session state lives in the closure. Both `auth` and the query builder
   // read through the getter, so signIn → query always picks up the new token.
   let session: StoredSession | null = null;
+  let realtime: RealtimeClient | null = null;
   const getSession = () => session;
   const setSession = (s: StoredSession | null) => {
     session = s;
+    if (s) {
+      realtime?.retryAuth();
+    }
   };
 
   const auth = createAuthClient(baseUrl, getSession, setSession);
   const storage = createStorageClient(baseUrl, () => session?.accessToken);
-  const realtime = new RealtimeClient(
+  realtime = new RealtimeClient(
     baseUrl,
     () => session?.accessToken,
     options.realtime?.path ?? "/realtime",
     options.realtime?.enabled ?? true
   );
+  if (options.onAuthError) {
+    realtime.onAuthError = options.onAuthError;
+  }
+  if (options.onResync) {
+    realtime.onResync = options.onResync;
+  }
 
   return {
     from<T = unknown>(table: string): QueryBuilder<T> {
@@ -102,6 +133,10 @@ export function createClient(url: string, options: CreateClientOptions = {}): Lo
       callback: PresenceCallback<T>
     ): { update(metadata: T): void; leave(): void } {
       return realtime.presence(channel, key, metadata, callback);
+    },
+    close(): void {
+      realtime.close();
+      session = null;
     },
   };
 }

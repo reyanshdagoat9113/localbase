@@ -410,8 +410,8 @@ covers and tests at least:
 
 ## Master go/no-go checklist
 
-- [ ] RT-P0 — realtime authentication and RLS isolation proven
-- [ ] NET-P0 — CORS, abuse controls, and exposure defaults proven
+- [x] RT-P0 — realtime authentication and RLS isolation proven
+- [x] NET-P0 — CORS, abuse controls, and exposure defaults proven
 - [ ] E2E-P0 — deterministic browser suite passes twice
 - [ ] CI-P0 — required checks green on the release commit
 - [ ] LEGAL-P0 — license and community/security files complete

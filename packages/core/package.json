@@ -23,7 +23,7 @@
     "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
     "prepublishOnly": "node build/copy-admin-bundle.mjs --strict",
     "verify:admin-bundle": "node build/verify-admin-bundle.mjs",
-    "test": "tsx --test src/**/*.test.ts"
+    "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@hono/node-server": "^2.0.4",
