@@ -1,0 +1,146 @@
+# LocalBase CI (Workstream 2.3 — Gate CI-P0)
+#
+# Runs the full P0 verification set on every pull request and push to main:
+# install, clean build + typecheck, unit tests (core/sdk/cli), the admin-bundle
+# (tarball) check, the Playwright E2E suite, and a dependency audit.
+#
+# Design notes:
+#   - Actions are pinned to immutable commit SHAs (with the readable tag in a
+#     comment) per the launch-readiness "action SHA/version pinning" rule.
+#   - Every job declares `permissions: contents: read` (least privilege).
+#   - `concurrency` cancels superseded runs on the same ref.
+#   - Node is installed once per job with `setup-node`'s built-in npm cache
+#     (keyed on package-lock.json).
+#   - The unit-test/build job runs on a Node matrix (22 = min LTS, 24 = current
+#     LTS) so the supported-runtime contract (Workstream 2.2) is enforced.
+#   - E2E runs on a single Node version (24) to keep browser-suite minutes
+#     bounded; the dev server + CLI it exercises are already matrix-tested by
+#     the build-test job. E2E is deterministic (ephemeral per-run data dir,
+#     Workstream 2.1) so retries are 0 and a failure is a real signal.
+
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+# Cancel in-progress runs on the same ref when a new commit lands.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Default permissions for every job: read-only. Jobs opt into nothing more.
+permissions:
+  contents: read
+
+jobs:
+  # ── Build, typecheck, and unit tests on the supported Node matrix ──
+  build-test:
+    name: Build & test (Node ${{ matrix.node }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # Workstream 2.2: support the active LTS lines. As of 2026-07 these are
+        # Node 22 (maintenance LTS) and Node 24 (active LTS). Node 20 is EOL.
+        node: ["22", "24"]
+    steps:
+      - name: Checkout
+        # actions/checkout@v7.0.0
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Setup Node ${{ matrix.node }}
+        # actions/setup-node@v5.0.0
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (admin → core → sdk → cli) with typecheck
+        run: npm run build
+
+      - name: Unit tests (shared/core/sdk/cli)
+        run: npm run test:unit
+
+      - name: Admin bundle / tarball verification
+        run: npm run verify:admin-bundle
+
+  # ── Playwright E2E (real admin SPA + dev server) ──
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        # actions/checkout@v7.0.0
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Setup Node 24
+        # actions/setup-node@v5.0.0
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Cache the Playwright browser binary across runs. Keyed on the
+      # @playwright/test version pinned in the e2e package-lock slice.
+      - name: Cache Playwright browsers
+        # actions/cache@v4.2.4 — restore by package-lock hash
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright browser (chromium)
+        run: npm run e2e:install
+
+      - name: Build (admin bundle required for the SPA under test)
+        run: npm run build
+
+      - name: Run E2E suite
+        run: npm run test:e2e
+
+      # Upload traces + report only on failure so a flaky/red run is debuggable.
+      - name: Upload Playwright report
+        if: ${{ failure() }}
+        # actions/upload-artifact@v4.6.0
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: |
+            packages/e2e/playwright-report
+            packages/e2e/test-results
+          retention-days: 14
+
+  # ── Dependency audit ──
+  # Triage policy: the launch gate requires a documented triage policy. We run
+  # `npm audit` and fail on `critical`/`high` advisories in production deps.
+  # `moderate`/`low` are reported but non-blocking (track in WS3 metadata).
+  # Dev-only advisories (--omit=dev skipped here on purpose) are reviewed in the
+  # periodic dependency-upgrade cycle, not per-PR.
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        # actions/checkout@v7.0.0
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Setup Node 24
+        # actions/setup-node@v5.0.0
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit (fail on critical/high in production deps)
+        run: npm audit --omit=dev --audit-level=high

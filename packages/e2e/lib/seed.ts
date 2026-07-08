@@ -1,13 +1,18 @@
 import { execSync } from "node:child_process";
-import { EXAMPLE_DIR, ADMIN_EMAIL, ADMIN_PASSWORD, USER_EMAIL, USER_PASSWORD } from "./env.js";
+import { EXAMPLE_DIR, DATA_DIR, ADMIN_EMAIL, ADMIN_PASSWORD, USER_EMAIL, USER_PASSWORD } from "./env.js";
 
 /**
  * Run a `localbase` CLI sub-command inside the example project dir. Returns
  * combined stdout+stderr. Throws on non-zero exit.
+ *
+ * The command runs against the ephemeral {@link DATA_DIR} via the
+ * `LOCALBASE_DATA_DIR` env var, so seeding/promotion never touches the
+ * checked-in example's persistent `.localbase` (Workstream 2.1).
  */
 export function localbase(args: string): string {
   return execSync(`localbase ${args}`, {
     cwd: EXAMPLE_DIR,
+    env: { ...process.env, LOCALBASE_DATA_DIR: DATA_DIR },
     stdio: ["ignore", "pipe", "pipe"],
     encoding: "utf8",
     timeout: 60_000,

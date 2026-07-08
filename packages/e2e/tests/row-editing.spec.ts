@@ -9,6 +9,20 @@ test.use({ storageState: AUTH_FILE });
 // have defaults — perfect for exercising the grid's write paths.
 const TABLE = "projects";
 
+/**
+ * Narrow the grid to a single row by its unique name via the client-side
+ * search box. This makes every test robust against pagination: even if
+ * accumulated rows push the target off the first page, the search filters
+ * server-side so the row is guaranteed to be visible (Workstream 2.1).
+ *
+ * The grid debounces the search by 300ms, so we wait for the row text rather
+ * than asserting immediately.
+ */
+async function searchFor(page: import("@playwright/test").Page, name: string): Promise<void> {
+  await page.getByPlaceholder(/search/i).fill(name);
+  await expect(page.locator("tbody")).toContainText(name);
+}
+
 test.describe("Row editing", () => {
   test("adds a row through the New row dialog", async ({ request, page }) => {
     const session = await signIn(request, BASE_URL, ADMIN_EMAIL, ADMIN_PASSWORD);
@@ -27,8 +41,10 @@ test.describe("Row editing", () => {
     await field("name").fill(name);
     await page.getByRole("button", { name: "Save" }).click();
 
-    // The dialog closes and the row lands in the grid.
+    // The dialog closes...
     await expect(page.getByText(`New row in ${TABLE}`)).toHaveCount(0);
+    // ...and the row is in the grid. Search rather than assume page one.
+    await searchFor(page, name);
     await expect(page.locator("tbody")).toContainText(name);
 
     // And it actually persisted server-side.
@@ -49,6 +65,8 @@ test.describe("Row editing", () => {
     const renamed = unique("e2e-edit-after");
 
     await page.goto(`/admin/tables/${TABLE}`);
+    // Search narrows the grid to the target row regardless of pagination.
+    await searchFor(page, String(row.name));
     // Double-click the seeded name cell to open the editor.
     const cell = page.locator("tbody td span", { hasText: String(row.name) }).first();
     await cell.dblclick();
@@ -71,6 +89,8 @@ test.describe("Row editing", () => {
     const id = row.id as number;
 
     await page.goto(`/admin/tables/${TABLE}`);
+    // Search narrows the grid to the target row regardless of pagination.
+    await searchFor(page, String(row.name));
     // The × sits in the leading cell of the seeded row. Target it via the row.
     const rowEl = page.locator("tbody tr", { hasText: String(row.name) }).first();
     await rowEl.locator("button[title='Delete row']").click();

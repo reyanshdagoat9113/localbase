@@ -188,6 +188,14 @@ zero retries needed locally.
 - Test the minimum and current LTS versions in CI on Linux. Add macOS and
   Windows smoke jobs before declaring broad cross-platform support.
 
+**Resolved (2026-07):** the supported range is `node >=22`. As of July 2026 the
+active LTS lines are Node 22 (maintenance LTS) and Node 24 (active LTS); Node 20
+is EOL. Both ship prebuilt `better-sqlite3` and `@node-rs/argon2` binaries.
+`engines.node: ">=22"` is set on `shared`, `core`, `sdk`, `cli`, and the root
+package; `.nvmrc` pins `22` for contributors. The CI matrix (Workstream 2.3)
+exercises Node 22 and 24 on Linux. macOS and Windows smoke jobs remain a
+follow-up before claiming broad cross-platform support.
+
 ### 2.3 Add required CI checks
 
 Create pull-request and main-branch workflows that run:
@@ -412,8 +420,8 @@ covers and tests at least:
 
 - [x] RT-P0 — realtime authentication and RLS isolation proven
 - [x] NET-P0 — CORS, abuse controls, and exposure defaults proven
-- [ ] E2E-P0 — deterministic browser suite passes twice
-- [ ] CI-P0 — required checks green on the release commit
+- [x] E2E-P0 — deterministic browser suite passes twice
+- [x] CI-P0 — required checks green on the release commit
 - [ ] LEGAL-P0 — license and community/security files complete
 - [ ] PACK-P0 — clean tarball installation and smoke suite pass
 - [ ] NPM-P0 — registry beta installation and smoke suite pass

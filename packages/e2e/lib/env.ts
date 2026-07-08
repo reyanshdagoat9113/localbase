@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 /**
@@ -29,6 +30,23 @@ export const BASE_URL = process.env.LOCALBASE_URL ?? "http://127.0.0.1:5180";
 
 /** The example project the dev server runs against. */
 export const EXAMPLE_DIR = path.join(REPO_ROOT, "examples", "task-board");
+
+/**
+ * Ephemeral, per-run LocalBase data directory (Workstream 2.1).
+ *
+ * The dev server and CLI seed commands are pointed at this directory via the
+ * `LOCALBASE_DATA_DIR` environment variable, so the suite never touches the
+ * checked-in `examples/task-board/.localbase`. A unique suffix (pid + a random
+ * token) keeps concurrent runs (rare, but possible in local dev) from
+ * colliding, and `global-teardown` removes it at the end of the run.
+ *
+ * `LOCALBASE_E2E_DATA_DIR` lets a caller pin a stable directory (handy while
+ * debugging a flaky test against known state); otherwise we mint a fresh one
+ * under the OS temp dir.
+ */
+export const DATA_DIR =
+  process.env.LOCALBASE_E2E_DATA_DIR ??
+  path.join(os.tmpdir(), `localbase-e2e-${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
 
 /** Canonical seed accounts (created/refreshed by global-setup every run). */
 export const ADMIN_EMAIL = "e2e-admin@localbase.test";

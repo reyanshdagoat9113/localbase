@@ -1,6 +1,9 @@
 {
   "name": "localbase",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "workspaces": [
     "packages/shared",
     "packages/core",
@@ -18,7 +21,10 @@
     "admin:dev": "npm run dev --workspace @localbase/admin",
     "admin:build": "npm run build --workspace @localbase/admin",
     "test:e2e": "npm run test --workspace @localbase/e2e",
-    "e2e:install": "npm run install:browsers --workspace @localbase/e2e"
+    "e2e:install": "npm run install:browsers --workspace @localbase/e2e",
+    "test:unit": "npm run test --workspace @localbase/shared --if-present && npm run test --workspace @localbase/core --if-present && npm run test --workspace @localbase/sdk --if-present && npm run test --workspace @localbase/cli --if-present",
+    "typecheck:unit": "npm run build --workspace @localbase/shared --if-present && npm run build --workspace @localbase/core --if-present && npm run build --workspace @localbase/sdk --if-present && npm run build --workspace @localbase/cli --if-present && npm run build --workspace @localbase/e2e --if-present",
+    "verify": "npm run build && npm run typecheck:unit && npm run test:unit && npm run verify:admin-bundle"
   },
   "devDependencies": {
     "typescript": "^5.7.0"

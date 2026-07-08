@@ -8,6 +8,28 @@ const CONFIG_FILE = "localbase.config.ts";
 const DB_DIR = ".localbase";
 const DB_FILE = "data.db";
 
+/**
+ * Resolve the data directory for a given project cwd.
+ *
+ * Defaults to `<cwd>/.localbase`, matching `localbase init` and the documented
+ * layout. The `LOCALBASE_DATA_DIR` environment variable overrides this for
+ * tooling that needs to point the CLI at an out-of-tree database — most
+ * importantly the Playwright E2E suite (Workstream 2.1), which must not
+ * mutate the checked-in `examples/task-board/.localbase`, and the WS3 tarball
+ * smoke tests that boot a server in a throwaway temp directory.
+ *
+ * The override is resolved to an absolute path so a relative value is anchored
+ * to *process.cwd()* (the same anchor `localbase dev` uses), never to wherever
+ * the config loader happens to be imported from.
+ */
+function resolveDbDir(cwd: string): string {
+  const override = process.env.LOCALBASE_DATA_DIR;
+  if (override && override.trim().length > 0) {
+    return path.resolve(override);
+  }
+  return path.resolve(cwd, DB_DIR);
+}
+
 export interface ResolvedConfig {
   /** Absolute path to the config file */
   configPath: string;
@@ -38,7 +60,7 @@ export async function loadConfig(
   cwd: string = process.cwd()
 ): Promise<ResolvedConfig> {
   const configPath = path.resolve(cwd, CONFIG_FILE);
-  const dbDir = path.resolve(cwd, DB_DIR);
+  const dbDir = resolveDbDir(cwd);
   const dbPath = path.resolve(dbDir, DB_FILE);
 
   // Check file exists first for a cleaner error than jiti's default

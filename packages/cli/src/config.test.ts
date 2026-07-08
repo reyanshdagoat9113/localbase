@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
-import { loadConfig, ConfigError } from "./config.js";
+import { loadConfig, ConfigError, DB_DIR, DB_FILE } from "./config.js";
 import type { LocalBaseConfig } from "@localbase/shared";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -222,5 +222,81 @@ describe("example configs load and validate", () => {
     assert.ok(config.tables.task_labels);
     assert.ok(config.tables.comments);
     assert.deepEqual(config.policies, { projects: { ownerColumn: "owner_id" } });
+  });
+});
+
+// ─── Data directory resolution (Workstream 2.1) ────────────────
+
+describe("LOCALBASE_DATA_DIR override", () => {
+  /**
+   * The default data dir is `<cwd>/.localbase`. The override lets tooling
+   * (Playwright E2E, WS3 tarball smoke tests) point the CLI at an out-of-tree
+   * database without inventing a second config loader.
+   */
+  let savedDataDir: string | undefined;
+
+  before(() => {
+    savedDataDir = process.env.LOCALBASE_DATA_DIR;
+  });
+
+  after(() => {
+    if (savedDataDir === undefined) delete process.env.LOCALBASE_DATA_DIR;
+    else process.env.LOCALBASE_DATA_DIR = savedDataDir;
+  });
+
+  /** Write a minimal config into a fresh dir under the shared tmp root. */
+  function writeMinimalConfig(dir: string): void {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "localbase.config.ts"),
+      `export default { tables: { widgets: { id: { type: "integer", primaryKey: true, autoIncrement: true }, name: { type: "text", nullable: false } } } };\n`
+    );
+  }
+
+  it("defaults to <cwd>/.localbase when the override is unset", async () => {
+    delete process.env.LOCALBASE_DATA_DIR;
+    const dir = path.join(tmpRoot, `default-${Math.random().toString(36).slice(2)}`);
+    writeMinimalConfig(dir);
+
+    const { dbDir, dbPath } = await loadConfig(dir);
+    assert.equal(dbDir, path.join(dir, DB_DIR));
+    assert.equal(dbPath, path.join(dir, DB_DIR, DB_FILE));
+  });
+
+  it("respects an absolute LOCALBASE_DATA_DIR", async () => {
+    const dir = path.join(tmpRoot, `cfg-${Math.random().toString(36).slice(2)}`);
+    writeMinimalConfig(dir);
+    const override = path.join(tmpRoot, `data-${Math.random().toString(36).slice(2)}`);
+    process.env.LOCALBASE_DATA_DIR = override;
+
+    const { dbDir, dbPath } = await loadConfig(dir);
+    assert.equal(dbDir, override);
+    assert.equal(dbPath, path.join(override, DB_FILE));
+  });
+
+  it("resolves a relative LOCALBASE_DATA_DIR against process.cwd()", async () => {
+    // Anchor the config to a temp project; set a relative override; chdir into
+    // that project so the relative path resolves there, then restore cwd.
+    const dir = path.join(tmpRoot, `rel-${Math.random().toString(36).slice(2)}`);
+    writeMinimalConfig(dir);
+    process.env.LOCALBASE_DATA_DIR = "./custom-data";
+
+    const prevCwd = process.cwd();
+    try {
+      process.chdir(dir);
+      const { dbDir } = await loadConfig(dir);
+      assert.equal(dbDir, path.resolve(dir, "custom-data"));
+    } finally {
+      process.chdir(prevCwd);
+    }
+  });
+
+  it("treats a whitespace-only override as unset", async () => {
+    const dir = path.join(tmpRoot, `ws-${Math.random().toString(36).slice(2)}`);
+    writeMinimalConfig(dir);
+    process.env.LOCALBASE_DATA_DIR = "   ";
+
+    const { dbDir } = await loadConfig(dir);
+    assert.equal(dbDir, path.join(dir, DB_DIR));
   });
 });
