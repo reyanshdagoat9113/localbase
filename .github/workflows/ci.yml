@@ -60,7 +60,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build (admin → core → sdk → cli) with typecheck
+      - name: Build (shared → admin → core → sdk → cli) with typecheck
         run: npm run build
 
       - name: Unit tests (shared/core/sdk/cli)

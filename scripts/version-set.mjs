@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const PUBLIC = ["shared", "core", "sdk", "cli"];
+const PUBLIC_NAMES = new Set(PUBLIC.map((name) => `@localbase/${name}`));
 
 const version = process.argv[2];
 if (!version || !/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) {
@@ -24,33 +25,68 @@ if (!version || !/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) {
   process.exit(1);
 }
 
-/**
- * @param {string} file
- * @param {(pkg: any) => void} mutator
- */
-function updateJson(file, mutator) {
-  const raw = fs.readFileSync(file, "utf8");
-  const pkg = JSON.parse(raw);
-  mutator(pkg);
-  fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
+/** @param {string} dir */
+function packageJsonFiles(dir) {
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => path.join(dir, entry.name, "package.json"))
+    .filter((file) => fs.existsSync(file));
+}
+
+/** @param {any} pkg */
+function updateInternalPins(pkg) {
+  for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
+    const deps = pkg[field];
+    if (!deps) continue;
+    for (const dep of Object.keys(deps)) {
+      if (PUBLIC_NAMES.has(dep)) {
+        deps[dep] = version;
+      }
+    }
+  }
+}
+
+const workspaceFiles = [
+  ...packageJsonFiles(path.join(REPO_ROOT, "packages")),
+  ...packageJsonFiles(path.join(REPO_ROOT, "examples")),
+];
+const manifests = new Map();
+
+for (const file of workspaceFiles) {
+  const pkg = JSON.parse(fs.readFileSync(file, "utf8"));
+  if (PUBLIC_NAMES.has(pkg.name)) {
+    pkg.version = version;
+    console.log(`${pkg.name} → ${version}`);
+  }
+  updateInternalPins(pkg);
+  manifests.set(file, pkg);
 }
 
 for (const name of PUBLIC) {
   const file = path.join(REPO_ROOT, "packages", name, "package.json");
-  updateJson(file, (pkg) => {
-    pkg.version = version;
-    for (const field of ["dependencies", "devDependencies", "peerDependencies"]) {
-      const deps = pkg[field];
-      if (!deps) continue;
-      for (const dep of Object.keys(deps)) {
-        if (dep.startsWith("@localbase/") && PUBLIC.includes(dep.slice("@localbase/".length))) {
-          deps[dep] = version;
-        }
-      }
-    }
-  });
-  console.log(`@localbase/${name} → ${version}`);
+  if (!manifests.has(file)) {
+    throw new Error(`Missing public package manifest: ${file}`);
+  }
 }
+
+const lockFile = path.join(REPO_ROOT, "package-lock.json");
+const lock = JSON.parse(fs.readFileSync(lockFile, "utf8"));
+for (const [file, pkg] of manifests) {
+  const relativeDir = path.relative(REPO_ROOT, path.dirname(file)).split(path.sep).join("/");
+  const locked = lock.packages?.[relativeDir];
+  if (!locked) {
+    throw new Error(`package-lock.json is missing workspace entry: ${relativeDir}`);
+  }
+  if (PUBLIC_NAMES.has(pkg.name)) locked.version = version;
+  updateInternalPins(locked);
+}
+
+for (const [file, pkg] of manifests) {
+  fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
+}
+fs.writeFileSync(lockFile, JSON.stringify(lock, null, 2) + "\n");
 
 // Keep CLI --version string in source in sync when present as a literal.
 const cliIndex = path.join(REPO_ROOT, "packages", "cli", "src", "index.ts");
@@ -66,5 +102,5 @@ if (fs.existsSync(cliIndex)) {
   }
 }
 
-console.log("\nDone. Run npm install at the repo root if the lockfile needs refresh.");
+console.log("\nDone. Public versions, workspace dependency pins, and package-lock.json are in sync.");
 console.log("Do not publish until pack:smoke is green.");

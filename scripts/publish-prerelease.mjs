@@ -32,6 +32,11 @@ const EXECUTE = process.argv.includes("--execute");
 const tagIdx = process.argv.indexOf("--tag");
 const DIST_TAG = tagIdx >= 0 ? process.argv[tagIdx + 1] : "beta";
 
+if (!DIST_TAG || DIST_TAG !== "beta") {
+  console.error("Prereleases must be published with the beta dist-tag.");
+  process.exit(1);
+}
+
 /**
  * @param {string} cmd
  * @param {string[]} args
@@ -47,14 +52,16 @@ function run(cmd, args, cwd) {
   return res;
 }
 
-function readVersion(name) {
-  const pkg = JSON.parse(
+function readPackage(name) {
+  return JSON.parse(
     fs.readFileSync(path.join(REPO_ROOT, "packages", name, "package.json"), "utf8")
   );
-  return /** @type {string} */ (pkg.version);
 }
 
-const versions = Object.fromEntries(ORDER.map((n) => [n, readVersion(n)]));
+const packages = Object.fromEntries(ORDER.map((name) => [name, readPackage(name)]));
+const versions = Object.fromEntries(
+  Object.entries(packages).map(([name, pkg]) => [name, pkg.version])
+);
 const unique = new Set(Object.values(versions));
 if (unique.size !== 1) {
   console.error("Public package versions are not locked together:");
@@ -64,31 +71,63 @@ if (unique.size !== 1) {
 }
 
 const version = [...unique][0];
+if (!/^\d+\.\d+\.\d+-[0-9A-Za-z][0-9A-Za-z.-]*$/.test(version)) {
+  console.error(`Refusing to prerelease non-prerelease version: ${version}`);
+  console.error("Run: npm run version:set -- 0.1.0-beta.N");
+  process.exit(1);
+}
+
+for (const [name, pkg] of Object.entries(packages)) {
+  for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
+    for (const [dependency, dependencyVersion] of Object.entries(pkg[field] ?? {})) {
+      if (
+        dependency.startsWith("@localbase/") &&
+        ORDER.includes(dependency.slice("@localbase/".length)) &&
+        dependencyVersion !== version
+      ) {
+        console.error(
+          `${pkg.name} has stale internal pin ${dependency}@${dependencyVersion}; expected ${version}`
+        );
+        console.error("Run: npm run version:set -- <version>");
+        process.exit(1);
+      }
+    }
+  }
+}
+
 console.log(`Prerelease plan: @localbase/*@${version} dist-tag=${DIST_TAG}`);
 console.log(EXECUTE ? "MODE: execute (real publish)" : "MODE: dry-run (pass --execute to publish)");
 console.log("");
 
 /** @type {string[]} */
 const published = [];
-/** @type {string[]} */
-const skipped = [];
+if (EXECUTE) {
+  console.log("Preflight: checking that no immutable package version already exists");
+  for (const name of ORDER) {
+    const pkgName = `@localbase/${name}`;
+    const cwd = path.join(REPO_ROOT, "packages", name);
+    const view = run("npm", ["view", `${pkgName}@${version}`, "version"], cwd);
+    if (view.status === 0) {
+      console.error(`${pkgName}@${version} already exists. Bump all packages and roll forward.`);
+      process.exit(1);
+    }
+    if (!/E404|404 Not Found/i.test(view.stderr)) {
+      if (view.stderr) process.stderr.write(view.stderr);
+      console.error(`Could not verify registry state for ${pkgName}@${version}; aborting before publish.`);
+      process.exit(view.status ?? 1);
+    }
+  }
+  console.log("  all four versions are available");
+}
 
 for (const name of ORDER) {
   const pkgName = `@localbase/${name}`;
   const cwd = path.join(REPO_ROOT, "packages", name);
   console.log(`→ ${pkgName}@${version}`);
 
-  // Refuse to overwrite: if the exact version exists, skip (immutable).
-  const view = run("npm", ["view", `${pkgName}@${version}`, "version"], cwd);
-  if (view.status === 0 && view.stdout.trim() === version) {
-    console.log(`  already on registry — skip (immutable)`);
-    skipped.push(`${pkgName}@${version}`);
-    published.push(`${pkgName}@${version}`); // treat as present for ordering report
-    continue;
-  }
-
   const args = ["publish", "--access", "public", "--tag", DIST_TAG];
-  if (!EXECUTE) args.push("--dry-run");
+  if (EXECUTE) args.push("--provenance");
+  else args.push("--dry-run");
 
   const res = run("npm", args, cwd);
   if (res.stdout) process.stdout.write(res.stdout);
@@ -109,10 +148,6 @@ console.log(`  version: ${version}`);
 console.log(`  tag:     ${DIST_TAG}`);
 console.log(`  packages:`);
 for (const p of published) console.log(`    ${p}`);
-if (skipped.length) {
-  console.log(`  skipped (already existed):`);
-  for (const p of skipped) console.log(`    ${p}`);
-}
 console.log(`
 Next (owner steps, not automated here):
   1. Install from registry into a clean dir and re-run smoke (NPM-P0)

@@ -15,8 +15,12 @@ never overwrite; roll forward with a new beta version if something is wrong.
 
 ## Publish
 
+Run the publish command from the protected GitHub Actions environment configured
+for npm trusted publishing. The script always requests npm provenance and aborts
+before publishing if any of the four immutable versions already exists.
+
 ```bash
-# From a clean checkout of the release commit:
+# From a clean checkout of the release commit in the approved publish environment:
 npm ci
 npm run build
 npm run pack:smoke
