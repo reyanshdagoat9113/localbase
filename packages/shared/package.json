@@ -1,9 +1,30 @@
 {
   "name": "@localbase/shared",
   "version": "0.1.0",
+  "description": "Shared types, schema helpers, and constants for LocalBase packages",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reyanshdagoat9113/localbase.git",
+    "directory": "packages/shared"
+  },
+  "homepage": "https://github.com/reyanshdagoat9113/localbase#readme",
+  "bugs": {
+    "url": "https://github.com/reyanshdagoat9113/localbase/issues"
+  },
+  "keywords": [
+    "localbase",
+    "sqlite",
+    "backend",
+    "types",
+    "schema"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -15,7 +36,11 @@
       "require": "./dist/index.cjs"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup",
     "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\""

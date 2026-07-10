@@ -69,6 +69,33 @@ jobs:
       - name: Admin bundle / tarball verification
         run: npm run verify:admin-bundle
 
+  # ── Fresh-directory tarball install smoke (Workstream 3.3 / PACK-P0) ──
+  # Builds real npm packs for shared→core→sdk→cli, installs them into a temp
+  # project with no workspace links, and exercises ESM/CJS, CLI init/migrate,
+  # REST, auth, realtime, Storage, Admin Studio, and graceful shutdown.
+  # Runs on a single Node LTS (24) to bound native-module + install time; the
+  # packages themselves are matrix-built above.
+  pack-smoke:
+    name: Pack smoke (tarball install)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        # actions/checkout@v7.0.0
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Setup Node 24
+        # actions/setup-node@v5.0.0
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Pack + clean-install smoke suite
+        run: npm run pack:smoke
+
   # ── Playwright E2E (real admin SPA + dev server) ──
   e2e:
     name: E2E (Playwright)

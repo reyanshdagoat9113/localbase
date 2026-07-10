@@ -259,9 +259,9 @@ CLI executable permissions, native dependency installation, embedded Admin
 Studio assets, `localbase init`, migration, server startup, REST CRUD, auth,
 realtime, Storage, and graceful shutdown.
 
-Also resolve the documented scaffold contract: either implement
-`localbase init <directory>` or remove that syntax everywhere and test the
-supported current-directory flow.
+Scaffold contract (resolved): `localbase init` scaffolds the **current
+working directory only**. There is no `init <directory>` form; docs and the
+pack smoke suite assert cwd-only behavior.
 
 Gate PACK-P0: a scripted fresh-directory test passes using only tarballs, then
 passes again using the registry prerelease packages.
@@ -422,8 +422,8 @@ covers and tests at least:
 - [x] NET-P0 — CORS, abuse controls, and exposure defaults proven
 - [x] E2E-P0 — deterministic browser suite passes twice
 - [x] CI-P0 — required checks green on the release commit
-- [ ] LEGAL-P0 — license and community/security files complete
-- [ ] PACK-P0 — clean tarball installation and smoke suite pass
+- [x] LEGAL-P0 — license and community/security files complete
+- [x] PACK-P0 — clean tarball installation and smoke suite pass (local tarballs; registry re-check at publish)
 - [ ] NPM-P0 — registry beta installation and smoke suite pass
 - [ ] DOCS-P0 — current, consistent, independently followed documentation
 - [ ] BETA-P0 — external private-beta threshold met

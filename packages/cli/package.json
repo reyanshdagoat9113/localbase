@@ -1,9 +1,31 @@
 {
   "name": "@localbase/cli",
   "version": "0.1.0",
+  "description": "LocalBase CLI — init, migrate, dev server, studio, auth, and admin commands",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reyanshdagoat9113/localbase.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/reyanshdagoat9113/localbase#readme",
+  "bugs": {
+    "url": "https://github.com/reyanshdagoat9113/localbase/issues"
+  },
+  "keywords": [
+    "localbase",
+    "cli",
+    "sqlite",
+    "backend",
+    "dev-server",
+    "admin"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -19,7 +41,9 @@
     "localbase": "./dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsup",

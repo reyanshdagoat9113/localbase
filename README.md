@@ -567,6 +567,11 @@ and [`LOCALBASE-POST-MVP.md`](LOCALBASE-POST-MVP.md) for the detailed plans:
 
 ---
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY.md).
+Release process: [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md).
+
 ## License
 
-MIT
+[MIT](LICENSE) © 2026 Reyansh Dharmapurikar

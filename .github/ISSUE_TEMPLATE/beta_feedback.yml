@@ -1,0 +1,61 @@
+name: Beta feedback
+description: Feedback from installing or using the developer-preview / beta packages
+title: "[beta] "
+labels: ["beta-feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form if you installed the npm beta or followed the quickstart as an external tester.
+  - type: dropdown
+    id: outcome
+    attributes:
+      label: Outcome
+      options:
+        - Quickstart completed without help
+        - Quickstart completed with help
+        - Blocked during install
+        - Blocked after install
+        - Feature feedback only
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      placeholder: v22.x / v24.x
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS / platform
+      placeholder: Ubuntu 24.04, macOS 15, Windows 11, …
+    validations:
+      required: true
+  - type: input
+    id: package
+    attributes:
+      label: Package version / dist-tag
+      placeholder: 0.1.0-beta.1 / beta
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: What you tried
+      description: Install method and first commands you ran.
+    validations:
+      required: true
+  - type: textarea
+    id: confusion
+    attributes:
+      label: First confusing or broken step
+      description: Where did you get stuck? What would have helped?
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional notes
+      description: Do not paste application data or secrets.
