@@ -1,7 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { BASE_URL, DATA_DIR, EXAMPLE_DIR } from "./lib/env.js";
+import { BASE_URL, CLI_ENTRY, DATA_DIR, EXAMPLE_DIR } from "./lib/env.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -53,7 +53,7 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: "localbase dev",
+    command: `${JSON.stringify(process.execPath)} ${JSON.stringify(CLI_ENTRY)} dev`,
     cwd: EXAMPLE_DIR,
     url: `${BASE_URL}/admin`,
     // Never reuse a server: an existing one would almost certainly be backed

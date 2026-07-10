@@ -1,5 +1,13 @@
-import { execSync } from "node:child_process";
-import { EXAMPLE_DIR, DATA_DIR, ADMIN_EMAIL, ADMIN_PASSWORD, USER_EMAIL, USER_PASSWORD } from "./env.js";
+import { execFileSync } from "node:child_process";
+import {
+  ADMIN_EMAIL,
+  ADMIN_PASSWORD,
+  CLI_ENTRY,
+  DATA_DIR,
+  EXAMPLE_DIR,
+  USER_EMAIL,
+  USER_PASSWORD,
+} from "./env.js";
 
 /**
  * Run a `localbase` CLI sub-command inside the example project dir. Returns
@@ -9,8 +17,8 @@ import { EXAMPLE_DIR, DATA_DIR, ADMIN_EMAIL, ADMIN_PASSWORD, USER_EMAIL, USER_PA
  * `LOCALBASE_DATA_DIR` env var, so seeding/promotion never touches the
  * checked-in example's persistent `.localbase` (Workstream 2.1).
  */
-export function localbase(args: string): string {
-  return execSync(`localbase ${args}`, {
+export function localbase(args: string[]): string {
+  return execFileSync(process.execPath, [CLI_ENTRY, ...args], {
     cwd: EXAMPLE_DIR,
     env: { ...process.env, LOCALBASE_DATA_DIR: DATA_DIR },
     stdio: ["ignore", "pipe", "pipe"],
@@ -26,12 +34,12 @@ export function localbase(args: string): string {
  */
 export function ensureUser(email: string, password: string): void {
   try {
-    localbase(`auth create-user --email ${email} --password ${password}`);
+    localbase(["auth", "create-user", "--email", email, "--password", password]);
   } catch (err) {
     const out = String(err instanceof Error ? err.message : err);
     // Any non-"already exists" failure is a real problem — surface it.
     if (!/already|exists|in use|registered/i.test(out)) throw err;
-    localbase(`auth reset-password --email ${email} --password ${password}`);
+    localbase(["auth", "reset-password", "--email", email, "--password", password]);
   }
 }
 
@@ -41,5 +49,5 @@ export function seedAccounts(): void {
   ensureUser(USER_EMAIL, USER_PASSWORD);
   // Make the admin an admin (idempotent). The first-signup bootstrap only
   // fires on an empty `_users`, which we cannot guarantee, so promote explicitly.
-  localbase(`admin promote ${ADMIN_EMAIL}`);
+  localbase(["admin", "promote", ADMIN_EMAIL]);
 }

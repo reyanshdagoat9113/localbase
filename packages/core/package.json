@@ -1,9 +1,33 @@
 {
   "name": "@localbase/core",
   "version": "0.1.0",
+  "description": "LocalBase server runtime: SQLite, REST API, auth, realtime, Storage, Jobs, and Admin Studio",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reyanshdagoat9113/localbase.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/reyanshdagoat9113/localbase#readme",
+  "bugs": {
+    "url": "https://github.com/reyanshdagoat9113/localbase/issues"
+  },
+  "keywords": [
+    "localbase",
+    "sqlite",
+    "backend",
+    "rest-api",
+    "auth",
+    "realtime",
+    "storage",
+    "jobs"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -16,7 +40,9 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "copy:admin": "node build/copy-admin-bundle.mjs",

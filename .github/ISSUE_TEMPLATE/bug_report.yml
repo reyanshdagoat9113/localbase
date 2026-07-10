@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a bug in LocalBase (CLI, core, SDK, or Admin Studio)
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. For **security** issues, use [SECURITY.md](../SECURITY.md) — do not report vulnerabilities here.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong in one or two sentences?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps starting from a clean directory if possible.
+      placeholder: |
+        1. npx @localbase/cli init
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: LocalBase / package version
+      description: e.g. @localbase/cli@0.1.0-beta.1 or git commit SHA
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Node version (`node -v`), install method (npm/npx)
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / stack traces
+      render: shell

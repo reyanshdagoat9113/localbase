@@ -31,6 +31,9 @@ export const BASE_URL = process.env.LOCALBASE_URL ?? "http://127.0.0.1:5180";
 /** The example project the dev server runs against. */
 export const EXAMPLE_DIR = path.join(REPO_ROOT, "examples", "task-board");
 
+/** Built CLI entry used directly so E2E does not depend on a workspace bin link. */
+export const CLI_ENTRY = path.join(REPO_ROOT, "packages", "cli", "dist", "index.js");
+
 /**
  * Ephemeral, per-run LocalBase data directory (Workstream 2.1).
  *

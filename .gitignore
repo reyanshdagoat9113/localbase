@@ -34,5 +34,6 @@ coverage/
 bun.lock
 bun.lockb
 
-# Local scratch / one-off scripts
-scripts/
+# Local scratch (keep repo release scripts under scripts/)
+/tmp/
+*.tgz

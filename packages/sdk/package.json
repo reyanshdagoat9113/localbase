@@ -1,9 +1,32 @@
 {
   "name": "@localbase/sdk",
   "version": "0.1.0",
+  "description": "TypeScript client SDK for LocalBase — query builder, auth, realtime, and Storage",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reyanshdagoat9113/localbase.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://github.com/reyanshdagoat9113/localbase#readme",
+  "bugs": {
+    "url": "https://github.com/reyanshdagoat9113/localbase/issues"
+  },
+  "keywords": [
+    "localbase",
+    "sdk",
+    "client",
+    "sqlite",
+    "realtime",
+    "auth",
+    "storage"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -15,7 +38,11 @@
       "require": "./dist/index.cjs"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup",
     "clean": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\"",
