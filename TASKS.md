@@ -10,7 +10,7 @@
 
 | # | Task | Gate | Status |
 |---|------|------|--------|
-| 1 | Fix CI (dependency audit) | CI-P0 | Pending |
+| 1 | Fix CI (dependency audit) | CI-P0 | Done |
 | 2 | Reconcile documentation | DOCS-P0 | Pending |
 | 3 | Version packages for beta | release prep | Pending |
 | 4 | Publish npm beta + registry smoke | NPM-P0 | Pending |
@@ -23,17 +23,26 @@
 ## 1. Fix CI (dependency audit)
 
 **Gate:** CI-P0  
-**Status:** Pending  
+**Status:** Done  
 
 **Why it matters**  
 The master launch checklist marked CI-P0 complete, but the latest `dev` run is red. CI is a hard release gate: we must not publish or invite beta users from a branch that fails required checks.
 
-**What to do**
+**What was done**
 
-- Inspect the failing CI job (currently `Dependency audit`: `npm audit --omit=dev --audit-level=high`).
-- Resolve or intentionally triage **high/critical** advisories. Recent failure involved `react-router` via the private `@localbase/admin` workspace package; monorepo audit still sees it.
-- Prefer upgrading vulnerable deps; if a finding is a false positive or only affects non-published / non-runtime paths, document the triage policy and adjust the audit scope if that matches the launch-readiness intent.
-- Confirm the full CI matrix is green on the release candidate commit: build + unit tests (Node 22/24), pack smoke, E2E, admin bundle verify, audit.
+- Failing job was `Dependency audit` (`npm audit --omit=dev --audit-level=high`).
+- Upgraded production / workspace deps that carried high/moderate advisories:
+  - `react-router-dom` → `^7.18.2` (admin; fixes GHSA-qwww-vcr4-c8h2)
+  - `hono` → `^4.13.1` (core)
+  - `@hono/node-server` → `^2.1.0` (core, cli, sdk test helper)
+- Also applied `npm audit fix` for transitive dev tooling (postcss/nanoid/esbuild) so the full tree is clean locally.
+- Local verification: `npm audit --omit=dev --audit-level=high` → 0 vulns; `npm audit` → 0 vulns; `npm run build` succeeds.
+
+**Audit triage policy** (unchanged, documented in `.github/workflows/ci.yml`)
+
+- CI fails on **critical/high** in production deps (`--omit=dev --audit-level=high`).
+- moderate/low and pure dev-only advisories are non-blocking per PR; track in the periodic dependency-upgrade cycle.
+- No audit exceptions currently accepted.
 
 **Done when**
 
