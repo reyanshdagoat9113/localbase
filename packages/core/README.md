@@ -16,7 +16,8 @@ Prefer the CLI for local development:
 
 ```bash
 npx @localbase/cli init
-npx localbase dev
+npx @localbase/cli dev
+# After installing @localbase/cli: localbase studio
 ```
 
 Programmatic use:

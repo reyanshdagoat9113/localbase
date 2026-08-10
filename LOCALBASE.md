@@ -1,5 +1,14 @@
 # 🗄️ LocalBase (Local Supabase Alternative)
 
+> **Status: historical vision / architecture sketch.** This document predates
+> the current monorepo layout and shipped feature set. For accurate install,
+> CLI, and API docs use the root [README](./README.md). For launch status see
+> [`TASKS.md`](./TASKS.md) and [`LAUNCH.md`](./LAUNCH.md).
+>
+> **As-built notes (developer preview):** SQLite only (no Postgres yet); HTTP
+> via **Hono** (not Fastify); no Drizzle ORM; Jobs and manual backup/restore
+> **have shipped**; package layout is `packages/{shared,core,sdk,cli,admin,e2e}`.
+
 ## 🎯 Vision
 
 LocalBase is a **local-first backend platform** that provides:
@@ -273,38 +282,35 @@ localbase studio
 
 # 🛠️ Tech Stack
 
-| Layer    | Technology         |
+| Layer    | Technology (as-built) |
 | -------- | ------------------ |
-| Runtime  | Node.js            |
+| Runtime  | Node.js ≥ 22       |
 | Language | TypeScript         |
-| Database | SQLite             |
-| API      | Fastify / Hono     |
-| ORM      | Drizzle (optional) |
-| Realtime | WebSockets         |
-| UI       | React + shadcn/ui  |
-| Auth     | JWT + Argon2       |
-| CLI      | Commander          |
+| Database | SQLite (`better-sqlite3`) — Postgres still future |
+| API      | **Hono**           |
+| ORM      | None (SQL via core `Database` class) |
+| Realtime | WebSockets (`ws`)  |
+| UI       | React + shadcn/ui + Tailwind (Admin Studio) |
+| Auth     | JWT + Argon2id (`@node-rs/argon2`) |
+| CLI      | Commander (`@localbase/cli`) |
+| Jobs     | `croner` + jiti handlers (shipped) |
+| Storage  | Local disk under `.localbase/storage/` (shipped) |
 
 ---
 
-# 📁 Suggested Folder Structure
+# 📁 Folder structure (as-built monorepo)
 
 ```txt
 localbase/
-  core/
-    db/
-    auth/
-    storage/
-    realtime/
-    api/
-
-  cli/
-
-  studio/
-
-  sdk/
-
-  shared/
+  packages/
+    shared/    @localbase/shared
+    core/      @localbase/core (db, auth, storage, realtime, jobs, admin embed)
+    sdk/       @localbase/sdk
+    cli/       @localbase/cli  (binary: localbase)
+    admin/     private React SPA → embedded into core at build
+    e2e/       Playwright suite
+  examples/
+  docs/
 ```
 
 ---

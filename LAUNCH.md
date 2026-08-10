@@ -11,18 +11,23 @@ LocalBase now includes the complete MVP and post-MVP feature set:
 - SQLite with schema-driven migrations and generated REST CRUD APIs
 - TypeScript SDK and hot reload
 - email/password auth, rotating refresh tokens, roles, and owner-scoped policies
-- realtime subscriptions and presence over WebSockets
+- realtime subscriptions and presence over WebSockets (auth/RLS when auth is on)
 - local file Storage with private buckets and signed URLs
-- Admin Studio for data, users, Storage, and Jobs
+- Admin Studio for data, users, Storage, and Jobs at `/admin/`
 - scheduled TypeScript Jobs with run history
+- configurable CORS and rate limits; manual backup/restore
 - a task-board example that exercises relational application patterns
+- CI, legal/community files, package metadata, and local tarball smoke tests
 
-The implementation is substantial enough for external testing. The remaining
-work is launch hardening: closing known security boundaries, making validation
-reproducible, completing package/repository metadata, and proving the published
-npm artifacts in clean environments.
+The product surface is complete enough for external testing. Remaining launch
+work is **process and distribution**, not unfinished realtime/network/E2E gates:
 
-The detailed work breakdown and authoritative go/no-go checklist are in
+1. documentation consistency (DOCS-P0 — see [`TASKS.md`](TASKS.md) task 2),
+2. versioning + npm beta publication + registry smoke (NPM-P0),
+3. private beta with outside developers (BETA-P0),
+4. an explicit go decision and public promotion assets.
+
+Day-to-day remaining checklist: [`TASKS.md`](TASKS.md). Full gate definitions:
 [`LOCALBASE-LAUNCH-READINESS.md`](LOCALBASE-LAUNCH-READINESS.md).
 
 ## Product position
@@ -48,21 +53,21 @@ Do not describe the preview as a production Supabase replacement.
 
 ## Why not launch immediately?
 
-The feature roadmap is complete, but feature completion is not the same as
-release readiness. These are the current release gates:
+The feature roadmap and most engineering P0 gates are complete (RT-P0, NET-P0,
+E2E-P0, CI-P0, LEGAL-P0, PACK-P0 for local tarballs). Feature completion is still
+not the same as a public release. Remaining gates:
 
-1. **Realtime authorization.** The server must authenticate WebSocket clients
-   and enforce the same owner policies used by REST, including replayed events.
-2. **Network hardening.** Public-facing configurations need controlled CORS,
-   abuse limits, bounded WebSocket behavior, and clear TLS guidance.
-3. **Deterministic validation.** Browser tests must run against isolated state
-   and pass repeatedly from a clean checkout.
-4. **Release infrastructure.** CI, supported Node versions, package metadata,
-   legal/community files, and registry smoke tests must exist.
-5. **Accurate documentation.** Every quickstart, security statement, limitation,
-   and package command must describe the release artifact users actually get.
-6. **External validation.** A small private beta must prove that developers can
-   install and complete the quickstart without maintainer assistance.
+1. ~~**Realtime authorization.**~~ ✅ WS auth + owner policies (incl. replay).
+2. ~~**Network hardening.**~~ ✅ Configurable CORS, rate limits, TLS guidance in docs.
+3. ~~**Deterministic validation.**~~ ✅ Isolated Playwright fixture (ephemeral data dir).
+4. ~~**Release infrastructure (local).**~~ ✅ CI, Node ≥22, metadata, legal files, pack smoke.
+5. **Accurate documentation.** Quickstarts and plan docs must match shipped
+   behavior and honest preview limits (DOCS-P0).
+6. **npm beta + registry smoke.** Packages are not yet the release artifact users
+   install from the public registry (NPM-P0).
+7. **External validation.** A small private beta must prove outsiders can install
+   and complete the quickstart without maintainer assistance (BETA-P0).
+8. **Explicit go decision** before tags, `latest` promotion, and public posts.
 
 ## Staged launch
 

@@ -1,20 +1,19 @@
 # 📦 LocalBase Storage — Dedicated Plan
 
+> **Status: complete (historical plan).** Phase 9 has shipped. Prefer the root
+> [README](./README.md) “Storage” section for current usage. This file remains
+> as the design record and security decision log.
+
 > Pulled out of `LOCALBASE-POST-MVP.md` Phase 9 into its own plan.
 > File uploads/downloads with bucket abstraction, private-by-default, signed URLs.
 
 ---
 
-## 🎯 Why this is a priority
+## 🎯 Why this was a priority
 
-Storage is the last missing first-class data primitive. Once it ships, LocalBase covers the full backend quartet that every competitor offers: **relational data** (MVP), **auth** (Phase 7), **realtime** (Phase 8), and **files** (Phase 9). The Admin UI (Phase 10) already stubs a Storage browser as P1, gated on this landing.
+Storage was the last missing first-class data primitive. With it shipped, LocalBase covers the full backend quartet: **relational data** (MVP), **auth** (Phase 7), **realtime** (Phase 8), and **files** (Phase 9). Admin Studio includes a Storage browser.
 
-Evidence from `COMPETITION.md`:
-
-- Supabase, PocketBase, TrailBase, Appwrite, and NocoDB all ship a storage module with buckets, public/private modes, and signed URLs. LocalBase is the lone holdout.
-- "Auth for storage" was the most-flagged deferred decision in the post-MVP doc. Auth now exists (Phase 7 ✅), so the blocker is gone.
-
-**Axis clarification:** like Admin UI, Storage is a *perception/completeness* feature — it removes a "wait, it can't even store files?" objection more than it unlocks a new category. But it's also the one phase with a genuinely dangerous security surface (uploads, path traversal), so it warrants the dedicated-plan rigor.
+**Axis clarification:** like Admin UI, Storage is a *perception/completeness* feature — it removes a "wait, it can't even store files?" objection more than it unlocks a new category. It also has a dangerous security surface (uploads, path traversal), so the dedicated-plan rigor was warranted.
 
 ---
 
@@ -24,7 +23,7 @@ A bucket-based file API at `http://localhost:5180/api/storage/:bucket` for uploa
 
 ---
 
-## ✅ Decision Record (proposed — confirm or override before M1)
+## ✅ Decision Record (locked — implemented as shipped)
 
 | # | Decision | Proposed choice | Rationale |
 |---|---|---|---|
@@ -35,7 +34,7 @@ A bucket-based file API at `http://localhost:5180/api/storage/:bucket` for uploa
 | 5 | **Upload parsing + limits** | Hono native multipart (`c.req.parseBody`), stream to disk, configurable `maxFileSize` (default ~50 MB) | Avoids buffering large files in memory; no extra dependency |
 | 6 | **Storage root** | `<data-dir>/storage/` (follows the `.localbase/` data dir) | Consistent with DB location; no new config surface |
 
-> ⚠️ These are recommended defaults to confirm, not yet locked. Lock them (or override) before the first PR. **Decision #2 (private-by-default) and #3 (UUID stored name) are security-critical** — do not weaken them without a recorded reason.
+> ✅ Locked as implemented. **Decision #2 (private-by-default) and #3 (UUID stored name)** remain security-critical — do not weaken them without a recorded reason.
 
 ---
 

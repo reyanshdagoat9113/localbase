@@ -1,22 +1,32 @@
 # ⏰ LocalBase Scheduled Jobs — Dedicated Plan
 
+> **Status: complete (historical plan).** Phase 11 (M1–M5) has shipped. Prefer the
+> root [README](./README.md) “Scheduled Jobs” section for current usage. This
+> file remains as the design record and completed checklist.
+
 > Pulled out of `LOCALBASE-POST-MVP.md` Phase 11 into its own plan.
 > Define cron jobs in config; LocalBase runs them automatically, logs every run, and exposes a run viewer in the dashboard.
 
 ---
 
-## 🎯 Why this is a priority
+## 🎯 Why this was a priority
 
-Scheduled jobs close the loop on "things a backend does for you." Once it ships, a LocalBase project covers the full set of recurring background work that developers otherwise hand off to a separate worker process, an OS crontab, or a third-party scheduler. It is the last item in the post-MVP priority order and the natural follow-up to the data primitives (data, auth, realtime, storage) and the Admin UI.
+Scheduled jobs close the loop on "things a backend does for you." A LocalBase
+project covers recurring background work that developers otherwise hand off to
+a separate worker process, an OS crontab, or a third-party scheduler. It was the
+last item in the post-MVP priority order after the data primitives (data, auth,
+realtime, storage) and the Admin UI.
 
-Evidence from `COMPETITION.md` and the existing plans:
+**What shipped (summary):**
 
-- Supabase (pg_cron + Edge Functions), PocketBase (cron hooks in Go), Appwrite (Functions + schedules), and Directus (Flows + scheduled operations) all ship a cron/background layer. LocalBase currently has none.
-- `LOCALBASE-POST-MVP.md` lists Scheduled Jobs as the next genuinely-useful, simpler-scope phase after the perception-heavy ones (realtime, admin UI, storage) shipped.
-- The Admin UI already reserves a **Jobs viewer** nav item gated on "Phase 11" (`packages/admin/src/App.tsx`), and `LOCALBASE-ADMIN-UI.md` lists it as an optional later integration. This plan unblocks that stub.
-- The `_job_runs` table is **already pre-registered** in the admin system-table write-gate (`packages/core/src/admin/system-tables.ts`), explicitly annotated "owned by Phase 11 (not yet implemented)." The surface is waiting for the implementation.
+- Cron jobs declared in `localbase.config.ts` (`jobs` map)
+- Scheduler inside `localbase dev` (single-process; no multi-instance lock)
+- Run history in `_job_runs` (system table; generic admin row writes blocked)
+- CLI: `localbase jobs list | run | logs`
+- Admin Studio Jobs viewer + `/_api/admin/jobs/*`
+- No backfill, no automatic retries, skip overlapping firings (by design)
 
-**Axis clarification:** unlike realtime (a *capability* unlock) or the Admin UI (a *perception* win), Jobs is a *convenience/completeness* feature — it removes the "I need a separate worker process for a nightly cleanup" objection. Scope is intentionally small: cron config in `localbase.config.ts`, a scheduler process inside `localbase dev`, a run-history table, CLI inspection, and a dashboard viewer. No retries, no queues, no distributed scheduling (see Out of Scope).
+**Axis clarification:** unlike realtime (a *capability* unlock) or the Admin UI (a *perception* win), Jobs is a *convenience/completeness* feature — it removes the "I need a separate worker process for a nightly cleanup" objection. Scope is intentionally small. No retries, no queues, no distributed scheduling (see Out of Scope).
 
 ---
 
@@ -26,7 +36,7 @@ A `jobs` map in `localbase.config.ts` maps a name to `{ schedule, handler }`. On
 
 ---
 
-## ✅ Decision Record (proposed — confirm or override before M1)
+## ✅ Decision Record (locked — implemented as shipped)
 
 | # | Decision | Proposed choice | Rationale |
 |---|---|---|---|
@@ -43,7 +53,7 @@ A `jobs` map in `localbase.config.ts` maps a name to `{ schedule, handler }`. On
 | 11 | **Manual run surface** | `localbase jobs run <name>` (CLI) **and** `POST /_api/admin/jobs/:name/run` (admin API), both gated to *registered* job names only | Manual run never loads an arbitrary handler path — it only triggers a pre-validated, config-declared job. Admin route is gated by `requireAdmin`. |
 | 12 | **Config shape** | `jobs?: Record<string, JobConfig>` directly on `LocalBaseConfig` (a map, matching the `tables:` precedent and the post-MVP config example) | Global job options (default timezone, global concurrency cap) can land as a sibling `jobsOptions?` field later if needed; first cut is just the map. |
 
-> ⚠️ These are recommended defaults to confirm, not yet locked. Lock them (or override) before the first PR. **Decision #5 (full DB access, RLS bypass)** and **#11 (manual run limited to registered names)** are the security-critical ones — do not weaken them without a recorded reason.
+> ✅ Locked as implemented. **Decision #5 (full DB access, RLS bypass)** and **#11 (manual run limited to registered names)** remain the security-critical constraints — do not weaken them without a recorded reason.
 
 ---
 
@@ -337,12 +347,12 @@ Each milestone is independently shippable and verifiable. Tests use **Node's bui
 ## 🔗 Dependencies
 
 - **Requires:** MVP (Database + API) ✅.
-- **Builds on (already done):** Phase 8 Realtime ✅ — run-status writes broadcast to the dashboard for free; Phase 10 Admin UI ✅ — the Jobs viewer stub and the `requireAdmin` gate already exist; `_job_runs` is already pre-registered in the admin system-table write-gate.
-- **Unblocks:** the admin SPA "Jobs viewer" nav item (`packages/admin/src/App.tsx`, currently gated on Phase 11).
-- **Reuses:** `jiti` (already a CLI dep, newly added to core) for handler loading — same loader as `localbase.config.ts`.
+- **Built on:** Phase 8 Realtime ✅; Phase 10 Admin UI ✅; `_job_runs` registered in the admin system-table write-gate.
+- **Shipped UI:** Admin Studio Jobs viewer (`packages/admin/src/views/Jobs.tsx`) and `/_api/admin/jobs/*`.
+- **Reuses:** `jiti` for handler loading — same loader family as `localbase.config.ts`.
 
 ---
 
 ## 📊 First-cut success metric
 
-> A developer adds a `cleanup_sessions` job to `localbase.config.ts`, runs `localbase dev`, and sees it fire on schedule — its run history visible in `localbase jobs logs` and, after opening the admin dashboard, appearing and completing without a page refresh.
+> ✅ Met: a developer adds a `cleanup_sessions` job to `localbase.config.ts`, runs `localbase dev`, and sees it fire on schedule — its run history visible in `localbase jobs logs` and in the Admin Studio Jobs viewer.

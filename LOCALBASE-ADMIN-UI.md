@@ -1,5 +1,9 @@
 # 🖥️ LocalBase Admin UI — Dedicated Plan
 
+> **Status: complete (historical plan).** Phase 10 has shipped. Prefer the root
+> [README](./README.md) “Admin UI” section for current usage. Studio URL:
+> `http://localhost:5180/admin/`.
+
 > Pulled out of `LOCALBASE-POST-MVP.md` Phase 10 into its own plan.
 > This is the feature that moves LocalBase from "dev tool" to "platform."
 
@@ -30,7 +34,7 @@ Ship a built-in dashboard at `http://localhost:5180/admin` that lets you browse 
 | # | Decision | Choice | Rationale |
 |---|---|---|---|
 | 1 | **Auth model** | `role` column on `_users` (`user` \| `admin` \| `owner`) + bootstrap | Per-user, auditable, single auth/JWT system. No second auth codebase to maintain. |
-| 2 | **Bootstrap** | First user to sign up becomes owner; `localbase admin:promote <email>` grants admin to others | Works on fresh installs; reliable CLI path for existing installs that already have users. |
+| 2 | **Bootstrap** | First user to sign up becomes owner; `localbase admin promote <email>` grants admin to others | Works on fresh installs; reliable CLI path for existing installs that already have users. |
 | 3 | **Package layout** | New `packages/admin`; built `dist/` embedded into `@localbase/core/dist/admin` at publish | Keeps `@localbase/core` lean (no React/Vite/Tailwind in its deps); `npm i @localbase/core` stays self-contained. |
 | 4 | **Table grid** | `@tanstack/react-table` (headless) | ~10% the bundle of ag-grid; styles match shadcn/ui exactly; no visual clash. |
 | 5 | **First cut scope** | P0 (table browser + inline row editor + schema viewer) **+ Auth Manager** | Auth Manager is nearly free — `Auth.createUser / listUsers / setPassword` already exist. |
@@ -98,7 +102,7 @@ _users: {
 - `tokens.ts` — `signAccessToken` embeds `role`; `verifyAccessToken` exposes it in claims.
 - `auth.ts` — `signUp` grants `owner` **only when `_users` is empty** (first-user bootstrap); `publicUser` surfaces `role`.
 - `auth/middleware.ts` — `requireAdmin(secret)` validates token/session, loads the current user role from DB, and accepts `admin` or `owner`.
-- CLI — `localbase admin:promote <email>` / `admin:demote <email>` (reuses `Auth` class).
+- CLI — `localbase admin promote <email>` / `admin:demote <email>` (reuses `Auth` class).
 
 **Fallback when auth is disabled:** if `auth.enabled === false`, the admin API is ungated **only when the server is bound to `127.0.0.1` / `localhost`**. Starting an ungated admin API on `0.0.0.0` or another public interface must fail unless the user passes an explicit unsafe flag such as `--admin-unsafe-public`.
 
@@ -210,7 +214,7 @@ Each milestone is independently shippable and verifiable.
 - [x] Add `Auth.setRole(email, role)` / equivalent internal role update method.
 - [x] Ensure admin router wiring cannot be constructed without `requireAdmin` when mutations are enabled.
 - [x] Prevent deleting/demoting the last admin; require confirmation for self-demotion.
-- [x] CLI `localbase admin:promote <email>` + `admin:demote <email>`.
+- [x] CLI `localbase admin promote <email>` + `admin:demote <email>`.
 
 **Done when:** first signup is admin; promote/demote works; demotion takes effect immediately for existing tokens; a non-admin token gets `403` on `/_api/admin/*`; an admin token gets `200`; last-admin lockout is enforced.
 
@@ -275,7 +279,7 @@ Each milestone is independently shippable and verifiable.
 ## ⚠️ Risks & Open Questions
 
 1. **Additive migration for `_users`.** Must confirm `runMigrations` does `ALTER TABLE ADD COLUMN` (vs. drop+recreate). If it recreates, existing user data is at risk — must add a safe additive path first. *(First task in M1.)*
-2. **Existing installs already have users.** First-user bootstrap won't fire for them. Mitigation: `localbase admin:promote <email>` is the documented path; print a hint on first admin route hit when no admin exists.
+2. **Existing installs already have users.** First-user bootstrap won't fire for them. Mitigation: `localbase admin promote <email>` is the documented path; print a hint on first admin route hit when no admin exists.
 3. **No-auth mode.** When `auth.enabled === false`, the admin API is ungated only on localhost. Public binding must fail unless an explicit unsafe flag is passed.
 4. **Bundle bloat at publish.** Embedding the React bundle increases `@localbase/core` install size. Acceptable for a self-contained platform; revisit if it exceeds ~1.5 MB gzipped.
 5. **Schema drift (config vs. actual DB).** Introspection surfaces the truth; the UI should flag when declared config ≠ actual schema. (Nice-to-have for M4; not blocking.)
@@ -298,7 +302,7 @@ Each milestone is independently shippable and verifiable.
 
 - **Requires:** MVP (Database + API + SDK) ✅, Phase 7 Auth ✅.
 - **Benefits from (already done):** Phase 8 Realtime — admin edits auto-broadcast to subscribers.
-- **Optional later integrations:** Phase 9 Storage (file browser), Phase 11 Jobs (run viewer).
+- **Integrations:** Phase 9 Storage (file browser) and Phase 11 Jobs (run viewer) have shipped.
 
 ---
 

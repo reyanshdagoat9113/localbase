@@ -16,10 +16,10 @@ import type { IntrospectedTable } from "@localbase/shared";
  *     (which also needs to invalidate existing JWTs).
  *   - DELETE `_sessions` … and silently sign out the world.
  *
- * The correct path for these mutations is the typed helpers on `Auth`
- * (and, in a later phase, `Storage`). The admin SPA will use dedicated
- * endpoints (`/_api/admin/users/...`, etc.) in M5. Until those land, the
- * generic row endpoints stay closed for system tables.
+ * The correct path for these mutations is the typed helpers / dedicated
+ * admin APIs: `Auth` + `/_api/admin/users/...` for accounts, Storage engine
+ * + Storage browser for files, and the Jobs runner + `/_api/admin/jobs/*`
+ * for run history. Generic row endpoints stay closed for system tables.
  *
  * Reads are still allowed — the admin needs to *see* the data, and there
  * is no integrity risk in showing it. The schema viewer also surfaces
@@ -27,21 +27,20 @@ import type { IntrospectedTable } from "@localbase/shared";
  *
  * Adding to this set
  * ──────────────────
- * Whenever a new subsystem (Storage, Jobs, etc.) introduces a `_`-prefixed
- * table, add it here. Tests assert that all tables with names starting
- * with `_` are flagged as system — that way an accidental gap is caught.
+ * Whenever a new subsystem introduces a `_`-prefixed table, add it here.
+ * Tests assert that all tables with names starting with `_` are flagged as
+ * system — that way an accidental gap is caught.
  */
 export const SYSTEM_TABLES: ReadonlySet<string> = new Set([
-  // Auth subsystem — owned by packages/core/src/auth/schema.ts
+  // Auth subsystem — packages/core/src/auth/schema.ts
   "_users",
   "_sessions",
   "_admin_requests",
 
-  // Storage subsystem — owned by Phase 9 (not yet implemented).
-  // Listed here preemptively so the gate is ready the day P9 lands.
+  // Storage subsystem — packages/core/src/storage/
   "_files",
 
-  // Jobs subsystem — owned by Phase 11 (not yet implemented).
+  // Jobs subsystem — packages/core/src/jobs/
   "_job_runs",
 ]);
 
@@ -52,9 +51,8 @@ export const SYSTEM_TABLES: ReadonlySet<string> = new Set([
  * resets never wipe the auth subsystem).
  *
  * Keeping the explicit `SYSTEM_TABLES` set above is still valuable: it
- * lets us tighten the policy per-table (e.g. allow reads of `_files` but
- * forbid deletes until P9 ships its own admin endpoint) without changing
- * the public classification rule.
+ * documents ownership per subsystem and lets us tighten policy per-table
+ * without changing the public classification rule.
  */
 export function isSystemTable(tableName: string): boolean {
   if (tableName.startsWith("_")) return true;

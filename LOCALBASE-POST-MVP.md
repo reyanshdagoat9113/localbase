@@ -1,6 +1,10 @@
 # 🚀 LocalBase Post-MVP
 
-> What we build after the MVP ships. Focused on what makes the platform feel modern.
+> **Status: complete (historical plan).** Phases 7–11 have shipped. Prefer the
+> root [README](./README.md) and package docs for current behavior. This file
+> remains as the post-MVP design and checklist record.
+
+> What we built after the MVP. Focused on what makes the platform feel modern.
 
 ---
 
@@ -10,7 +14,7 @@
 2. ~~**Realtime**~~ — ✅ **Done** (Phase 8) — biggest perceived value, hardest to do well
 3. ~~**Storage**~~ — ✅ **Done** (Phase 9) — dedicated plan complete
 4. ~~**Admin UI**~~ — ✅ **Done** (Phase 10) — differentiator vs dev-only tools
-5. **Scheduled Jobs** — genuinely useful, simpler scope
+5. ~~**Scheduled Jobs**~~ — ✅ **Done** (Phase 11) — dedicated plan complete
 
 Edge Functions are **out of scope**. Developers can just write Node scripts.
 
@@ -131,7 +135,7 @@ Every competitor (PocketBase, TrailBase, Supabase, Directus, NocoDB) has an admi
 
 **URL:**
 ```
-http://localhost:5180/_/admin
+http://localhost:5180/admin
 ```
 
 **Features:**
@@ -144,17 +148,17 @@ http://localhost:5180/_/admin
 | **Auth manager** | P1 | List users, reset passwords, assign roles (requires Phase 7: Auth) |
 | **Storage browser** | P1 | View uploaded files, preview images, delete files (requires Phase 9: Storage) |
 | **Realtime inspector** | P2 | Live log of WebSocket events, active subscriber count (requires Phase 8: Realtime) |
-| **Job logs viewer** | P2 | View `_job_runs` history, status, output (requires Phase 11: Scheduled Jobs) |
+| **Job logs viewer** | P2 | ✅ View `_job_runs` history, status, output (Phase 11 shipped) |
 | **API playground** | P2 | Auto-generated docs for all tables, test endpoints inline |
 
 **Implementation:**
 
 | Component | Where | What it does |
 |---|---|---|
-| Admin UI bundle | `packages/core` | A small React app served from a static Hono route (`/_admin/*`) |
-| Admin API | `packages/core` | Protected endpoints: `GET /_api/admin/tables`, `GET /_api/admin/:table/rows`, `POST /_api/admin/:table/rows`, etc. |
+| Admin UI bundle | `packages/admin` → embedded in `packages/core` | React SPA served at `/admin/*` |
+| Admin API | `packages/core` | Protected endpoints under `/_api/admin/*` (tables, rows, users, jobs, storage helpers) |
 | Auth gate | `packages/core` | Redirect to login if auth is enabled and no valid session (requires Phase 7) |
-| React app | `packages/core` | Build with Vite or Rolldown, output `dist/admin` that Hono serves |
+| React app | `packages/admin` | Vite build copied into `@localbase/core` `dist/admin` at package build time |
 
 **Tech stack:**
 
@@ -169,7 +173,7 @@ http://localhost:5180/_/admin
 **CLI:**
 
 ```
-localbase dev          → serves admin UI at /_/admin automatically
+localbase dev          → serves admin UI at /admin/ automatically
 localbase studio       → opens browser directly to admin UI (alias)
 ```
 
@@ -177,7 +181,7 @@ localbase studio       → opens browser directly to admin UI (alias)
 
 - [x] Create `packages/core/admin/` subfolder with React app
 - [x] Add admin build step to `core` package.json (builds into `dist/admin/`)
-- [x] Add Hono static file route `/_admin/*` serving `dist/admin/` assets
+- [x] Add Hono static file route `/admin/*` serving `dist/admin/` assets
 - [x] Add `GET /_api/admin/tables` endpoint (list all tables from schema)
 - [x] Add `GET /_api/admin/:table/rows` endpoint (list rows with pagination, sort, search)
 - [x] Add `POST /_api/admin/:table/rows` endpoint (insert row)
@@ -187,15 +191,15 @@ localbase studio       → opens browser directly to admin UI (alias)
 - [x] Build table browser: sidebar table list + data grid
 - [x] Build inline row editor (double-click cell → edit → save)
 - [x] Build schema viewer panel (shows column names, types, constraints)
-- [x] Add `localbase studio` CLI command (opens `http://localhost:5180/_/admin` in default browser)
+- [x] Add `localbase studio` CLI command (opens `http://localhost:5180/admin` in default browser)
 - [x] Write integration tests: load admin, list tables, edit row, delete row
 - [x] Update README with admin UI screenshot
 
 ---
 
-### Phase 11: Scheduled Jobs  ➡️  [Dedicated plan](./LOCALBASE-JOBS.md)
+### Phase 11: Scheduled Jobs ✅ DONE  ➡️  [Dedicated plan](./LOCALBASE-JOBS.md)
 
-> **Promoted to its own plan.** Scheduled jobs close the loop on "things a backend does for you" and are the natural follow-up to the data primitives and Admin UI. Full decision record, security model, API surface, and milestone breakdown (M1–M5) live in [`LOCALBASE-JOBS.md`](./LOCALBASE-JOBS.md). The summary below is kept for context.
+> **Promoted to its own plan — now complete.** Scheduled jobs close the loop on "things a backend does for you." Full decision record, security model, API surface, and milestone breakdown (M1–M5) live in [`LOCALBASE-JOBS.md`](./LOCALBASE-JOBS.md). The summary below is kept for context.
 
 **Goal:** Define cron jobs in config, LocalBase runs them automatically.
 
@@ -237,18 +241,18 @@ localbase jobs logs <name>       Show run history for a job
 
 **Tasks:**
 
-- [ ] Define `JobConfig` type in `shared` (name, schedule, handler path)
-- [ ] Add `jobs` property to `LocalBaseConfig` type
-- [ ] Create `_job_runs` table (id, job_name, started_at, ended_at, status, output, error)
-- [ ] Pick cron parser library (`node-cron` or `croner`)
-- [ ] Build scheduler that wakes up on next-job-due
-- [ ] Build job runner: import handler module via jiti, call with `{ db }` context
-- [ ] Wrap each run in try/catch, log to `_job_runs`
-- [ ] Integrate scheduler into `dev` command (start with server)
-- [ ] Implement `localbase jobs list` (name, schedule, next run, last run)
-- [ ] Implement `localbase jobs run <name>` (manual trigger)
-- [ ] Implement `localbase jobs logs <name>` (last N runs)
-- [ ] Write tests: schedule, run, log
+- [x] Define `JobConfig` type in `shared` (name, schedule, handler path)
+- [x] Add `jobs` property to `LocalBaseConfig` type
+- [x] Create `_job_runs` table (id, job_name, started_at, ended_at, status, output, error)
+- [x] Pick cron parser library (`croner`)
+- [x] Build scheduler that wakes up on next-job-due
+- [x] Build job runner: import handler module via jiti, call with `{ db }` context
+- [x] Wrap each run in try/catch, log to `_job_runs`
+- [x] Integrate scheduler into `dev` command (start with server)
+- [x] Implement `localbase jobs list` (name, schedule, next run, last run)
+- [x] Implement `localbase jobs run <name>` (manual trigger)
+- [x] Implement `localbase jobs logs <name>` (last N runs)
+- [x] Write tests: schedule, run, log
 
 ---
 
@@ -296,7 +300,7 @@ GET    /api/storage/:bucket              List files in bucket (auth required)
 ## Decision Points (Defer Until Needed)
 
 - **Auth for storage** — auth exists now (Phase 7); the public/private bucket decision is captured in Phase 9 (Decision #2).
-- **Realtime row-level security** — without auth, all events go to all subscribers. Defer until auth exists.
+- ~~**Realtime row-level security**~~ — ✅ when auth is enabled, WS auth + owner policies apply (including replay).
 - **Job retries** — if a job fails, should it retry? Defer; just log for now.
 - **Storage quotas** — limit per-bucket size? Defer.
 - **WebSocket scale** — single-process only for now. If we ever need multi-process, switch to Redis pubsub.
@@ -309,6 +313,6 @@ GET    /api/storage/:bucket              List files in bucket (auth required)
 - Phase 8 (Realtime) ✅ — requires MVP complete
 - Phase 9 (Storage) ✅ — independent, now complete
 - Phase 10 (Admin UI) ✅ — required MVP complete. Optional: Phase 7 (Auth) for login gate, Phase 9 (Storage) for file browser, Phase 8 (Realtime) for inspector.
-- Phase 11 (Scheduled Jobs) — requires MVP complete
+- Phase 11 (Scheduled Jobs) ✅ — requires MVP complete
 
-Phases 7–11 are independent — build in any order based on demand, except Admin UI benefits from earlier phases.
+**All phases 7–11 are complete.** Remaining work is launch process (docs, npm beta, private beta), not feature gaps — see [`TASKS.md`](./TASKS.md).

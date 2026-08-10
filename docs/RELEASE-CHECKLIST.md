@@ -42,7 +42,8 @@ version number. Do not create a Git tag until all four packages install cleanly.
 mkdir /tmp/lb-registry-smoke && cd /tmp/lb-registry-smoke
 npm init -y
 npm install @localbase/cli@0.1.0-beta.N
-npx localbase init
+npx localbase init   # binary from the installed @localbase/cli package
+# (equivalent: npx @localbase/cli init)
 # exercise quickstart / or adapt scripts/pack-smoke for registry mode
 ```
 

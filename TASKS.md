@@ -11,7 +11,7 @@
 | # | Task | Gate | Status |
 |---|------|------|--------|
 | 1 | Fix CI (dependency audit) | CI-P0 | Done |
-| 2 | Reconcile documentation | DOCS-P0 | Pending |
+| 2 | Reconcile documentation | DOCS-P0 | Done |
 | 3 | Version packages for beta | release prep | Pending |
 | 4 | Publish npm beta + registry smoke | NPM-P0 | Pending |
 | 5 | Run private beta | BETA-P0 | Pending |
@@ -54,29 +54,31 @@ The master launch checklist marked CI-P0 complete, but the latest `dev` run is r
 ## 2. Reconcile documentation
 
 **Gate:** DOCS-P0  
-**Status:** Pending  
+**Status:** Done  
 
 **Why it matters**  
-Feature work (auth, realtime security, storage, admin, jobs, backup) is largely implemented, but several planning docs still describe unfinished work, wrong admin paths, or old E2E behavior. Launch and beta users will follow README / getting-started; internal docs that contradict code confuse maintainers and reviewers.
+Feature work (auth, realtime security, storage, admin, jobs, backup) is implemented, but planning docs that still describe unfinished work, wrong admin paths, or old E2E behavior confuse launch/beta users and maintainers.
 
-**What to do**
+**What was done**
 
-- Align user-facing docs with real behavior: `README.md`, `docs/GETTING-STARTED.md`, package READMEs, CLI examples (e.g. `npx @localbase/cli` vs `npx localbase`).
-- Update or clearly mark as historical:
-  - `LOCALBASE-LAUNCH-READINESS.md` (body still says E2E “currently” reuses task-board; production gate lists work that exists for preview)
-  - `LAUNCH.md` (“why not launch” still lists finished realtime/network/E2E gates)
-  - `LOCALBASE-POST-MVP.md` (Phase 11 Jobs still unchecked; stale `/_/admin` paths)
-  - `LOCALBASE-JOBS.md` intro (“jobs not implemented”) vs completed checklists
-  - `LOCALBASE.md` (vision/stack drift: Drizzle, Fastify-only, backups/jobs as future)
-  - Stale code comments (e.g. `system-tables.ts` still says Storage/Jobs “not yet implemented”)
-- Document beta operational limits honestly: SQLite-only, single-process realtime/jobs, local Storage, backup procedure, CORS/TLS/secrets for non-loopback use.
-- Ensure security and limitation claims are backed by code or tests.
+- Aligned user-facing docs with shipped behavior:
+  - `README.md` — CLI package vs binary, backup commands, **Operational limits** table, plan-doc status
+  - `docs/GETTING-STARTED.md` — `npx @localbase/cli`, Studio `/admin/`, auth bootstrap, limits (removed inflated concurrency claims)
+  - package READMEs (`cli`, `core`) — install/quickstart consistency
+- Historical / completed plan docs:
+  - `LOCALBASE-POST-MVP.md` — Phase 11 ✅, admin path `/admin`, historical banner
+  - `LOCALBASE-JOBS.md` — intro reflects shipped Jobs; decision record locked
+  - `LOCALBASE.md` — historical banner; Hono / no Drizzle; Jobs + manual backups shipped
+  - `LAUNCH.md` — remaining gates are docs/npm/beta/go (engineering P0s marked done)
+  - `LOCALBASE-LAUNCH-READINESS.md` — E2E isolation marked done; production gate distinguishes preview vs production; DOCS-P0 checked
+- Stale comments: `packages/core/src/admin/system-tables.ts` no longer claims Storage/Jobs unimplemented
+- Documented beta operational limits (SQLite-only, single-process, local Storage, manual backups, CORS/TLS/secrets)
 
 **Done when**
 
-- A new reader can follow the quickstart from a clean machine without hitting doc lies.
-- Plan docs either match reality or are labeled as history / completed phases.
-- DOCS-P0 reviewer checklist in launch-readiness is satisfiable.
+- [x] A new reader can follow the quickstart from a clean machine without hitting doc lies.
+- [x] Plan docs either match reality or are labeled as history / completed phases.
+- [x] DOCS-P0 reviewer checklist in launch-readiness is satisfiable.
 
 ---
 

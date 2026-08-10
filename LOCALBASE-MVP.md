@@ -1,5 +1,7 @@
 # 🚀 LocalBase MVP
 
+> **Status: complete (historical plan).** Phases 1–6 shipped. Prefer the root [README](./README.md) for current usage.
+
 > Define a schema → get a running API → query it with an SDK. Nothing else.
 
 ---

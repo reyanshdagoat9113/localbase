@@ -3,23 +3,35 @@
 > Local-first backend platform. Define a schema, get a running API, query it with an SDK.
 
 [![Phase 1-6 MVP](https://img.shields.io/badge/MVP-Complete-green)](LOCALBASE-MVP.md)
-[![Phase 7 Auth](https://img.shields.io/badge/Phase%207-Auth-blue)](LOCALBASE-POST-MVP.md)
+[![Phases 7–11](https://img.shields.io/badge/Post--MVP-Complete-green)](LOCALBASE-POST-MVP.md)
+[![Status](https://img.shields.io/badge/status-developer%20preview-orange)](LAUNCH.md)
+
+**Developer preview.** LocalBase is a single-process SQLite backend for local
+development, prototypes, and small internal tools — not a multi-instance
+production platform. See [Operational limits](#operational-limits-developer-preview).
 
 ---
 
 ## Quickstart
 
+Requires **Node.js ≥ 22**.
+
 ```bash
-# Scaffold a new project
+# Scaffold a new project (package: @localbase/cli; binary name: localbase)
 npx @localbase/cli init
 
-# Start the dev server (and open the admin UI in your browser)
-localbase studio
+# Start the dev server and open Admin Studio
+npx @localbase/cli studio
+# After a global install (`npm i -g @localbase/cli`), use: localbase studio
 ```
 
-That's it. You now have a REST API running at `http://localhost:5180`
-and a built-in admin dashboard at `http://localhost:5180/admin/`
-where you can browse and edit your data without writing code.
+That's it. You now have a REST API at `http://localhost:5180` and Admin Studio
+at `http://localhost:5180/admin/` where you can browse and edit data without
+writing code.
+
+> **CLI package vs binary:** run via `npx @localbase/cli …`. The `localbase`
+> binary is available after installing `@localbase/cli` (global or as a local
+> dependency). There is no separate npm package named `localbase`.
 
 ---
 
@@ -66,14 +78,19 @@ Save the file — the dev server hot-reloads automatically.
 
 ## CLI commands
 
+Commands below use the `localbase` binary (from `@localbase/cli`). With `npx`,
+prefer `npx @localbase/cli <command>`.
+
 ```
-localbase init                          Scaffold a new project (creates .localbase/ + config file)
-localbase dev                           Start dev server (port 5180, hot-reload on schema change)
+localbase init                          Scaffold cwd (creates .localbase/ + config; no init <path>)
+localbase dev                           Start dev server (default 127.0.0.1:5180, hot-reload)
 localbase dev --port 4000               Start on a custom port
-localbase dev --open                    Start the dev server and open the admin UI
-localbase studio                        Alias for `localbase dev --open` (opens the admin UI)
+localbase dev --open                    Start the dev server and open Admin Studio
+localbase studio                        Alias for `localbase dev --open`
 localbase db migrate                    Run pending migrations + show status
-localbase db reset                      Drop all tables, re-run migrations from scratch
+localbase db reset                      Drop user tables, re-run migrations (preserves system tables)
+localbase db backup [out]               Online backup of SQLite + storage (+ checksum manifest)
+localbase db restore <dir>              Verify and restore a backup (stop the server first)
 localbase auth create-user              Create a user (requires auth.enabled in config)
 localbase auth list-users               List all users
 localbase auth reset-password           Reset a user's password
@@ -555,15 +572,35 @@ your-project/
 
 ---
 
-## Roadmap
+## Operational limits (developer preview)
 
-MVP and post-MVP phases 7–11 are complete. See the relevant sections above
-and [`LOCALBASE-POST-MVP.md`](LOCALBASE-POST-MVP.md) for the detailed plans:
+Documented for honest beta expectations. Details and procedures live in the
+linked docs; security and network claims are covered by core/SDK tests and CI.
 
-- **Phase 8:** Realtime (WebSockets + subscriptions)
-- **Phase 9:** Storage (file uploads + signed URLs)
-- **Phase 10:** Admin UI
-- **Phase 11:** Scheduled Jobs (cron + handlers)
+| Topic | Preview behavior |
+|---|---|
+| **Support level** | Developer preview / prerelease. Semver prerelease line (`0.1.0-beta.N`); APIs may still change. |
+| **Database** | **SQLite only** (via `better-sqlite3`). No PostgreSQL in this release. |
+| **Process model** | **Single process** for HTTP, WebSocket realtime, and the job scheduler. Do not run multiple `localbase dev` instances against the same data dir. |
+| **Jobs** | No backfill of missed runs, no automatic retries, no distributed lock. Overlapping firings of the same job are skipped. Handler module edits require a process restart. |
+| **Storage** | Files on **local disk** under `.localbase/storage/`. Not object storage / CDN. Signed URLs use a server secret; rotating it revokes outstanding URLs. |
+| **Backups** | Manual `localbase db backup` / `db restore` (SQLite + storage + checksums). No automatic, remote, or encrypted backups. See [`docs/BACKUP-AND-RECOVERY.md`](docs/BACKUP-AND-RECOVERY.md). |
+| **Bind / exposure** | Default loopback. Non-loopback needs explicit bind, **TLS termination**, stable secrets (`jwtSecret` / storage secret), and configured **CORS** / rate limits. Auth-disabled admin is refused on non-loopback unless `--admin-unsafe-public`. |
+| **Realtime + auth** | When auth is enabled, WebSocket clients authenticate and owner policies apply (including replay). System tables are not subscribable. |
+| **Not a claim** | Not a multi-tenant production backend, not a Supabase replacement, and not sized for large concurrent fleets. |
+
+Longer getting-started walkthrough: [`docs/GETTING-STARTED.md`](docs/GETTING-STARTED.md). Launch stages: [`LAUNCH.md`](LAUNCH.md).
+
+---
+
+## Status of feature plans
+
+MVP and post-MVP phases **7–11 are complete** (auth, realtime, Storage, Admin Studio, Jobs). The phase docs below are **historical plans** with completed checklists — prefer this README and the package docs for current behavior:
+
+- [`LOCALBASE-POST-MVP.md`](LOCALBASE-POST-MVP.md) — phases 7–11 summary
+- [`LOCALBASE-ADMIN-UI.md`](LOCALBASE-ADMIN-UI.md), [`LOCALBASE-STORAGE.md`](LOCALBASE-STORAGE.md), [`LOCALBASE-JOBS.md`](LOCALBASE-JOBS.md) — dedicated plans (shipped)
+
+Remaining launch work (npm beta, private beta, go decision) is tracked in [`TASKS.md`](TASKS.md).
 
 ---
 

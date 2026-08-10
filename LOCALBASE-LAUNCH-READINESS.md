@@ -4,6 +4,12 @@
 > plan does not authorize production-backend positioning or publication by
 > itself. Publishing, tagging, pushing, and community posts remain explicit
 > release actions.
+>
+> **Day-to-day remaining work:** prefer [`TASKS.md`](./TASKS.md). This document
+> is the full gate definition and historical workstream plan. Several
+> engineering workstreams below are **done** (see master checklist); narrative
+> sections may still read as “to-do” for audit trail — trust the checklist +
+> TASKS.md over imperative phrasing in older workstream text.
 
 ## Launch decision
 
@@ -152,10 +158,16 @@ the preview so users do not invent unsafe copy procedures.
 
 ### 2.1 Isolate Playwright state
 
-The E2E suite currently reuses `examples/task-board/.localbase`, so accumulated
-rows can move newly-created records beyond the first grid page. Replace this
-with an ephemeral copied fixture or a unique temporary LocalBase data directory
-for every suite run. Never mutate the checked-in example's persistent state.
+> **Status: done (E2E-P0).** The suite uses an ephemeral per-run data directory
+> (`LOCALBASE_DATA_DIR` / temp dir via `packages/e2e/lib/env.ts`) and does **not**
+> mutate `examples/task-board/.localbase`. The text below is the original
+> requirement that was implemented.
+
+**Original requirement:** the E2E suite must not reuse a shared
+`examples/task-board/.localbase` (accumulated rows can push newly created
+records past the first grid page). Use an ephemeral fixture or unique temporary
+LocalBase data directory for every suite run. Never mutate the checked-in
+example's persistent state.
 
 Primary files:
 
@@ -297,6 +309,11 @@ tarballs.
 
 ### 4.1 Make documentation internally consistent
 
+> **Status: done for developer-preview launch prep (DOCS-P0).** User-facing
+> README / getting-started / package READMEs aligned; plan docs labeled
+> historical or checklists completed; beta operational limits documented.
+> Re-verify if public behavior changes after this gate.
+
 Audit and reconcile:
 
 - `README.md`
@@ -403,18 +420,26 @@ immutable; rollback means dist-tag/deprecation plus roll-forward.
 ## Production-backend gate (not required for developer preview)
 
 Do not market LocalBase as production-ready until a separate production plan
-covers and tests at least:
+covers and tests at least the items below.
 
-- authenticated/RLS-safe realtime;
-- configurable CORS, abuse controls, TLS guidance, and security headers;
-- documented, tested backup/restore and disaster recovery;
-- migration compatibility and rollback strategy;
-- database/storage integrity, disk-full, corruption, and crash recovery tests;
+**Already present in developer preview (not sufficient alone for production
+positioning):** authenticated/RLS-safe realtime; configurable CORS and rate
+limits; TLS guidance in docs; manual backup/restore with checksums
+([`docs/BACKUP-AND-RECOVERY.md`](./docs/BACKUP-AND-RECOVERY.md)); explicit
+single-process / single-instance model; private vulnerability reporting
+(`SECURITY.md`); Linux CI on Node 22/24.
+
+**Still required before production-backend claims:**
+
+- multi-instance / HA story (or a hard single-instance product guarantee with ops runbooks);
+- automatic/remote/encrypted backups and fuller DR (beyond manual local restore);
+- migration compatibility and rollback strategy for long-lived upgrades;
+- broader integrity tests (disk-full, corruption, crash recovery at ops depth);
 - observability, structured logs, health/readiness endpoints, and alerting;
-- secrets management and rotation procedures;
-- multi-process constraints or explicit single-instance deployment guarantees;
+- secrets management and rotation procedures as a product feature;
 - load/capacity tests with defensible published limits;
-- supported-platform matrix and vulnerability response process.
+- supported-platform matrix beyond Linux Node 22/24 (e.g. macOS/Windows smoke);
+- expanded vulnerability response process and SLAs.
 
 ## Master go/no-go checklist
 
@@ -425,6 +450,6 @@ covers and tests at least:
 - [x] LEGAL-P0 — license and community/security files complete
 - [x] PACK-P0 — clean tarball installation and smoke suite pass (local tarballs; registry re-check at publish)
 - [ ] NPM-P0 — registry beta installation and smoke suite pass
-- [ ] DOCS-P0 — current, consistent, independently followed documentation
+- [x] DOCS-P0 — current, consistent, independently followed documentation
 - [ ] BETA-P0 — external private-beta threshold met
 - [ ] Release owner records an explicit final go decision
