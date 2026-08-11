@@ -9,7 +9,7 @@ never overwrite; roll forward with a new beta version if something is wrong.
 | ----- | ----- |
 | Version | `0.1.0-beta.1` |
 | Dist-tag | `beta` (not `latest`) |
-| Commit SHA | *(fill after version commit is pushed)* |
+| Commit SHA | `45c5f7e48f2f1d2effee85b1fbba79073c9c628a` |
 | CI run | *(fill when CI green on that commit)* |
 | Local pack smoke | **PASS** (`npm run pack:smoke`, 2026-08-11) |
 | Registry publish | **blocked** — `ENEEDAUTH` (no npm login / token) |
