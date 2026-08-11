@@ -8,29 +8,26 @@ Versions follow [Semantic Versioning](https://semver.org/) with a beta prereleas
 
 ## [Unreleased]
 
-### Added
+## [0.1.0-beta.1] — 2026-08-11
 
-- Package metadata, legal/community files, tarball smoke suite, and prerelease tooling (Workstream 3).
-
-## [0.1.0-beta.1] — pending
-
-Initial developer-preview beta (planned first registry publish under the `beta` dist-tag).
+Initial developer-preview beta. Intended first registry publish under the `beta` dist-tag (NPM-P0).
 
 ### Features
 
 - Schema-driven SQLite migrations and generated REST CRUD API
 - TypeScript SDK (query builder, auth, realtime, Storage)
-- CLI (`init`, `dev`, `studio`, migrations, auth/admin helpers)
+- CLI (`init`, `dev`, `studio`, migrations, auth/admin helpers, backup/restore, jobs)
 - Optional JWT auth with Argon2id passwords and owner-scoped policies
 - Realtime WebSocket subscriptions with auth/RLS when auth is enabled
 - Local file Storage with private buckets and signed URLs
 - Scheduled Jobs with run history
 - Embedded Admin Studio SPA
+- Package metadata, legal/community files, tarball smoke suite, and prerelease tooling
 
 ### Known limitations (developer preview)
 
 - Single-process realtime and job scheduler (not multi-instance)
-- No automatic remote/encrypted backups
+- No automatic remote/encrypted backups (manual `localbase db backup` / `db restore` only)
 - Storage is local-disk only
 - Not positioned as a production multi-tenant backend
 - Supported Node: `>=22` (CI: Node 22 and 24 on Linux)

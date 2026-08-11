@@ -3,13 +3,36 @@
 Use this checklist for each beta publish. npm versions are **immutable** —
 never overwrite; roll forward with a new beta version if something is wrong.
 
+## Candidate: `0.1.0-beta.1`
+
+| Field | Value |
+| ----- | ----- |
+| Version | `0.1.0-beta.1` |
+| Dist-tag | `beta` (not `latest`) |
+| Commit SHA | *(fill after version commit is pushed)* |
+| CI run | *(fill when CI green on that commit)* |
+| Local pack smoke | **PASS** (`npm run pack:smoke`, 2026-08-11) |
+| Registry publish | **blocked** — `ENEEDAUTH` (no npm login / token) |
+| Registry smoke | pending publish |
+
+### Local dry-run tarball fingerprints (pre-publish)
+
+| Package | Version | shasum (from `npm publish --dry-run`) |
+| ------- | ------- | ------------------------------------- |
+| @localbase/shared | 0.1.0-beta.1 | `e8dfaeeb3149be7be7a934726311439c2929ffcb` |
+| @localbase/core | 0.1.0-beta.1 | `7f153acac78247256658116bfc0dfb93a4ee824a` |
+| @localbase/sdk | 0.1.0-beta.1 | `8edbe3b272f7483aad2f141c6d6b386f8399daa0` |
+| @localbase/cli | 0.1.0-beta.1 | `b4ed56df6bc18c2db6f209f014e284cff1047f8a` |
+
+After a real publish, prefer `npm view <pkg>@0.1.0-beta.1 dist.integrity` for the registry integrity hashes.
+
 ## Pre-publish
 
 - [ ] Release commit is green in required CI (CI-P0)
-- [ ] Realtime/auth gates still green on this commit (RT-P0, NET-P0)
-- [ ] `npm run version:set -- 0.1.0-beta.N` applied to all four public packages
-- [ ] `CHANGELOG.md` updated for this version
-- [ ] `npm run pack:smoke` green (PACK-P0, local tarballs)
+- [x] Realtime/auth gates still green on this commit (RT-P0, NET-P0) — previously met on `dev`
+- [x] `npm run version:set -- 0.1.0-beta.1` applied to all four public packages
+- [x] `CHANGELOG.md` updated for this version
+- [x] `npm run pack:smoke` green (PACK-P0, local tarballs)
 - [ ] npm scope ownership + 2FA / trusted publishing confirmed
 - [ ] Publishing environment requires approval; no long-lived publish token in repo secrets if trusted publishing is available
 
@@ -34,14 +57,14 @@ version number. Do not create a Git tag until all four packages install cleanly.
 
 ## Post-publish (NPM-P0)
 
-- [ ] Registry metadata correct (`npm view @localbase/cli@0.1.0-beta.N`)
+- [ ] Registry metadata correct (`npm view @localbase/cli@0.1.0-beta.1`)
 - [ ] Provenance visible when trusted publishing was used
 - [ ] Fresh-directory install from registry:
 
 ```bash
 mkdir /tmp/lb-registry-smoke && cd /tmp/lb-registry-smoke
 npm init -y
-npm install @localbase/cli@0.1.0-beta.N
+npm install @localbase/cli@0.1.0-beta.1
 npx localbase init   # binary from the installed @localbase/cli package
 # (equivalent: npx @localbase/cli init)
 # exercise quickstart / or adapt scripts/pack-smoke for registry mode
@@ -50,14 +73,14 @@ npx localbase init   # binary from the installed @localbase/cli package
 - [ ] Same smoke outcomes as local tarballs
 - [ ] Record: release commit SHA, tag (after checks), package versions, CI run URL, smoke log path, tarball checksums
 
-## Checksums (fill in)
+## Checksums (fill in after publish)
 
 | Package | Version | npm integrity / shasum |
 | ------- | ------- | ---------------------- |
-| @localbase/shared | | |
-| @localbase/core | | |
-| @localbase/sdk | | |
-| @localbase/cli | | |
+| @localbase/shared | 0.1.0-beta.1 | |
+| @localbase/core | 0.1.0-beta.1 | |
+| @localbase/sdk | 0.1.0-beta.1 | |
+| @localbase/cli | 0.1.0-beta.1 | |
 
 - Commit SHA:
 - CI run:

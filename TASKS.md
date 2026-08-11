@@ -12,8 +12,8 @@
 |---|------|------|--------|
 | 1 | Fix CI (dependency audit) | CI-P0 | Done |
 | 2 | Reconcile documentation | DOCS-P0 | Done |
-| 3 | Version packages for beta | release prep | Pending |
-| 4 | Publish npm beta + registry smoke | NPM-P0 | Pending |
+| 3 | Version packages for beta | release prep | Done |
+| 4 | Publish npm beta + registry smoke | NPM-P0 | Blocked (npm auth) |
 | 5 | Run private beta | BETA-P0 | Pending |
 | 6 | Prepare launch assets | launch polish | Pending |
 | 7 | Explicit go decision | release owner | Pending |
@@ -85,40 +85,48 @@ Feature work (auth, realtime security, storage, admin, jobs, backup) is implemen
 ## 3. Version packages for beta
 
 **Gate:** Release prep (feeds NPM-P0)  
-**Status:** Pending  
+**Status:** Done  
 
 **Why it matters**  
-Public packages are currently `0.1.0` while the changelog and release process plan a prerelease line (`0.1.0-beta.N`). Publishing plain `0.1.0` under the wrong tag, or mismatched versions across packages, breaks the controlled beta process.
+Public packages must share one prerelease version (`0.1.0-beta.N`) before registry publish. Publishing plain `0.1.0` under the wrong tag, or mismatched versions, breaks the controlled beta process.
 
-**What to do**
+**What was done**
 
-- Use the repo version tooling (`npm run version:set -- 0.1.0-beta.1` or the next beta number) so `@localbase/shared`, `@localbase/core`, `@localbase/sdk`, and `@localbase/cli` share one version.
-- Keep private packages (`admin`, `e2e`, examples, monorepo root) out of the public version line as designed.
-- Update `CHANGELOG.md` for the beta entry (move from “pending” to the actual version/date when ready).
-- Confirm internal dependency versions between the four public packages remain consistent.
+- Ran `npm run version:set -- 0.1.0-beta.1` for `@localbase/shared`, `@localbase/core`, `@localbase/sdk`, `@localbase/cli` (internal pins + package-lock updated).
+- Private packages (`admin`, `e2e`, examples, monorepo root) remain off the public version line.
+- `CHANGELOG.md` updated for `0.1.0-beta.1` (2026-08-11) with features and known limitations.
+- Verified: `npm run build` and `npm run pack:smoke` green at this version; `npm run publish:prerelease` dry-run OK.
 
 **Done when**
 
-- All four public packages report the same prerelease version.
-- Changelog describes that version and known limitations for the developer preview.
+- [x] All four public packages report the same prerelease version.
+- [x] Changelog describes that version and known limitations for the developer preview.
 
 ---
 
 ## 4. Publish npm beta + registry smoke
 
 **Gate:** NPM-P0  
-**Status:** Pending  
+**Status:** Blocked — npm auth / `@localbase` scope not available in this environment  
 
 **Why it matters**  
 Workspace installs are not the release artifact. Users must be able to install from the public registry. Packages are not on npm yet (`@localbase/*` 404).
 
-**What to do**
+**What is ready**
 
-- Confirm npm scope ownership, 2FA / trusted publishing, and the protected publish environment.
-- From a clean checkout of a green release commit: build, `pack:smoke`, then publish in dependency order via `npm run publish:prerelease` (or the documented flow) under the **`beta`** dist-tag — not `latest` initially.
-- After publish, run a **fresh-directory** install from the registry (not workspace links) and exercise init, migrate/dev, REST, auth, realtime, Storage, Admin Studio, graceful shutdown — same bar as local pack smoke.
-- Record commit SHA, package versions, CI run URL, smoke results, and integrity hashes in `docs/RELEASE-CHECKLIST.md`.
-- On partial failure: stop, do not tag, roll forward with a new beta version (never overwrite an npm version).
+- Version `0.1.0-beta.1` locked across the four public packages (task 3).
+- Local `npm run pack:smoke` green (PACK-P0) at this version.
+- `npm run publish:prerelease` dry-run succeeds (shared → core → sdk → cli, dist-tag `beta`).
+- `npm run publish:prerelease -- --execute` **fails** with `ENEEDAUTH` (no `npm whoami` / no `~/.npmrc` / no `NPM_TOKEN`).
+- Registry still returns 404 for `@localbase/*`; org/scope ownership must be confirmed on npmjs.com.
+
+**What you need to finish NPM-P0 (owner)**
+
+1. Create/own the **`@localbase`** npm org/scope; enable 2FA (and trusted publishing if using GH Actions).
+2. Authenticate this machine: `npm login` (or set a publish-capable token).
+3. From the release commit: `npm ci && npm run build && npm run pack:smoke && npm run publish:prerelease -- --execute`
+4. Fresh-directory registry smoke (install `@localbase/cli@0.1.0-beta.1` and re-exercise quickstart).
+5. Record SHA, versions, CI URL, integrities in `docs/RELEASE-CHECKLIST.md`.
 
 **Done when**
 
