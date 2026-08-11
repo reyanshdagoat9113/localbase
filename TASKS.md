@@ -13,7 +13,7 @@
 | 1 | Fix CI (dependency audit) | CI-P0 | Done |
 | 2 | Reconcile documentation | DOCS-P0 | Done |
 | 3 | Version packages for beta | release prep | Done |
-| 4 | Publish npm beta + registry smoke | NPM-P0 | Blocked (npm auth) |
+| 4 | Publish npm beta + registry smoke | NPM-P0 | Done |
 | 5 | Run private beta | BETA-P0 | Pending |
 | 6 | Prepare launch assets | launch polish | Pending |
 | 7 | Explicit go decision | release owner | Pending |
@@ -107,32 +107,29 @@ Public packages must share one prerelease version (`0.1.0-beta.N`) before regist
 ## 4. Publish npm beta + registry smoke
 
 **Gate:** NPM-P0  
-**Status:** Blocked — npm auth / `@localbase` scope not available in this environment  
+**Status:** Done  
 
 **Why it matters**  
-Workspace installs are not the release artifact. Users must be able to install from the public registry. Packages are not on npm yet (`@localbase/*` 404).
+Workspace installs are not the release artifact. Users must be able to install from the public registry.
 
-**What is ready**
+**What was done**
 
-- Version `0.1.0-beta.1` locked across the four public packages (task 3).
-- Local `npm run pack:smoke` green (PACK-P0) at this version.
-- `npm run publish:prerelease` dry-run succeeds (shared → core → sdk → cli, dist-tag `beta`).
-- `npm run publish:prerelease -- --execute` **fails** with `ENEEDAUTH` (no `npm whoami` / no `~/.npmrc` / no `NPM_TOKEN`).
-- Registry still returns 404 for `@localbase/*`; org/scope ownership must be confirmed on npmjs.com.
+- Published `@localbase/{shared,core,sdk,cli}@0.1.0-beta.1` under dist-tag **`beta`** (dependency order).
+- Local provenance skipped (no GHA OIDC); publish used a granular access token with 2FA bypass.
+- Packuments lagged ~2–3 minutes after PUT before public `npm view`/`npm install` worked.
+- Fresh-directory registry smoke (`/tmp/lb-registry-smoke-*`): install cli+sdk, `init`, migrate, REST CRUD, Admin Studio `/admin/`, SDK select + auth signup — **PASS**.
+- Evidence recorded in `docs/RELEASE-CHECKLIST.md`.
 
-**What you need to finish NPM-P0 (owner)**
+**Notes / follow-ups**
 
-1. Create/own the **`@localbase`** npm org/scope; enable 2FA (and trusted publishing if using GH Actions).
-2. Authenticate this machine: `npm login` (or set a publish-capable token).
-3. From the release commit: `npm ci && npm run build && npm run pack:smoke && npm run publish:prerelease -- --execute`
-4. Fresh-directory registry smoke (install `@localbase/cli@0.1.0-beta.1` and re-exercise quickstart).
-5. Record SHA, versions, CI URL, integrities in `docs/RELEASE-CHECKLIST.md`.
+- First publish also set dist-tag **`latest` → `0.1.0-beta.1`** (npm default for first version). Token lacked permission to `dist-tag rm latest`; prefer installing `@beta` / exact version until private-beta promotion. Remove `latest` when a full-privilege session allows, or leave until go decision.
+- CLI bin is present (`localbase` → `dist/index.js`).
 
 **Done when**
 
-- All four packages install from npm at the published beta version.
-- Registry smoke matches local tarball smoke outcomes.
-- NPM-P0 evidence is recorded on the release checklist.
+- [x] All four packages install from npm at the published beta version.
+- [x] Registry smoke matches local tarball smoke outcomes.
+- [x] NPM-P0 evidence is recorded on the release checklist.
 
 ---
 

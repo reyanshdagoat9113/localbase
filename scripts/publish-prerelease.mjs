@@ -19,10 +19,15 @@
  *   node scripts/publish-prerelease.mjs --tag beta --execute
  *   node scripts/publish-prerelease.mjs --execute --provenance  # force OIDC provenance
  *   node scripts/publish-prerelease.mjs --execute --no-provenance
+ *   node scripts/publish-prerelease.mjs --execute --otp 123456  # npm 2FA (auth-and-writes)
  *
  * Provenance: enabled automatically on GitHub Actions (`GITHUB_ACTIONS=true`).
  * Local publishes omit `--provenance` (npm requires a CI OIDC provider).
  * Pass `--provenance` to force it, or `--no-provenance` to skip even on GHA.
+ *
+ * 2FA: when the account uses auth-and-writes, pass a current authenticator
+ * code via `--otp <code>` or env `NPM_OTP`. One code is reused for all four
+ * packages in the run (npm accepts it for a short window).
  *
  * Never creates a git tag. Tagging/GitHub release is a separate owner step
  * after registry install smoke passes (Gate NPM-P0).
@@ -43,9 +48,18 @@ const USE_PROVENANCE =
   EXECUTE && !NO_PROVENANCE && (FORCE_PROVENANCE || IN_GITHUB_ACTIONS);
 const tagIdx = process.argv.indexOf("--tag");
 const DIST_TAG = tagIdx >= 0 ? process.argv[tagIdx + 1] : "beta";
+const otpIdx = process.argv.indexOf("--otp");
+const OTP =
+  (otpIdx >= 0 ? process.argv[otpIdx + 1] : undefined) ||
+  process.env.NPM_OTP ||
+  "";
 
 if (FORCE_PROVENANCE && NO_PROVENANCE) {
   console.error("Pass only one of --provenance or --no-provenance.");
+  process.exit(1);
+}
+if (otpIdx >= 0 && (!OTP || !/^\d{6,8}$/.test(OTP))) {
+  console.error("Usage: --otp <6-8 digit code from your authenticator app>");
   process.exit(1);
 }
 
@@ -120,6 +134,7 @@ if (EXECUTE) {
       ? "Provenance: enabled (--provenance or GitHub Actions)"
       : "Provenance: skipped (local publish; use GHA or --provenance for OIDC attestation)"
   );
+  console.log(OTP ? "2FA OTP: provided" : "2FA OTP: not provided (npm may return EOTP)");
 }
 console.log("");
 
@@ -152,6 +167,7 @@ for (const name of ORDER) {
   const args = ["publish", "--access", "public", "--tag", DIST_TAG];
   if (!EXECUTE) args.push("--dry-run");
   else if (USE_PROVENANCE) args.push("--provenance");
+  if (EXECUTE && OTP) args.push("--otp", OTP);
 
   const res = run("npm", args, cwd);
   if (res.stdout) process.stdout.write(res.stdout);

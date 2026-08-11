@@ -449,7 +449,7 @@ single-process / single-instance model; private vulnerability reporting
 - [x] CI-P0 — required checks green on the release commit
 - [x] LEGAL-P0 — license and community/security files complete
 - [x] PACK-P0 — clean tarball installation and smoke suite pass (local tarballs; registry re-check at publish)
-- [ ] NPM-P0 — registry beta installation and smoke suite pass
+- [x] NPM-P0 — registry beta installation and smoke suite pass
 - [x] DOCS-P0 — current, consistent, independently followed documentation
 - [ ] BETA-P0 — external private-beta threshold met
 - [ ] Release owner records an explicit final go decision
