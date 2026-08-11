@@ -106,7 +106,7 @@ test("version:set synchronizes public versions, every workspace pin, and the loc
   }
 });
 
-test("publish:prerelease dry-runs locally and execute preflights with provenance", () => {
+test("publish:prerelease dry-runs locally; execute skips provenance off GHA", () => {
   const root = createFixture(VERSION);
   const bin = path.join(root, "bin");
   const log = path.join(root, "npm.log");
@@ -123,7 +123,14 @@ if (process.argv[2] === "view") {
 `
   );
   fs.chmodSync(path.join(bin, "npm"), 0o755);
-  const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, NPM_LOG: log };
+  // Unset GITHUB_ACTIONS so local execute path is exercised even when tests
+  // themselves run inside Actions.
+  const env = {
+    ...process.env,
+    PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+    NPM_LOG: log,
+    GITHUB_ACTIONS: "",
+  };
 
   try {
     const dryRun = spawnSync(process.execPath, ["scripts/publish-prerelease.mjs"], {
@@ -146,6 +153,26 @@ if (process.argv[2] === "view") {
     calls = fs.readFileSync(log, "utf8").trim().split("\n").map(JSON.parse);
     assert.equal(calls.filter((args) => args[0] === "view").length, 4);
     assert.equal(calls.filter((args) => args[0] === "publish").length, 4);
+    assert.ok(
+      calls
+        .filter((args) => args[0] === "publish")
+        .every(
+          (args) =>
+            !args.includes("--dry-run") &&
+            !args.includes("--provenance") &&
+            args.includes("--tag") &&
+            args.includes("beta")
+        )
+    );
+
+    fs.writeFileSync(log, "");
+    const withProv = spawnSync(
+      process.execPath,
+      ["scripts/publish-prerelease.mjs", "--execute", "--provenance"],
+      { cwd: root, env, encoding: "utf8" }
+    );
+    assert.equal(withProv.status, 0, diagnostic(withProv));
+    calls = fs.readFileSync(log, "utf8").trim().split("\n").map(JSON.parse);
     assert.ok(
       calls
         .filter((args) => args[0] === "publish")

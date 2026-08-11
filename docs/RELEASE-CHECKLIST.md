@@ -39,15 +39,23 @@ After a real publish, prefer `npm view <pkg>@0.1.0-beta.1 dist.integrity` for th
 ## Publish
 
 Run the publish command from the protected GitHub Actions environment configured
-for npm trusted publishing. The script always requests npm provenance and aborts
-before publishing if any of the four immutable versions already exists.
+for npm trusted publishing when available. The script requests npm **provenance
+only on GitHub Actions** (or with `--provenance`); local `--execute` skips it
+because OIDC is unavailable. It aborts before publishing if any of the four
+immutable versions already exists.
+
+**Local publish auth (2026 npm policy):** browser `npm login` alone is not
+enough. Either enable account 2FA and pass OTP, or create a **granular access
+token** with package write + “Bypass 2FA” and put it in `~/.npmrc` /
+`NPM_TOKEN`. Org owner of `@localbase` is required.
 
 ```bash
-# From a clean checkout of the release commit in the approved publish environment:
+# From a clean checkout of the release commit:
 npm ci
 npm run build
 npm run pack:smoke
-npm run publish:prerelease -- --execute   # dist-tag: beta
+npm run publish:prerelease -- --execute   # dist-tag: beta; no local provenance
+# On GHA trusted publishing: provenance is automatic
 ```
 
 Publish order (enforced by the script): shared → core → sdk → cli.

@@ -17,6 +17,12 @@
  *   node scripts/publish-prerelease.mjs              # dry-run (default)
  *   node scripts/publish-prerelease.mjs --execute     # real publish
  *   node scripts/publish-prerelease.mjs --tag beta --execute
+ *   node scripts/publish-prerelease.mjs --execute --provenance  # force OIDC provenance
+ *   node scripts/publish-prerelease.mjs --execute --no-provenance
+ *
+ * Provenance: enabled automatically on GitHub Actions (`GITHUB_ACTIONS=true`).
+ * Local publishes omit `--provenance` (npm requires a CI OIDC provider).
+ * Pass `--provenance` to force it, or `--no-provenance` to skip even on GHA.
  *
  * Never creates a git tag. Tagging/GitHub release is a separate owner step
  * after registry install smoke passes (Gate NPM-P0).
@@ -29,8 +35,19 @@ import { fileURLToPath } from "node:url";
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ORDER = ["shared", "core", "sdk", "cli"];
 const EXECUTE = process.argv.includes("--execute");
+const FORCE_PROVENANCE = process.argv.includes("--provenance");
+const NO_PROVENANCE = process.argv.includes("--no-provenance");
+const IN_GITHUB_ACTIONS = process.env.GITHUB_ACTIONS === "true";
+/** @type {boolean} */
+const USE_PROVENANCE =
+  EXECUTE && !NO_PROVENANCE && (FORCE_PROVENANCE || IN_GITHUB_ACTIONS);
 const tagIdx = process.argv.indexOf("--tag");
 const DIST_TAG = tagIdx >= 0 ? process.argv[tagIdx + 1] : "beta";
+
+if (FORCE_PROVENANCE && NO_PROVENANCE) {
+  console.error("Pass only one of --provenance or --no-provenance.");
+  process.exit(1);
+}
 
 if (!DIST_TAG || DIST_TAG !== "beta") {
   console.error("Prereleases must be published with the beta dist-tag.");
@@ -97,6 +114,13 @@ for (const [name, pkg] of Object.entries(packages)) {
 
 console.log(`Prerelease plan: @localbase/*@${version} dist-tag=${DIST_TAG}`);
 console.log(EXECUTE ? "MODE: execute (real publish)" : "MODE: dry-run (pass --execute to publish)");
+if (EXECUTE) {
+  console.log(
+    USE_PROVENANCE
+      ? "Provenance: enabled (--provenance or GitHub Actions)"
+      : "Provenance: skipped (local publish; use GHA or --provenance for OIDC attestation)"
+  );
+}
 console.log("");
 
 /** @type {string[]} */
@@ -126,8 +150,8 @@ for (const name of ORDER) {
   console.log(`→ ${pkgName}@${version}`);
 
   const args = ["publish", "--access", "public", "--tag", DIST_TAG];
-  if (EXECUTE) args.push("--provenance");
-  else args.push("--dry-run");
+  if (!EXECUTE) args.push("--dry-run");
+  else if (USE_PROVENANCE) args.push("--provenance");
 
   const res = run("npm", args, cwd);
   if (res.stdout) process.stdout.write(res.stdout);
@@ -146,6 +170,7 @@ for (const name of ORDER) {
 console.log("\nSummary");
 console.log(`  version: ${version}`);
 console.log(`  tag:     ${DIST_TAG}`);
+console.log(`  provenance: ${USE_PROVENANCE ? "yes" : "no"}`);
 console.log(`  packages:`);
 for (const p of published) console.log(`    ${p}`);
 console.log(`
