@@ -111,6 +111,8 @@ that lets you browse tables, edit rows inline, inspect your schema, and
 manage users — without writing a line of code. It's served by core itself,
 so `localbase dev` (or `localbase studio`) is all you need.
 
+![LocalBase Admin Studio — table browser](docs/admin-ui.png)
+
 ```bash
 # Start the server AND open the dashboard in your default browser.
 localbase studio

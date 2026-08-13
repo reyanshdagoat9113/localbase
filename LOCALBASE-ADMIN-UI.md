@@ -272,7 +272,7 @@ Each milestone is independently shippable and verifiable.
 
 **Done when:** a fresh `localbase dev` serves the full admin UI with no extra install; `localbase studio` opens it.
 
-**Screenshot:** a screenshot of the admin UI should be added under `docs/` and referenced from the root `README.md` so the README preview shows it. Capture it from a running `localbase studio` session (any of the `examples/*` projects work) and reference it as `![LocalBase Admin UI](docs/admin-ui.png)`. This doc keeps that slot marked open — the implementation work itself is complete; the marketing screenshot is a manual follow-up.
+**Screenshot:** `docs/admin-ui.png` is referenced from the root `README.md` (tables overview in Admin Studio). Optional data-grid shot: `docs/admin-ui-table.png`.
 
 ---
 

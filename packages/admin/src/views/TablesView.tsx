@@ -12,7 +12,7 @@ export function TablesView() {
     <>
       <PageHeader
         title="Tables"
-        description="Browse live table metadata from /_api/admin/tables. Row editing lands in M4."
+        description="Browse tables, open a grid to edit rows, and inspect schema — all without leaving Admin Studio."
       />
       {!tables?.length ? (
         <Panel>No tables found.</Panel>
