@@ -29,6 +29,9 @@ export function CopyCommand({ command, className }: CopyCommandProps) {
         className,
       )}
     >
+      <span aria-hidden="true" className="shrink-0 text-brand">
+        $
+      </span>
       <code className="min-w-0 flex-1 truncate text-left">{command}</code>
       <Button
         type="button"

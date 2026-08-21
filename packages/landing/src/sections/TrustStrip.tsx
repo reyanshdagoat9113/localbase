@@ -1,36 +1,30 @@
-import { HardDrive, Scale, Server, WifiOff } from 'lucide-react'
-
-import { Separator } from '@/components/ui'
-
-const claims = [
-  { icon: HardDrive, label: 'Local-first', detail: 'SQLite on your machine' },
-  { icon: Server, label: 'No cloud account', detail: 'npx in, localhost out' },
-  { icon: WifiOff, label: 'No telemetry', detail: 'The preview does not phone home' },
-  { icon: Scale, label: 'MIT licensed', detail: 'Source is on GitHub' },
+const readouts = [
+  { key: 'Data', value: 'SQLite file, on your disk' },
+  { key: 'Network', value: 'Loopback only' },
+  { key: 'Telemetry', value: 'None' },
+  { key: 'Licence', value: 'MIT' },
 ]
 
 export function TrustStrip() {
   return (
-    <section aria-label="How LocalBase handles your data" className="border-y border-border/40 bg-muted/20">
-      <ul className="mx-auto grid w-full max-w-6xl grid-cols-2 gap-0 px-4 sm:px-6 lg:grid-cols-4">
-        {claims.map(({ icon: Icon, label, detail }, index) => (
-          <li key={label} className="relative flex items-start gap-3 px-2 py-6 sm:px-4 sm:py-8">
-            {index > 0 && (
-              <Separator
-                orientation="vertical"
-                className="absolute left-0 top-1/2 hidden h-10 -translate-y-1/2 lg:block"
-              />
-            )}
-            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-card shadow-sm">
-              <Icon className="size-4 text-brand" aria-hidden="true" />
-            </span>
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{label}</p>
-              <p className="mt-0.5 text-xs text-muted-foreground">{detail}</p>
-            </div>
-          </li>
+    <section aria-label="How LocalBase handles your data" className="border-y border-border/40 bg-muted/15">
+      <dl className="mx-auto grid w-full max-w-6xl grid-cols-2 px-4 sm:px-6 lg:grid-cols-4">
+        {readouts.map(({ key, value }, index) => (
+          <div
+            key={key}
+            className={
+              'flex flex-col gap-1 py-5 sm:py-6 ' +
+              (index > 0 ? 'lg:border-l lg:border-border/40 lg:pl-6 ' : '') +
+              (index % 2 === 1 ? 'pl-4 ' : '')
+            }
+          >
+            <dt className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+              {key}
+            </dt>
+            <dd className="text-sm">{value}</dd>
+          </div>
         ))}
-      </ul>
+      </dl>
     </section>
   )
 }

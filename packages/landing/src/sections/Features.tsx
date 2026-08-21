@@ -1,7 +1,6 @@
 import { Check } from 'lucide-react'
 
 import { Screenshot } from '@/components/Screenshot'
-import { Badge } from '@/components/ui'
 import { featureRows, featureScreenshot, type FeatureRow } from '@/config/content'
 import { type ScreenshotId } from '@/config/screenshots'
 import { cn } from '@/lib/utils'
@@ -14,10 +13,8 @@ export function Features() {
   return (
     <section id="features" className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
       <div className="mx-auto max-w-2xl text-center">
-        <Badge variant="outline" className="mb-4">
-          Features
-        </Badge>
-        <h2 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
+        <p className="eyebrow">Features</p>
+        <h2 className="mt-3 font-display text-3xl font-semibold tracking-tight sm:text-4xl">
           Schema, API, SDK, and Studio — one process
         </h2>
         <p className="mt-3 text-pretty text-muted-foreground">
@@ -25,7 +22,7 @@ export function Features() {
         </p>
       </div>
 
-      <div className="mt-14 flex flex-col gap-14 sm:mt-20 sm:gap-20">
+      <div className="mt-14 flex flex-col gap-16 sm:mt-20 sm:gap-24">
         {featureRows.map((row) =>
           hasShot(row) ? <ShotRow key={row.id} row={row} /> : <SummaryRow key={row.id} row={row} />,
         )}
@@ -38,11 +35,11 @@ function SummaryRow({ row }: { row: FeatureRow }) {
   return (
     <article
       aria-labelledby={`feature-${row.id}`}
-      className="rounded-2xl border border-border/60 bg-muted/20 p-6 sm:p-10"
+      className="rounded-xl border border-border/60 bg-muted/20 p-6 sm:p-10"
     >
       <div className="max-w-2xl">
         <FeatureHeader row={row} />
-        <p className="mt-4 text-pretty text-muted-foreground">{row.body}</p>
+        <p className="mt-4 text-pretty leading-relaxed text-muted-foreground">{row.body}</p>
       </div>
       <FeatureBullets
         bullets={row.bullets}
@@ -60,7 +57,7 @@ function ShotRow({ row }: { row: FeatureRow & { id: ScreenshotId } }) {
           <FeatureHeader row={row} />
         </div>
         <div className="grid gap-6 lg:grid-cols-2 lg:gap-12">
-          <p className="text-pretty text-muted-foreground">{row.body}</p>
+          <p className="text-pretty leading-relaxed text-muted-foreground">{row.body}</p>
           <FeatureBullets bullets={row.bullets} />
         </div>
       </div>
@@ -70,22 +67,12 @@ function ShotRow({ row }: { row: FeatureRow & { id: ScreenshotId } }) {
 }
 
 function FeatureHeader({ row }: { row: FeatureRow }) {
-  const Icon = row.icon
-
   return (
     <>
-      <div className="flex items-center gap-2">
-        <span className="flex size-8 items-center justify-center rounded-lg border border-brand/20 bg-brand/10">
-          <Icon className="size-4 text-brand" aria-hidden="true" />
-        </span>
-        <span className="text-xs font-medium uppercase tracking-widest text-brand">
-          {row.eyebrow}
-        </span>
-      </div>
-
+      <p className="eyebrow">{row.eyebrow}</p>
       <h3
         id={`feature-${row.id}`}
-        className="mt-4 text-balance text-2xl font-semibold tracking-tight sm:text-3xl"
+        className="mt-3 font-display text-2xl font-semibold tracking-tight sm:text-3xl"
       >
         {row.title}
       </h3>
@@ -97,10 +84,8 @@ function FeatureBullets({ bullets, className }: { bullets: string[]; className?:
   return (
     <ul className={cn('flex flex-col gap-2.5', className)}>
       {bullets.map((bullet) => (
-        <li key={bullet} className="flex items-start gap-2.5 text-sm">
-          <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-brand/10">
-            <Check className="size-3 text-brand" aria-hidden="true" />
-          </span>
+        <li key={bullet} className="flex items-start gap-2.5 text-sm leading-relaxed">
+          <Check className="mt-0.5 size-4 shrink-0 text-brand" aria-hidden="true" />
           <span className="text-muted-foreground">{bullet}</span>
         </li>
       ))}

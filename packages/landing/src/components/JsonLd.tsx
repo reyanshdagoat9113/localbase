@@ -22,7 +22,7 @@ export function JsonLd() {
     })),
     featureList: [
       ...featureRows.map((row) => row.title),
-      ...secondaryFeatures.map((item) => item.title),
+      ...secondaryFeatures.map((item) => item.key),
     ],
     offers: {
       '@type': 'Offer',

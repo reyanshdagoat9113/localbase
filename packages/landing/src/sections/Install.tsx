@@ -1,5 +1,4 @@
 import { CopyCommand } from '@/components/CopyCommand'
-import { Badge, Card, CardContent } from '@/components/ui'
 import { INIT_COMMAND, NPM_CLI_URL, NPM_SDK_URL, STUDIO_COMMAND, siteMeta } from '@/config/site'
 
 export function Install() {
@@ -11,12 +10,10 @@ export function Install() {
     >
       <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
         <div className="mx-auto max-w-2xl text-center">
-          <Badge variant="outline" className="mb-4">
-            Install
-          </Badge>
+          <p className="eyebrow">Install</p>
           <h2
             id="install-heading"
-            className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl"
+            className="mt-3 font-display text-3xl font-semibold tracking-tight sm:text-4xl"
           >
             npm, then localhost:5180
           </h2>
@@ -28,23 +25,19 @@ export function Install() {
 
         <ol className="mx-auto mt-10 grid max-w-3xl gap-4">
           <li>
-            <Card className="border-border/50">
-              <CardContent className="flex flex-col gap-3 p-5 sm:p-6">
-                <p className="text-sm font-medium">1. Scaffold a project</p>
-                <CopyCommand command={INIT_COMMAND} />
-              </CardContent>
-            </Card>
+            <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card/70 p-5 sm:p-6">
+              <p className="text-sm font-medium">1. Scaffold a project</p>
+              <CopyCommand command={INIT_COMMAND} />
+            </div>
           </li>
           <li>
-            <Card className="border-border/50">
-              <CardContent className="flex flex-col gap-3 p-5 sm:p-6">
-                <p className="text-sm font-medium">2. Start the API and Admin Studio</p>
-                <CopyCommand command={STUDIO_COMMAND} />
-                <p className="text-xs text-muted-foreground">
-                  REST at http://localhost:5180 · Studio at http://localhost:5180/admin/
-                </p>
-              </CardContent>
-            </Card>
+            <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card/70 p-5 sm:p-6">
+              <p className="text-sm font-medium">2. Start the API and Admin Studio</p>
+              <CopyCommand command={STUDIO_COMMAND} />
+              <p className="text-xs text-muted-foreground">
+                REST at http://localhost:5180 · Studio at http://localhost:5180/admin/
+              </p>
+            </div>
           </li>
         </ol>
 

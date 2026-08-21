@@ -1,4 +1,3 @@
-import { Badge, Card, CardContent } from '@/components/ui'
 import { steps } from '@/config/content'
 
 export function HowItWorks() {
@@ -9,35 +8,32 @@ export function HowItWorks() {
       className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 sm:py-24"
     >
       <div className="mx-auto max-w-2xl text-center">
-        <Badge variant="outline" className="mb-4">
-          Get started
-        </Badge>
+        <p className="eyebrow">Get started</p>
         <h2
           id="how-it-works-heading"
-          className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl"
+          className="mt-3 font-display text-3xl font-semibold tracking-tight sm:text-4xl"
         >
           Three commands, then a running API
         </h2>
       </div>
 
-      <ol className="relative mt-12 grid gap-4 md:grid-cols-3 md:gap-6">
-        {steps.map((step, index) => (
-          <li key={step.n} className="relative">
-            {index < steps.length - 1 && (
-              <div
-                aria-hidden="true"
-                className="absolute left-[calc(50%+2rem)] right-[-1.5rem] top-10 hidden h-px bg-gradient-to-r from-border to-transparent md:block"
-              />
-            )}
-            <Card className="h-full border-border/50 bg-card/70">
-              <CardContent className="flex h-full flex-col gap-3 p-6">
-                <span className="flex size-10 items-center justify-center rounded-full border border-brand/25 bg-brand/10 font-mono text-sm font-semibold text-brand">
-                  {String(step.n).padStart(2, '0')}
-                </span>
-                <h3 className="text-lg font-medium">{step.title}</h3>
-                <p className="text-sm leading-relaxed text-muted-foreground">{step.body}</p>
-              </CardContent>
-            </Card>
+      <ol className="mt-12 grid gap-4 md:grid-cols-3 md:gap-6">
+        {steps.map((step) => (
+          <li
+            key={step.n}
+            className="flex h-full flex-col gap-3 rounded-xl border border-border/60 bg-card/70 p-6"
+          >
+            <span className="font-mono text-xs text-muted-foreground">
+              {String(step.n).padStart(2, '0')}
+            </span>
+            <p className="min-w-0 truncate rounded-md border border-border/60 bg-muted/40 px-3 py-2 font-mono text-[12.5px]">
+              <span className="text-brand" aria-hidden="true">
+                ${' '}
+              </span>
+              {step.command}
+            </p>
+            <p className="text-sm font-medium">{step.result}</p>
+            <p className="text-sm leading-relaxed text-muted-foreground">{step.body}</p>
           </li>
         ))}
       </ol>

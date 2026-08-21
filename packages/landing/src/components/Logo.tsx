@@ -30,7 +30,9 @@ export function Wordmark({ className }: WordmarkProps) {
   return (
     <span className={cn('inline-flex items-center gap-2.5', className)}>
       <LogoMark className="size-7" />
-      <span className="text-lg font-semibold leading-none tracking-tight">LocalBase</span>
+      <span className="font-display text-lg font-semibold leading-none tracking-tight">
+        LocalBase
+      </span>
     </span>
   )
 }

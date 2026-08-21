@@ -5,9 +5,6 @@ import {
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
-  Badge,
-  Card,
-  CardContent,
 } from '@/components/ui'
 import { faq, nonGoals } from '@/config/content'
 
@@ -16,12 +13,10 @@ export function Honesty() {
     <section aria-label="Scope and questions" className="border-t border-border/40">
       <div className="mx-auto grid w-full max-w-6xl gap-12 px-4 py-16 sm:gap-16 sm:px-6 sm:py-24 lg:grid-cols-2">
         <div role="region" aria-labelledby="honesty">
-          <Badge variant="outline" className="mb-4">
-            Honest about scope
-          </Badge>
+          <p className="eyebrow">Scope</p>
           <h2
             id="honesty"
-            className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl"
+            className="mt-3 font-display text-3xl font-semibold tracking-tight sm:text-4xl"
           >
             What LocalBase is not
           </h2>
@@ -30,29 +25,24 @@ export function Honesty() {
             a disguised roadmap.
           </p>
 
-          <ul className="mt-8 grid gap-2 sm:grid-cols-2">
+          <ul className="mt-8 grid gap-2">
             {nonGoals.map((item) => (
-              <li key={item}>
-                <Card className="border-border/50 bg-muted/20">
-                  <CardContent className="flex items-center gap-3 p-4">
-                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted">
-                      <X className="size-3.5 text-muted-foreground" aria-hidden="true" />
-                    </span>
-                    <span className="text-sm font-medium">{item}</span>
-                  </CardContent>
-                </Card>
+              <li
+                key={item}
+                className="flex items-center gap-3 rounded-lg border border-border/50 bg-muted/20 px-4 py-3"
+              >
+                <X className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <span className="text-sm font-medium">{item}</span>
               </li>
             ))}
           </ul>
         </div>
 
         <div role="region" aria-labelledby="faq-heading">
-          <Badge variant="outline" className="mb-4">
-            FAQ
-          </Badge>
+          <p className="eyebrow">FAQ</p>
           <h2
             id="faq-heading"
-            className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl"
+            className="mt-3 font-display text-3xl font-semibold tracking-tight sm:text-4xl"
           >
             Questions
           </h2>

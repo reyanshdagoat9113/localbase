@@ -1,17 +1,3 @@
-import {
-  Database,
-  FolderArchive,
-  KeyRound,
-  LayoutDashboard,
-  Radio,
-  RefreshCw,
-  Shield,
-  Terminal,
-  Timer,
-  Code2,
-  type LucideIcon,
-} from 'lucide-react'
-
 import { screenshots, type ScreenshotId } from './screenshots'
 
 export type FeatureRow = {
@@ -20,7 +6,6 @@ export type FeatureRow = {
   title: string
   body: string
   bullets: string[]
-  icon: LucideIcon
   showScreenshot?: boolean
 }
 
@@ -35,7 +20,6 @@ export const featureRows: FeatureRow[] = [
       'Schema inspector, users, and admin requests',
       'Storage and Jobs views in the same dashboard',
     ],
-    icon: LayoutDashboard,
     showScreenshot: false,
   },
   {
@@ -48,7 +32,6 @@ export const featureRows: FeatureRow[] = [
       'Generated REST CRUD at localhost:5180',
       'Hot-reload when the config file changes',
     ],
-    icon: Database,
   },
   {
     id: 'sdk',
@@ -60,7 +43,6 @@ export const featureRows: FeatureRow[] = [
       'Auth, realtime, and Storage on the same client',
       'Every call returns { data, error }',
     ],
-    icon: Code2,
     showScreenshot: false,
   },
 ]
@@ -72,75 +54,71 @@ export const featureScreenshot = (id: ScreenshotId) => {
 }
 
 export type SecondaryFeature = {
-  title: string
+  /** Short manifest key, rendered in mono. */
+  key: string
   body: string
-  icon: LucideIcon
 }
 
 export const secondaryFeatures: SecondaryFeature[] = [
   {
-    title: 'Optional auth',
+    key: 'auth',
     body: 'Email/password, Argon2id hashes, rotating refresh tokens, roles, and owner-scoped policies when you turn auth on.',
-    icon: KeyRound,
   },
   {
-    title: 'Realtime',
+    key: 'realtime',
     body: 'WebSocket subscriptions and presence. With auth enabled, the handshake authenticates and owner policies apply, including replay.',
-    icon: Radio,
   },
   {
-    title: 'Local Storage',
+    key: 'storage',
     body: 'Private buckets on disk, signed URLs, and a Studio browser. Not a CDN — files live under .localbase/storage/.',
-    icon: FolderArchive,
   },
   {
-    title: 'Scheduled Jobs',
-    body: 'Cron-driven TypeScript handlers with run history. One process, no distributed lock, overlapping runs of the same job are skipped.',
-    icon: Timer,
+    key: 'jobs',
+    body: 'Cron-driven TypeScript handlers with run history. One process, no distributed lock; overlapping runs of the same job are skipped.',
   },
   {
-    title: 'CLI that matches the docs',
+    key: 'cli',
     body: 'init, studio, migrate, backup/restore, auth users, admin promote/demote, and jobs — via npx @localbase/cli.',
-    icon: Terminal,
   },
   {
-    title: 'Hot reload',
+    key: 'hot-reload',
     body: 'Schema changes reload the running server. Job handler edits still need a process restart — that limit is documented, not hidden.',
-    icon: RefreshCw,
   },
   {
-    title: 'Loopback by default',
+    key: 'network',
     body: 'Binds 127.0.0.1:5180 unless you say otherwise. Non-loopback needs explicit bind, TLS, CORS, rate limits, and stable secrets.',
-    icon: Shield,
   },
   {
-    title: 'Manual backups',
+    key: 'backup',
     body: 'localbase db backup and db restore copy SQLite plus Storage with a checksum manifest. No automatic remote backups in this preview.',
-    icon: Database,
   },
 ]
 
 export type Step = {
   n: number
-  title: string
+  command: string
+  result: string
   body: string
 }
 
 export const steps: Step[] = [
   {
     n: 1,
-    title: 'Init',
-    body: 'npx @localbase/cli init scaffolds the current directory: config, data dir, and nothing else to install.',
+    command: 'npx @localbase/cli init',
+    result: 'scaffolded ./localbase.config.ts',
+    body: 'Scaffolds the current directory: config file, data dir, and nothing else to install.',
   },
   {
     n: 2,
-    title: 'Define tables',
-    body: 'Edit localbase.config.ts. Columns, types, and foreign keys are the schema. Save — migrations run on reload.',
+    command: 'edit localbase.config.ts',
+    result: 'migrations applied on save',
+    body: 'Columns, types, and foreign keys are the schema. Save the file — the running server reloads and migrates.',
   },
   {
     n: 3,
-    title: 'Open Studio',
-    body: 'npx @localbase/cli studio starts the API at localhost:5180 and opens Admin Studio so you can edit rows immediately.',
+    command: 'npx @localbase/cli studio',
+    result: 'api + studio at localhost:5180',
+    body: 'Starts the API and opens Admin Studio so you can edit rows immediately.',
   },
 ]
 
