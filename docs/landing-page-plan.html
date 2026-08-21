@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LocalBase landing — plan</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f6f7f9;
+        --fg: #12151a;
+        --muted: #5b6573;
+        --card: #ffffff;
+        --border: #d8dee6;
+        --accent: #1d4ed8;
+        --ok: #166534;
+        --warn: #9a3412;
+        --block: #f1f5f9;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0b0d10;
+          --fg: #e6e8eb;
+          --muted: #8a93a0;
+          --card: #14181e;
+          --border: #2a313a;
+          --accent: #6ea8ff;
+          --ok: #86efac;
+          --warn: #fdba74;
+          --block: #1a2028;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      main {
+        max-width: 52rem;
+        margin: 0 auto;
+        padding: 2.5rem 1.25rem 4rem;
+      }
+      h1 { font-size: 1.85rem; letter-spacing: -0.03em; margin: 0 0 0.4rem; }
+      h2 { font-size: 1.25rem; margin: 2.25rem 0 0.75rem; }
+      h3 { font-size: 1.05rem; margin: 1.5rem 0 0.5rem; }
+      p, li { color: var(--fg); }
+      .lede { color: var(--muted); margin: 0 0 1.5rem; }
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 1rem;
+        color: var(--muted);
+        font-size: 0.9rem;
+        margin-bottom: 1.75rem;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 0.6rem;
+        overflow: hidden;
+        font-size: 0.95rem;
+      }
+      th, td {
+        text-align: left;
+        padding: 0.65rem 0.8rem;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+      }
+      th { font-weight: 600; background: var(--block); }
+      tr:last-child td { border-bottom: 0; }
+      .ok { color: var(--ok); }
+      .warn { color: var(--warn); }
+      code, kbd {
+        font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+        font-size: 0.88em;
+        background: var(--block);
+        padding: 0.1em 0.35em;
+        border-radius: 0.3em;
+      }
+      pre {
+        background: var(--block);
+        border: 1px solid var(--border);
+        border-radius: 0.6rem;
+        padding: 0.9rem 1rem;
+        overflow-x: auto;
+      }
+      pre code { background: none; padding: 0; }
+      ul, ol { padding-left: 1.2rem; }
+      li { margin: 0.3rem 0; }
+      .choice {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 0.6rem;
+        padding: 0.9rem 1rem;
+        margin: 0.6rem 0;
+      }
+      .choice strong { display: block; margin-bottom: 0.25rem; }
+      footer {
+        margin-top: 3rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>LocalBase landing — plan</h1>
+      <p class="lede">
+        Ship a production static site from this repo to
+        <code>localbase.reylabs.in</code>, using the same Railway +
+        <code>reylabs.in</code> setup as DevDesk.
+      </p>
+      <div class="meta">
+        <span>Branch: <code>dev</code></span>
+        <span>Package: <code>packages/landing</code></span>
+        <span>Status: code local / not deployed</span>
+      </div>
+
+      <h2>1. Context (what was decided)</h2>
+      <p>
+        LocalBase is a local CLI (<code>npx @localbase/cli init</code>), not a hosted
+        backend. A marketing site is not a launch gate for private beta, but it
+        is worth building now because a domain and Railway are already in place.
+      </p>
+      <p>Constraints that are already locked:</p>
+      <ul>
+        <li>Build the site <strong>in this repo</strong>, not in DevDesk.</li>
+        <li>Tune it and make it production-ready (SEO, health check, static server).</li>
+        <li>Deploy on Railway to <code>localbase.reylabs.in</code>.</li>
+        <li>The apex domain <code>reylabs.in</code> is on Namecheap.</li>
+        <li>Do <strong>not</strong> host the LocalBase runtime. This service is the marketing site only.</li>
+        <li>Do <strong>not</strong> fold LocalBase into <code>devdesk.reylabs.in</code>.</li>
+      </ul>
+
+      <h3>Railway as it exists today</h3>
+      <p>
+        Account currently has one project, <strong>Devdesk</strong>
+        (<code>87863109-9f09-4324-b480-61cf5f5d3ed3</code>), production environment
+        only.
+      </p>
+      <table>
+        <thead>
+          <tr><th>Field</th><th>Value</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Service</td><td><code>@devdesk/landing</code></td></tr>
+          <tr><td>Status</td><td>SUCCESS (last deploy 2026-08-09)</td></tr>
+          <tr><td>Custom domain</td><td><a href="https://devdesk.reylabs.in">https://devdesk.reylabs.in</a></td></tr>
+          <tr><td>Railway domain</td><td>https://devdesklanding-production.up.railway.app</td></tr>
+          <tr><td>Source</td><td><code>reyanshdagoat9113/DevDesk</code>, root <code>packages/landing</code></td></tr>
+        </tbody>
+      </table>
+      <p>
+        There is no LocalBase Railway project or service yet. Package homepages
+        still point at the GitHub README.
+      </p>
+
+      <h3>Recommended Railway shape</h3>
+      <p>
+        A <strong>new project named LocalBase</strong>, not a new environment on
+        Devdesk. Environments clone every service in a project. Devdesk currently
+        only has <code>@devdesk/landing</code>. A second project (or, if you insist
+        on one project, a second <strong>service</strong>) is the right model.
+      </p>
+      <div class="choice">
+        <strong>A — recommended</strong>
+        New Railway project <code>LocalBase</code>, one landing service, domain
+        <code>localbase.reylabs.in</code>.
+      </div>
+      <div class="choice">
+        <strong>B — acceptable</strong>
+        New service <code>@localbase/landing</code> inside the existing Devdesk project.
+        Both sites share one project/billing; names stay mixed.
+      </div>
+      <div class="choice">
+        <strong>C — not recommended</strong>
+        New <em>environment</em> on Devdesk. It clones DevDesk’s landing into that
+        environment. Wrong product coupling.
+      </div>
+
+      <h2>2. Exactly what has been done</h2>
+      <p>
+        All of this is <strong>local and uncommitted</strong> on branch
+        <code>dev</code>. Nothing is on GitHub remote, Railway, or
+        <code>localbase.reylabs.in</code> yet.
+      </p>
+      <table>
+        <thead>
+          <tr><th>Item</th><th>Status</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>packages/landing</code> Vite site (<code>@localbase/landing</code>)</td>
+            <td class="ok">Written</td>
+          </tr>
+          <tr>
+            <td>Workspace wiring (root <code>package.json</code> + lockfile)</td>
+            <td class="ok">Done</td>
+          </tr>
+          <tr>
+            <td>Scripts <code>npm run landing:dev</code> / <code>landing:build</code></td>
+            <td class="ok">Added</td>
+          </tr>
+          <tr>
+            <td>Copy, SEO, JSON-LD, theme toggle, Studio screenshots</td>
+            <td class="ok">In</td>
+          </tr>
+          <tr>
+            <td><code>server.mjs</code> (<code>PORT</code> / <code>0.0.0.0</code>, <code>/healthz</code>)</td>
+            <td class="ok">In</td>
+          </tr>
+          <tr>
+            <td><code>railway.json</code> (Railpack, start, healthcheck, restart)</td>
+            <td class="ok">In</td>
+          </tr>
+          <tr>
+            <td>Favicon / OG / apple-touch</td>
+            <td class="ok">Generated</td>
+          </tr>
+          <tr>
+            <td>Typecheck + production build</td>
+            <td class="ok">Passed</td>
+          </tr>
+          <tr>
+            <td>Local serve check</td>
+            <td class="ok"><code>/healthz</code> → <code>ok</code>; HTML, <code>og-image.png</code>, <code>screenshots/studio.png</code> all 200</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Page sections shipped</h3>
+      <ul>
+        <li>Nav (GitHub, theme toggle, install CTA, mobile sheet)</li>
+        <li>Hero: <code>npx @localbase/cli init</code>, Studio screenshot, developer-preview badge</li>
+        <li>Trust strip (local-first, no cloud account, no telemetry, MIT)</li>
+        <li>Features + Admin Studio screenshots</li>
+        <li>Secondary features (auth, realtime, Storage, Jobs, CLI, hot reload, loopback, backups)</li>
+        <li>How it works (init → schema → studio)</li>
+        <li>Install (copyable commands, npm + docs links)</li>
+        <li>Honesty / FAQ (not production, not Postgres, not a Supabase replacement)</li>
+        <li>Footer</li>
+      </ul>
+
+      <h3>How to run locally</h3>
+      <pre><code>npm run landing:dev</code></pre>
+
+      <h3>Explicitly not done</h3>
+      <ul>
+        <li>Git commit</li>
+        <li>Git push</li>
+        <li>Railway project / service</li>
+        <li>Custom domain attach</li>
+        <li>Namecheap DNS</li>
+        <li>GitHub auto-deploy</li>
+        <li>Live URL verification on <code>localbase.reylabs.in</code></li>
+      </ul>
+      <p>
+        Creating a Railway project or service was blocked from this session.
+        The Railway CLI is not installed on this machine.
+      </p>
+
+      <h2>3. What still needs to be done</h2>
+
+      <h3>Step 1 — Review and commit</h3>
+      <ol>
+        <li>Look at the page (<code>npm run landing:dev</code>).</li>
+        <li>Commit <code>packages/landing/</code>, root <code>package.json</code>, and <code>package-lock.json</code>.</li>
+        <li>Push <code>dev</code> (or open a PR). GitHub-connected Railway deploys need this on the remote.</li>
+      </ol>
+
+      <h3>Step 2 — Railway (blocked until confirmed)</h3>
+      <p>
+        Create project <code>LocalBase</code> (choice A), one service, root directory
+        <code>packages/landing</code>:
+      </p>
+      <ul>
+        <li>Build: <code>npm run build</code></li>
+        <li>Start: <code>npm start</code></li>
+        <li>Health: <code>/healthz</code></li>
+        <li>Build-time variable: <code>VITE_SITE_URL=https://localbase.reylabs.in</code> (then redeploy)</li>
+        <li>Generate a <code>*.up.railway.app</code> domain, then attach <code>localbase.reylabs.in</code></li>
+      </ul>
+      <p>
+        Isolated subdirectory deploy matches DevDesk: Railway root directory
+        <code>/packages/landing</code>. The landing package is self-contained and does
+        not depend on other workspace packages at runtime.
+      </p>
+
+      <h3>Step 3 — Namecheap (<code>reylabs.in</code>)</h3>
+      <p>After Railway prints DNS records:</p>
+      <ul>
+        <li>CNAME host <code>localbase</code> → the target Railway gives (often <code>*.up.railway.app</code> or <code>ghs.railway.app</code>)</li>
+        <li>Wait for TLS / domain <code>VERIFIED</code></li>
+      </ul>
+      <p>This step cannot be done from this machine. Namecheap is yours.</p>
+
+      <h3>Step 4 — Prove production</h3>
+      <ul>
+        <li><code>/healthz</code> on the Railway domain</li>
+        <li>Site loads on <code>https://localbase.reylabs.in</code></li>
+        <li>Install copy, GitHub/npm links, screenshots, theme toggle, FAQ</li>
+        <li>OG / canonical URLs use <code>https://localbase.reylabs.in</code></li>
+        <li>Optional later: point package <code>homepage</code> fields at the domain</li>
+      </ul>
+
+      <h3>Step 5 — Optional polish (not required to go live)</h3>
+      <ul>
+        <li>GitHub auto-deploy from <code>dev</code> or <code>main</code> after the first deploy</li>
+        <li>A CI job that only typechecks/builds landing (today it rides along with root <code>npm run build --workspaces</code>)</li>
+        <li>Homepage links on <code>@localbase/*</code> packages once the domain is live</li>
+      </ul>
+
+      <h2>4. What is needed from you</h2>
+      <ol>
+        <li>
+          <strong>Railway topology — pick A, B, or C</strong> (A recommended).
+        </li>
+        <li>
+          <strong>Permission to mutate Railway.</strong> Creating a project or
+          service was blocked last time. Explicit yes to create + deploy.
+        </li>
+        <li>
+          <strong>DNS.</strong> After the domain is attached, you add the CNAME
+          in Namecheap. You will get the exact host/value.
+        </li>
+        <li>
+          <strong>Git.</strong> Confirm whether to commit and push (needed for
+          GitHub-connected deploys). A <code>railway up</code> from
+          <code>packages/landing</code> can ship without a push if the CLI is installed.
+        </li>
+        <li>
+          <strong>CLI vs MCP.</strong> <code>railway</code> is not on this machine.
+          Either install the CLI, or deploy through Railway MCP once create is approved.
+        </li>
+      </ol>
+
+      <h2>5. Sequence after approval</h2>
+      <ol>
+        <li>Commit (and push if GitHub deploys are wanted).</li>
+        <li>Create the Railway project/service as chosen in section 4.</li>
+        <li>Deploy <code>packages/landing</code>, set <code>VITE_SITE_URL</code>, confirm <code>/healthz</code>.</li>
+        <li>Attach <code>localbase.reylabs.in</code> and send the Namecheap record.</li>
+        <li>You add DNS; wait for verify; check the live site.</li>
+      </ol>
+
+      <h2>6. Out of scope for this plan</h2>
+      <ul>
+        <li>Hosting LocalBase itself (API / Studio) on Railway</li>
+        <li>Private beta, npm <code>latest</code> promotion, or the public go decision</li>
+        <li>PostgreSQL or production-backend positioning</li>
+        <li>A docs portal, waitlist, or blog</li>
+      </ul>
+
+      <footer>
+        File: <code>docs/landing-page-plan.html</code>.
+        Source of implementation: <code>packages/landing</code>.
+      </footer>
+    </main>
+  </body>
+</html>
