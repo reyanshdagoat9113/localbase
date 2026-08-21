@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://localbase.reylabs.in/sitemap.xml

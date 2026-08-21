@@ -11,6 +11,7 @@
     "packages/cli",
     "packages/sdk",
     "packages/e2e",
+    "packages/landing",
     "examples/*"
   ],
   "scripts": {
@@ -20,6 +21,8 @@
     "verify:admin-bundle": "npm run verify:admin-bundle --workspace @localbase/core",
     "admin:dev": "npm run dev --workspace @localbase/admin",
     "admin:build": "npm run build --workspace @localbase/admin",
+    "landing:dev": "npm run dev --workspace @localbase/landing",
+    "landing:build": "npm run build --workspace @localbase/landing",
     "test:e2e": "npm run test --workspace @localbase/e2e",
     "e2e:install": "npm run install:browsers --workspace @localbase/e2e",
     "test:unit": "npm run test:release && npm run test --workspace @localbase/shared --if-present && npm run test --workspace @localbase/core --if-present && npm run test --workspace @localbase/sdk --if-present && npm run test --workspace @localbase/cli --if-present",

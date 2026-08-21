@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LocalBase — local SQLite backend with a TypeScript schema</title>
+    <meta
+      name="description"
+      content="Define a TypeScript schema and get a local SQLite backend with a REST API, SDK, auth, realtime, Storage, Jobs, and Admin Studio. No Docker. No cloud account. Developer preview."
+    />
+    <meta name="author" content="LocalBase" />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="canonical" href="/" id="canonical-link" />
+
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="LocalBase" />
+    <meta property="og:url" content="/" id="og-url" />
+    <meta property="og:title" content="LocalBase — local SQLite backend with a TypeScript schema" />
+    <meta
+      property="og:description"
+      content="Schema in TypeScript. REST API, SDK, auth, realtime, Storage, Jobs, and Admin Studio on localhost. Developer preview."
+    />
+    <meta property="og:image" content="/og-image.png" id="og-image" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="LocalBase — local SQLite backend with a TypeScript schema" />
+    <meta
+      name="twitter:description"
+      content="Define a schema, get a local backend. No Docker. No cloud account."
+    />
+    <meta name="twitter:image" content="/og-image.png" id="twitter-image" />
+
+    <script>
+      try {
+        var stored = localStorage.getItem('localbase-site-theme')
+        if (stored === 'light') document.documentElement.classList.remove('dark')
+      } catch (error) {
+        /* localStorage unavailable: keep the default dark class */
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
