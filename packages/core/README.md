@@ -1,6 +1,8 @@
 # @localbase/core
 
-LocalBase server runtime: SQLite, generated REST API, auth, realtime, Storage, Jobs, and the embedded Admin Studio.
+LocalBase server runtime: SQLite, generated REST API, auth, realtime, Storage, Jobs, backups, and the embedded Admin Studio.
+
+Requires Node.js `>=22`. Native addons (`better-sqlite3`, `@node-rs/argon2`) install from prebuilds on supported platforms.
 
 ## Install
 
@@ -8,16 +10,11 @@ LocalBase server runtime: SQLite, generated REST API, auth, realtime, Storage, J
 npm install @localbase/core
 ```
 
-Requires Node.js `>=22`. Native dependencies (`better-sqlite3`, `@node-rs/argon2`) install via prebuilt binaries on supported platforms.
-
-## Usage
-
 Prefer the CLI for local development:
 
 ```bash
 npx @localbase/cli init
-npx @localbase/cli dev
-# After installing @localbase/cli: localbase studio
+npx @localbase/cli studio
 ```
 
 Programmatic use:
@@ -25,11 +22,14 @@ Programmatic use:
 ```ts
 import { Database, createServer } from "@localbase/core";
 
-const db = new Database({ path: ".localbase/data.db", schema: { /* tables */ } });
-const app = createServer(db, schema);
+const schema = { /* tables */ };
+const db = new Database({ path: ".localbase/data.db", schema });
+const app = createServer(db, schema, { admin: { enabled: true } });
 ```
 
-## Related packages
+The CLI also starts the WebSocket realtime server and job scheduler. Embedding those yourself is documented in [docs/CORE.md](https://github.com/reyanshdagoat9113/localbase/blob/dev/docs/CORE.md).
+
+## Related
 
 - [`@localbase/shared`](https://www.npmjs.com/package/@localbase/shared)
 - [`@localbase/sdk`](https://www.npmjs.com/package/@localbase/sdk)

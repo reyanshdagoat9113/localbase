@@ -1,8 +1,9 @@
 # Backup and Recovery
 
-> How to back up and restore a LocalBase preview server. Manual, local, online
-> backups with checksum-verified restore. No automatic, scheduled, remote, or
-> encrypted backups exist yet.
+Part of the [documentation index](./README.md). CLI: [`db backup` / `db restore`](./CLI.md#db).
+
+Manual, local, online backups with checksum-verified restore. No automatic,
+scheduled, remote, or encrypted backups exist yet.
 
 ---
 

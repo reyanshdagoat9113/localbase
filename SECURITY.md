@@ -29,4 +29,4 @@ We aim to acknowledge reports within **72 hours** and to provide a status update
 
 ## Scope notes (preview)
 
-The developer preview is intended for local development, prototypes, and internal tools. Known operational limits (single-process realtime/scheduler, local-disk Storage, TLS termination required for non-loopback deployments, etc.) are documented in the repository README and launch-readiness plan. Reports that rely on intentionally out-of-scope production multi-tenant assumptions may be accepted as feature work rather than security bugs.
+The developer preview is intended for local development, prototypes, and internal tools. Known operational limits (single-process realtime/scheduler, local-disk Storage, TLS termination required for non-loopback deployments, etc.) are documented in the repository [README](README.md) and [docs](docs/README.md). Reports that rely on intentionally out-of-scope production multi-tenant assumptions may be accepted as feature work rather than security bugs.

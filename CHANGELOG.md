@@ -8,6 +8,12 @@ Versions follow [Semantic Versioning](https://semver.org/) with a beta prereleas
 
 ## [Unreleased]
 
+### Documentation
+
+- User docs live under `docs/` (index, getting started, config, CLI, REST, SDK, auth/RLS, realtime, Storage, Jobs, Admin Studio, core, backup)
+- Root README is the product home; package READMEs link to topic docs
+- Corrected the realtime SDK surface (`db.subscribe`, not `db.from(...).subscribe`)
+
 ## [0.1.0-beta.1] — 2026-08-11
 
 Initial developer-preview beta. Intended first registry publish under the `beta` dist-tag (NPM-P0).

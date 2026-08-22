@@ -1,19 +1,18 @@
 # @localbase/cli
 
-Command-line interface for LocalBase: project init, migrations, dev server, Admin Studio, auth, and admin helpers.
+Command-line interface for LocalBase: init, migrations, dev server, Admin Studio, auth, admin roles, Jobs, and backup/restore.
+
+Requires Node.js `>=22`.
+
+The npm package is **`@localbase/cli`**; the binary is **`localbase`**. There is no package named `localbase` on npm.
 
 ## Install
 
 ```bash
 npm install -g @localbase/cli
-# or one-shot without a global install:
+# or:
 npx @localbase/cli init
 ```
-
-Requires Node.js `>=22`.
-
-The npm package is **`@localbase/cli`**; the binary name is **`localbase`**.
-There is no separate package named `localbase` on npm.
 
 ## Quickstart
 
@@ -21,33 +20,29 @@ There is no separate package named `localbase` on npm.
 mkdir my-app && cd my-app
 npx @localbase/cli init
 npx @localbase/cli studio
-# After a global install: localbase studio
 ```
 
-`init` scaffolds the **current working directory** (creates `localbase.config.ts` and `.localbase/`). There is no `init <directory>` form.
+`init` scaffolds the **current directory** (`localbase.config.ts` + `.localbase/`). There is no `init <directory>` form.
 
-Admin Studio is served at `http://127.0.0.1:5180/admin/` (not `/_/admin`).
+Admin Studio: `http://127.0.0.1:5180/admin/`.
 
 ## Commands
 
 ```
-localbase init              Scaffold config + data directory in cwd
-localbase dev               Start API server (default http://127.0.0.1:5180)
-localbase studio            Dev server + open Admin Studio
-localbase db migrate        Apply pending migrations
-localbase db reset          Reset user tables (system tables preserved)
-localbase db backup [out]   Online backup (SQLite + storage + checksums)
-localbase db restore <dir>  Verify and restore a backup (server stopped)
-localbase auth create-user  Create a user (auth.enabled required)
-localbase admin promote     Grant admin role
-localbase jobs list|run|logs  Inspect / trigger scheduled jobs
+localbase init
+localbase dev               # default 127.0.0.1:5180
+localbase studio            # dev + open Admin Studio
+localbase db migrate | reset | backup [out] | restore <dir>
+localbase auth create-user | list-users | reset-password
+localbase admin promote | demote | list
+localbase jobs list | run | logs
 ```
 
-## Developer preview limits
+Flags, env vars, and bind-safety: [docs/CLI.md](https://github.com/reyanshdagoat9113/localbase/blob/dev/docs/CLI.md).
 
-Single-process SQLite runtime (HTTP + realtime + jobs). Local disk Storage.
-Manual backups only. Not positioned as a multi-instance production backend.
-See the root README “Operational limits” section.
+## Developer preview
+
+Single-process SQLite (HTTP + realtime + Jobs). Local-disk Storage. Manual backups. Not a multi-instance production backend. [Operational limits](https://github.com/reyanshdagoat9113/localbase#operational-limits-developer-preview).
 
 ## License
 

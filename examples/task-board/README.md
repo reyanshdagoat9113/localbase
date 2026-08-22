@@ -45,7 +45,8 @@ You need two terminals.
 
 ```bash
 cd examples/task-board
-localbase dev
+npx @localbase/cli dev
+# or, with @localbase/cli installed: localbase dev
 ```
 
 Server runs at `http://localhost:5180`.
@@ -184,7 +185,7 @@ Real-world patterns that come up:
 
 ## Troubleshooting
 
-**"No localbase.config.ts found"** — run `localbase dev` from this folder.
+**"No localbase.config.ts found"** — run the CLI from this folder (`npx @localbase/cli dev`).
 
 **"Failed to fetch"** — make sure `localbase dev` is running on port 5180.
 
@@ -194,6 +195,6 @@ Real-world patterns that come up:
 
 **"FOREIGN KEY constraint failed"** — you're trying to delete a parent with children. See `deleteProject` for the correct order.
 
-**Port 5180 already in use** — `localbase dev --port 5181`, then update `src/api.ts`.
+**Port 5180 already in use** — `npx @localbase/cli dev --port 5181`, then update `src/api.ts`.
 
-**Reset everything** — `localbase db reset` while the dev server is stopped.
+**Reset everything** — `npx @localbase/cli db reset` while the dev server is stopped.

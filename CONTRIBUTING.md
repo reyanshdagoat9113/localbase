@@ -32,7 +32,7 @@ npm run build
 1. Branch from `dev` (or `main` if directed).
 2. Keep PRs focused — see `LOCALBASE-LAUNCH-READINESS.md` for workstream boundaries.
 3. Match existing code style; do not add comments unless they are necessary.
-4. Any PR that changes public behavior must update tests and current-user documentation in the same PR.
+4. Any PR that changes public behavior must update tests and **current-user documentation** in the same PR. User-facing docs live in [`docs/`](docs/README.md); keep the root README as the product home and link out. Do not treat `LOCALBASE-*.md` plan files as the source of truth.
 5. Do not commit secrets, local data under `.localbase/`, or generated release tarballs.
 
 ## Tests
@@ -57,6 +57,13 @@ npm run pack:smoke
 - Describe user-visible impact and how you verified the change.
 - Link related issues.
 - Maintainers may ask for smaller PRs if security, packaging, and docs are mixed without need.
+
+## Documentation
+
+- Index: [`docs/README.md`](docs/README.md)
+- Root [`README.md`](README.md) is the product overview and quickstart, not the full API reference
+- Package READMEs stay short and link to `docs/`
+- Historical design docs at the repo root stay labeled as history
 
 ## Package boundary
 

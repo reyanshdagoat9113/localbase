@@ -22,7 +22,7 @@ LocalBase now includes the complete MVP and post-MVP feature set:
 The product surface is complete enough for external testing. Remaining launch
 work is **process and distribution**, not unfinished realtime/network/E2E gates:
 
-1. documentation consistency (DOCS-P0 — see [`TASKS.md`](TASKS.md) task 2),
+1. documentation — current user docs live in [`docs/`](docs/README.md) (DOCS-P0 — see [`TASKS.md`](TASKS.md) task 2),
 2. versioning + npm beta publication + registry smoke (NPM-P0),
 3. private beta with outside developers (BETA-P0),
 4. an explicit go decision and public promotion assets.

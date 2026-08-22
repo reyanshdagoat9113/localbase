@@ -2,8 +2,8 @@
 
 > **Status: historical vision / architecture sketch.** This document predates
 > the current monorepo layout and shipped feature set. For accurate install,
-> CLI, and API docs use the root [README](./README.md). For launch status see
-> [`TASKS.md`](./TASKS.md) and [`LAUNCH.md`](./LAUNCH.md).
+> CLI, and API docs use [docs/](./docs/README.md) and the root [README](./README.md).
+> For launch status see [`TASKS.md`](./TASKS.md) and [`LAUNCH.md`](./LAUNCH.md).
 >
 > **As-built notes (developer preview):** SQLite only (no Postgres yet); HTTP
 > via **Hono** (not Fastify); no Drizzle ORM; Jobs and manual backup/restore
