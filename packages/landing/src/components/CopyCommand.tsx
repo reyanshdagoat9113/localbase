@@ -25,7 +25,7 @@ export function CopyCommand({ command, className }: CopyCommandProps) {
   return (
     <div
       className={cn(
-        'flex items-center gap-2 rounded-lg border border-border/60 bg-muted/40 py-1.5 pl-4 pr-1.5 font-mono text-sm',
+        'flex items-center gap-2 rounded-lg border border-border/70 bg-muted/85 py-1.5 pl-4 pr-1.5 font-mono text-sm backdrop-blur-sm',
         className,
       )}
     >

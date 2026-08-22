@@ -3,90 +3,84 @@
 @tailwind utilities;
 
 /*
- * Token parity with the app.
- * The :root / .dark blocks below are copied verbatim from apps/renderer/index.css
- * so the site and the product read as the same brand. Do not drift them by hand;
- * re-copy when the app tokens change.
- * The only site-only additions are --accent-brand / --accent-brand-foreground,
- * kept in their own block so parity stays auditable.
+ * Coral Slate scheme (chosen from the palette shortlist, pass 2).
+ * Supersedes app token parity: cool gray-white light / slate dark,
+ * coral reserved for CTAs, links, and focus rings.
  */
 @layer base {
   :root {
-    /* Classic Light Theme - Warm off-white with subtle warmth */
-    --background: 40 20% 97%;                   /* Warm off-white #f8f7f5 */
-    --foreground: 220 20% 11%;                  /* Deep slate #1c1d21 */
+    --background: 210 25% 97%;
+    --foreground: 212 35% 12%;
 
-    --card: 40 15% 99%;                         /* Pure warm white #fdfcfb */
-    --card-foreground: 220 20% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 212 35% 12%;
 
-    --popover: 40 15% 99%;
-    --popover-foreground: 220 20% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 212 35% 12%;
 
-    --primary: 220 15% 18%;                     /* Deep charcoal */
-    --primary-foreground: 40 20% 97%;
+    --primary: 212 30% 16%;
+    --primary-foreground: 210 25% 97%;
 
-    --secondary: 40 10% 94%;                    /* Light warm gray #f1f0ee */
-    --secondary-foreground: 220 15% 18%;
+    --secondary: 210 16% 92%;
+    --secondary-foreground: 212 25% 14%;
 
-    --muted: 40 10% 94%;
-    --muted-foreground: 220 8% 45%;             /* Medium gray - good contrast */
+    --muted: 210 16% 93%;
+    --muted-foreground: 210 10% 40%;
 
-    --accent: 40 10% 90%;                       /* Slightly darker gray #e8e7e5 */
-    --accent-foreground: 220 15% 18%;
+    --accent: 210 16% 89%;
+    --accent-foreground: 212 25% 14%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 40 10% 87%;                       /* Warm gray border */
-    --input: 40 10% 91%;
-    --ring: 220 15% 18%;
+    --border: 210 14% 84%;
+    --input: 210 15% 88%;
+    --ring: 8 78% 42%;
 
     --radius: 0.75rem;
   }
 
   .dark {
-    /* Premium Pure Black Dark Theme */
-    --background: 0 0% 0%;                    /* Pure black #000000 */
-    --foreground: 0 0% 95%;                   /* Almost white */
+    --background: 210 18% 7%;
+    --foreground: 208 20% 91%;
 
-    --card: 0 0% 6%;                          /* Slightly lighter black #0f0f0f */
-    --card-foreground: 0 0% 95%;
+    --card: 210 16% 10%;
+    --card-foreground: 208 20% 91%;
 
-    --popover: 0 0% 3%;
-    --popover-foreground: 0 0% 95%;
+    --popover: 210 18% 8%;
+    --popover-foreground: 208 20% 91%;
 
-    --primary: 0 0% 94%;                      /* White-ish primary */
-    --primary-foreground: 0 0% 5%;
+    --primary: 208 18% 90%;
+    --primary-foreground: 210 30% 8%;
 
-    --secondary: 0 0% 10%;
-    --secondary-foreground: 0 0% 95%;
+    --secondary: 210 14% 14%;
+    --secondary-foreground: 208 18% 90%;
 
-    --muted: 0 0% 10%;
-    --muted-foreground: 0 0% 55%;
+    --muted: 210 14% 14%;
+    --muted-foreground: 208 10% 60%;
 
-    --accent: 0 0% 15%;
-    --accent-foreground: 0 0% 95%;
+    --accent: 209 12% 18%;
+    --accent-foreground: 208 18% 90%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 0 0% 16%;
-    --input: 0 0% 14%;
-    --ring: 0 0% 90%;
+    --border: 209 12% 20%;
+    --input: 210 13% 17%;
+    --ring: 12 92% 66%;
 
     --radius: 0.75rem;
   }
 
-  /* Site-only accent. Taken from the mark itself (favicon column: #6ea8ff),
-   * reserved for CTAs, links, and focus rings. Surfaces stay in app parity. */
+  /* Site-only accent: coral, reserved for CTAs, links, and focus rings. */
   :root {
-    --accent-brand: 214 78% 38%;
+    --accent-brand: 8 78% 42%;
     --accent-brand-foreground: 0 0% 100%;
   }
 
   .dark {
-    --accent-brand: 214 100% 72%;
-    --accent-brand-foreground: 222 47% 8%;
+    --accent-brand: 12 92% 66%;
+    --accent-brand-foreground: 10 45% 8%;
   }
 
   * {
@@ -218,6 +212,42 @@
 .delay-200 { animation-delay: 200ms; }
 .delay-300 { animation-delay: 300ms; }
 
+/* Scene layout — cinematic motion. Reduced-motion is handled below. */
+@keyframes scene-drift {
+  from { transform: scale(1.02); }
+  to { transform: scale(1.1) translateY(-1.5%); }
+}
+
+/* Slow push-in on the opening shot. */
+.scene-drift {
+  animation: scene-drift 28s cubic-bezier(0.25, 0.6, 0.35, 1) forwards;
+}
+
+/* Scroll cue — a line that drips down, like a countdown leader. */
+@keyframes scene-cue {
+  0%, 100% { transform: scaleY(0.35); opacity: 0.35; }
+  50% { transform: scaleY(1); opacity: 0.9; }
+}
+
+.scene-cue {
+  transform-origin: top;
+  animation: scene-cue 2.2s ease-in-out infinite;
+}
+
+/* Act entry reveal. */
+.scene-reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition:
+    opacity 0.7s ease,
+    transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.scene-reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
 /* Phase 4 requirement: respect reduced-motion preferences. */
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-in,
@@ -225,5 +255,16 @@
     animation: none;
     opacity: 1;
     transform: none;
+  }
+
+  .scene-drift,
+  .scene-cue {
+    animation: none;
+  }
+
+  .scene-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
   }
 }

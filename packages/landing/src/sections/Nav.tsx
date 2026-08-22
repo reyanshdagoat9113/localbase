@@ -1,4 +1,5 @@
 import { Github, Menu, Moon, Sun } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
 import { Wordmark } from '@/components/Logo'
 import {
@@ -13,19 +14,52 @@ import {
 } from '@/components/ui'
 import { GITHUB_URL, siteMeta } from '@/config/site'
 import { useTheme } from '@/hooks/useTheme'
+import { cn } from '@/lib/utils'
 
-const links = [
+export const navLinks = [
   { href: '#features', label: 'Features' },
   { href: '#how-it-works', label: 'How it works' },
   { href: '#install', label: 'Install' },
   { href: siteMeta.docsUrl, label: 'Docs', external: true },
 ]
 
-export function Nav() {
+/**
+ * `overlay`: transparent and fixed over the opening scene; turns into the
+ * standard glass bar once the reader scrolls past the hero.
+ */
+export function Nav({
+  className,
+  overlay = false,
+}: {
+  className?: string
+  overlay?: boolean
+}) {
   const { theme, toggle } = useTheme()
+  const [scrolled, setScrolled] = useState(false)
+
+  useEffect(() => {
+    if (!overlay) return
+    const onScroll = () => setScrolled(window.scrollY > window.innerHeight * 0.6)
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [overlay])
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border/40 glass">
+    <header
+      className={cn(
+        'z-40',
+        overlay
+          ? cn(
+              'fixed inset-x-0 top-0 border-b transition-colors duration-300',
+              scrolled
+                ? 'glass border-border/40'
+                : 'border-transparent bg-transparent',
+            )
+          : 'sticky top-0 border-b border-border/40 glass',
+        className,
+      )}
+    >
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-brand focus:px-3 focus:py-2 focus:text-brand-foreground"
@@ -41,7 +75,7 @@ export function Nav() {
         </a>
 
         <ul className="ml-auto hidden items-center gap-0.5 lg:flex">
-          {links.map((link) => (
+          {navLinks.map((link) => (
             <li key={link.label}>
               <a
                 href={link.href}
@@ -87,7 +121,7 @@ export function Nav() {
               </SheetHeader>
               <nav aria-label="Mobile">
                 <ul className="flex flex-col gap-1">
-                  {links.map((link) => (
+                  {navLinks.map((link) => (
                     <li key={link.label}>
                       <SheetClose asChild>
                         <a
