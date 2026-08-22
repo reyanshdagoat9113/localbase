@@ -1,3 +1,5 @@
+import { Check } from 'lucide-react'
+
 import { steps } from '@/config/content'
 
 export function HowItWorks() {
@@ -23,17 +25,18 @@ export function HowItWorks() {
             key={step.n}
             className="flex h-full flex-col gap-3 rounded-xl border border-border/60 bg-card/70 p-6"
           >
-            <span className="font-mono text-xs text-muted-foreground">
+            <span
+              aria-hidden="true"
+              className="font-display text-2xl font-semibold text-muted-foreground/40"
+            >
               {String(step.n).padStart(2, '0')}
             </span>
-            <p className="min-w-0 truncate rounded-md border border-border/60 bg-muted/40 px-3 py-2 font-mono text-[12.5px]">
-              <span className="text-brand" aria-hidden="true">
-                ${' '}
-              </span>
-              {step.command}
-            </p>
-            <p className="text-sm font-medium">{step.result}</p>
+            <h3 className="text-lg font-medium">{step.title}</h3>
             <p className="text-sm leading-relaxed text-muted-foreground">{step.body}</p>
+            <p className="mt-auto flex items-center gap-2 pt-2 text-sm font-medium">
+              <Check className="size-4 shrink-0 text-brand" aria-hidden="true" />
+              {step.result}
+            </p>
           </li>
         ))}
       </ol>

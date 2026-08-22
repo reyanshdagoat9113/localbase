@@ -14,7 +14,7 @@ export const featureRows: FeatureRow[] = [
     id: 'studio',
     eyebrow: 'Admin Studio',
     title: 'Browse and edit data without writing a query',
-    body: 'Admin Studio is served by the same process as the API. Open it with localbase studio, log in, and manage tables, users, Storage, and Jobs in the browser.',
+    body: 'Admin Studio is served by the same process as the API. Open it with the studio command, log in, and manage tables, users, Storage, and Jobs in the browser.',
     bullets: [
       'Table browser and inline row editing',
       'Schema inspector, users, and admin requests',
@@ -39,9 +39,9 @@ export const featureRows: FeatureRow[] = [
     title: 'Query like you would against a hosted backend',
     body: 'The SDK is a Supabase-style builder over the generated REST API: select, insert, update, delete, filters, auth, realtime, and Storage from one client.',
     bullets: [
-      'db.from("posts").select("*").eq("id", 1)',
+      'Chainable queries — select, filter, insert, update, and delete',
       'Auth, realtime, and Storage on the same client',
-      'Every call returns { data, error }',
+      'Predictable responses: your data, or a typed error',
     ],
     showScreenshot: false,
   },
@@ -70,7 +70,7 @@ export const secondaryFeatures: SecondaryFeature[] = [
   },
   {
     key: 'storage',
-    body: 'Private buckets on disk, signed URLs, and a Studio browser. Not a CDN — files live under .localbase/storage/.',
+    body: 'Private buckets on disk, signed URLs, and a Studio browser. Not a CDN — files stay in a folder inside your project.',
   },
   {
     key: 'jobs',
@@ -78,7 +78,7 @@ export const secondaryFeatures: SecondaryFeature[] = [
   },
   {
     key: 'cli',
-    body: 'init, studio, migrate, backup/restore, auth users, admin promote/demote, and jobs — via npx @localbase/cli.',
+    body: 'Scaffold, migrate, back up and restore, manage users and roles, and inspect jobs — all from one CLI.',
   },
   {
     key: 'hot-reload',
@@ -96,7 +96,7 @@ export const secondaryFeatures: SecondaryFeature[] = [
 
 export type Step = {
   n: number
-  command: string
+  title: string
   result: string
   body: string
 }
@@ -104,20 +104,20 @@ export type Step = {
 export const steps: Step[] = [
   {
     n: 1,
-    command: 'npx @localbase/cli init',
-    result: 'scaffolded ./localbase.config.ts',
-    body: 'Scaffolds the current directory: config file, data dir, and nothing else to install.',
+    title: 'Init',
+    result: 'Project scaffolded',
+    body: 'Creates the config file and data folder in the current directory — nothing else to install.',
   },
   {
     n: 2,
-    command: 'edit localbase.config.ts',
-    result: 'migrations applied on save',
-    body: 'Columns, types, and foreign keys are the schema. Save the file — the running server reloads and migrates.',
+    title: 'Define tables',
+    result: 'Migrations applied on save',
+    body: 'Columns, types, and foreign keys in the schema file are the whole schema. Save it and the running server reloads.',
   },
   {
     n: 3,
-    command: 'npx @localbase/cli studio',
-    result: 'api + studio at localhost:5180',
+    title: 'Open Studio',
+    result: 'API and Studio at localhost:5180',
     body: 'Starts the API and opens Admin Studio so you can edit rows immediately.',
   },
 ]
@@ -148,7 +148,7 @@ export const faq: FaqItem[] = [
   {
     question: 'How do I install it?',
     answer:
-      'npx @localbase/cli init in an empty directory, then npx @localbase/cli studio. The binary name is localbase after you install @localbase/cli. There is no npm package named just localbase.',
+      'Two commands do it — both shown in the Install section. The CLI package is @localbase/cli; there is no npm package named just localbase.',
   },
   {
     question: 'What about the other npm package named localbase?',
@@ -163,6 +163,6 @@ export const faq: FaqItem[] = [
   {
     question: 'Where is my data stored?',
     answer:
-      'In a local SQLite file and optional Storage directory under .localbase/ in the project. Back up with localbase db backup. Nothing is uploaded unless your own code does it.',
+      'In a local SQLite file inside your project, plus an optional storage folder for uploads. Back up with a single CLI command. Nothing is uploaded unless your own code does it.',
   },
 ]
