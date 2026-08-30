@@ -103,6 +103,41 @@ export async function loadConfig(
     );
   }
 
+  if (
+    config.auth !== undefined &&
+    (typeof config.auth !== "object" ||
+      config.auth === null ||
+      Array.isArray(config.auth))
+  ) {
+    throw new ConfigError(
+      `Invalid config: "auth" must be an object.`,
+      `Example: auth: { enabled: true, jwtSecret: process.env.JWT_SECRET }`
+    );
+  }
+
+  if (
+    config.auth?.enabled !== undefined &&
+    typeof config.auth.enabled !== "boolean"
+  ) {
+    throw new ConfigError(
+      `Invalid config: "auth.enabled" must be a boolean.`,
+      `Use auth: { enabled: false } to explicitly disable auth.`
+    );
+  }
+
+  // Auth is on unless the config explicitly opts out. Applying the default
+  // here (not just inside core's createServer) keeps every auth-aware code
+  // path consistent: `dev`'s bind policy, `localbase auth` / `admin`
+  // commands, and the Studio login flow all see the same effective config.
+  // `enabled: false` in the file still wins — spread order preserves it.
+  config = {
+    ...config,
+    auth: {
+      ...config.auth,
+      enabled: config.auth?.enabled ?? true,
+    },
+  };
+
   validatePolicies(config);
   validateBuckets(config);
   validateStorage(config);

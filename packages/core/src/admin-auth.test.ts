@@ -187,7 +187,7 @@ describe("requireAdmin middleware", () => {
     const { db, auth } = newAuthDb();
     // A minimal app that uses requireAdmin directly so we test the
     // middleware in isolation.
-    const app = createServer(db, testSchema, {});
+    const app = createServer(db, testSchema, { auth: { enabled: false } });
     app.get("/_test/admin-only", requireAdmin(SECRET, db), (c) =>
       c.json({ data: "ok" })
     );
@@ -305,7 +305,9 @@ describe("requireAdmin middleware", () => {
         "WRONG-SECRET",
         "1h"
       );
-      const forgedApp = createServer(db, testSchema, {});
+      const forgedApp = createServer(db, testSchema, {
+        auth: { enabled: false },
+      });
       forgedApp.get("/_test/admin-only", requireAdmin(SECRET, db), (c) =>
         c.json({ data: "ok" })
       );
@@ -638,7 +640,11 @@ describe("No-auth mode (admin API ungated — the posture the CLI gate protects)
     // that would silently break the no-auth dev workflow.
     const db = new Database({ schema: testSchema });
     try {
-      const app = createServer(db, testSchema, { admin: { enabled: true } });
+      const app = createServer(db, testSchema, {
+        admin: { enabled: true },
+        // Pin the explicit no-auth posture these tests exercise.
+        auth: { enabled: false },
+      });
 
       const get = await app.request("/_api/admin/schema");
       assert.equal(get.status, 200);
@@ -653,6 +659,40 @@ describe("No-auth mode (admin API ungated — the posture the CLI gate protects)
       assert.equal(post.status, 201);
       const postBody = await post.json();
       assert.equal(postBody.data.title, "ungated-insert");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("GET /_api/admin/meta reports authEnabled: false", async () => {
+    // The Studio boots against this endpoint: auth-off servers must never
+    // show a login screen, so meta must be reachable and honest.
+    const db = new Database({ schema: testSchema });
+    try {
+      const app = createServer(db, testSchema, {
+        admin: { enabled: true },
+        auth: { enabled: false },
+      });
+      const res = await app.request("/_api/admin/meta");
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.data.authEnabled, false);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("GET /_api/admin/meta is ungated even when auth is on", async () => {
+    const { db } = newAuthDb();
+    try {
+      const app = createServer(db, testSchema, {
+        auth: { enabled: true, jwtSecret: SECRET },
+        admin: { enabled: true },
+      });
+      const res = await app.request("/_api/admin/meta");
+      assert.equal(res.status, 200);
+      const body = await res.json();
+      assert.equal(body.data.authEnabled, true);
     } finally {
       db.close();
     }

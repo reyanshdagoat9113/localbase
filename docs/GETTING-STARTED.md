@@ -1,6 +1,6 @@
 # Getting started
 
-Define a schema, get a REST API plus optional auth, Storage, realtime, Jobs, and Admin Studio. No Docker, no cloud account.
+Define a schema, get a REST API plus default-on auth, Storage, realtime, Jobs, and Admin Studio. No Docker, no cloud account.
 
 **Developer preview.** Single-process SQLite for local development, prototypes, and small internal tools. Read [operational limits](../README.md#operational-limits-developer-preview) before binding beyond loopback.
 
@@ -37,6 +37,10 @@ The npm package is `@localbase/cli`; the binary is `localbase`. After `npm insta
 
 ```ts
 export default {
+  auth: {
+    enabled: true,
+    jwtSecret: process.env.JWT_SECRET ?? "replace-with-a-long-random-secret",
+  },
   tables: {
     posts: {
       id: { type: "integer", primaryKey: true, autoIncrement: true },
@@ -54,6 +58,8 @@ export default {
   },
 };
 ```
+
+`localbase init` has already generated the fallback secret in your project.
 
 Column types, migrations, and the rest of the config: [CONFIG](./CONFIG.md).
 
@@ -103,7 +109,7 @@ Every SDK method returns `{ data, error }` — it does not throw on HTTP errors.
 
 ---
 
-## Enable auth (optional)
+## Use auth
 
 ```ts
 export default {
@@ -115,7 +121,13 @@ export default {
 };
 ```
 
-Restart the server. System tables `_users`, `_sessions`, and `_admin_requests` are created automatically and survive `db reset`.
+Auth is enabled by default, and `localbase init` scaffolds the block above with
+a random per-project fallback secret. A hand-written config that omits the
+section also enables auth, but uses an ephemeral secret that changes on every
+restart. Set `auth: { enabled: false }` only when you intentionally want an
+ungated, loopback-only development server.
+
+System tables `_users`, `_sessions`, and `_admin_requests` are created automatically and survive `db reset`.
 
 ```ts
 await db.auth.signUp({ email: "you@example.com", password: "supersecret" });

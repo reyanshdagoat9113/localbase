@@ -33,9 +33,9 @@ export interface DatabaseOptions {
   /** The schema definition. */
   schema: DatabaseSchema;
   /**
-   * If provided with `enabled: true`, LocalBase will provision the `_users`
-   * `_sessions`, and `_admin_requests` system tables and prepare for the auth
-   * router to mount.
+   * If provided without `enabled: false`, LocalBase will provision the
+   * `_users`, `_sessions`, and `_admin_requests` system tables and prepare for
+   * the auth router to mount.
    * The user never has to declare these tables in their `schema` — they're
    * added here automatically.
    */
@@ -95,12 +95,13 @@ export class Database extends EventEmitter<DatabaseEvents> {
 
     this.db = new BetterSqlite3(path);
     this.schema = schema;
-    this.authConfig = auth;
+    this.authConfig =
+      auth && auth.enabled !== false ? { ...auth, enabled: true } : undefined;
 
     // System tables get the `_` prefix, which `resetDatabase` filters out, so
     // user resets never wipe auth, storage, or job-run metadata.
     this.effectiveSchema = { ...schema, ...STORAGE_SCHEMA };
-    if (auth?.enabled) {
+    if (this.authConfig) {
       this.effectiveSchema = { ...this.effectiveSchema, ...AUTH_SCHEMA };
     }
     // The jobs table is only provisioned when a `jobs` map is configured —
@@ -185,17 +186,15 @@ export class Database extends EventEmitter<DatabaseEvents> {
    * `auth` to the `Database` constructor.
    */
   enableAuth(config: AuthConfig): void {
-    if (this.authConfig?.enabled) return;
-    this.authConfig = config;
-    if (config.enabled) {
-      this.effectiveSchema = {
-        ...this.schema,
-        ...STORAGE_SCHEMA,
-        ...(this.jobsEnabled ? JOBS_SCHEMA : {}),
-        ...AUTH_SCHEMA,
-      };
-      this.migrate();
-    }
+    if (this.authConfig || config.enabled === false) return;
+    this.authConfig = { ...config, enabled: true };
+    this.effectiveSchema = {
+      ...this.schema,
+      ...STORAGE_SCHEMA,
+      ...(this.jobsEnabled ? JOBS_SCHEMA : {}),
+      ...AUTH_SCHEMA,
+    };
+    this.migrate();
   }
 
   /**

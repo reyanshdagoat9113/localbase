@@ -111,10 +111,10 @@ test("publish:prerelease dry-runs locally; execute skips provenance off GHA", ()
   const bin = path.join(root, "bin");
   const log = path.join(root, "npm.log");
   fs.mkdirSync(bin);
+  const stubScript = path.join(bin, "npm-stub.mjs");
   fs.writeFileSync(
-    path.join(bin, "npm"),
-    `#!/usr/bin/env node
-import fs from "node:fs";
+    stubScript,
+    `import fs from "node:fs";
 fs.appendFileSync(process.env.NPM_LOG, JSON.stringify(process.argv.slice(2)) + "\\n");
 if (process.argv[2] === "view") {
   console.error("npm error code E404\\n404 Not Found");
@@ -122,7 +122,16 @@ if (process.argv[2] === "view") {
 }
 `
   );
-  fs.chmodSync(path.join(bin, "npm"), 0o755);
+  const npmStub = path.join(bin, process.platform === "win32" ? "npm.cmd" : "npm");
+  fs.writeFileSync(
+    npmStub,
+    process.platform === "win32"
+      ? `@echo off\r\n"${process.execPath}" "%~dp0npm-stub.mjs" %*\r\n`
+      : `#!/usr/bin/env node
+import "./npm-stub.mjs";
+`
+  );
+  fs.chmodSync(npmStub, 0o755);
   // Unset GITHUB_ACTIONS so local execute path is exercised even when tests
   // themselves run inside Actions.
   const env = {

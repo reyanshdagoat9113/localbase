@@ -22,7 +22,7 @@ npx @localbase/cli init
 npx @localbase/cli studio
 ```
 
-`init` scaffolds the **current directory** (`localbase.config.ts` + `.localbase/`). There is no `init <directory>` form.
+`init` scaffolds the **current directory** (`localbase.config.ts` with auth enabled and a random per-project fallback secret, plus `.localbase/`). There is no `init <directory>` form.
 
 Admin Studio: `http://127.0.0.1:5180/admin/`.
 

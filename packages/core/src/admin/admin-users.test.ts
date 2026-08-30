@@ -430,7 +430,11 @@ describe("user endpoints are gated on auth being enabled", () => {
     const db = new Database({ schema: testSchema });
     try {
       // admin enabled but no auth → no Auth instance → user routes not mounted.
-      const app = createServer(db, testSchema, { admin: { enabled: true } });
+      const app = createServer(db, testSchema, {
+        admin: { enabled: true },
+        // Pin the explicit no-auth posture these tests exercise.
+        auth: { enabled: false },
+      });
       const res = await app.request("/_api/admin/users");
       assert.equal(res.status, 404);
     } finally {

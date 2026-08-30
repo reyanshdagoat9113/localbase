@@ -38,7 +38,9 @@ function setup(auth = false) {
       description: "Remove expired data",
     },
   };
-  const authConfig = auth ? { enabled: true, jwtSecret: secret } : undefined;
+  const authConfig = auth
+    ? { enabled: true, jwtSecret: secret }
+    : { enabled: false };
   const db = new Database({ schema, jobs, auth: authConfig, dataDir: root });
   const scheduler = new Scheduler({ db, cwd: root, jobs });
   scheduler.start();

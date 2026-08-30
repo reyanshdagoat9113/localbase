@@ -416,6 +416,18 @@ describe("Database + auth", () => {
     db.close();
   });
 
+  it("provisions auth tables when the auth object omits enabled", () => {
+    const db = new Database({
+      schema: testSchema,
+      auth: { jwtSecret: TEST_SECRET },
+    });
+    const applied = db.getAppliedMigrations();
+    assert.ok(applied.has("_users"));
+    assert.ok(applied.has("_sessions"));
+    assert.equal(db.getAuthConfig()?.enabled, true);
+    db.close();
+  });
+
   it("preserves _users across db.reset()", () => {
     const db = makeDb();
     // Insert a user
@@ -953,14 +965,25 @@ describe("auth disabled", () => {
       body: JSON.stringify({ email: "x@y.com", password: "supersecret" }),
     });
     assert.equal(res.status, 404);
+    // The fallthrough must explain the real problem, not masquerade as the
+    // generic table API's `Unknown table: "auth"`.
+    const body = (await res.json()) as { error?: string };
+    assert.match(body.error ?? "", /auth is disabled/i);
     db.close();
   });
 
-  it("does not mount auth routes when no auth config is given", async () => {
+  it("auth is ENABLED when no auth config is given (safe default)", async () => {
     const db = new Database({ schema: testSchema });
     const app = createServer(db, testSchema);
-    const res = await app.request("/api/auth/user");
-    assert.equal(res.status, 404);
+    // The auth router is mounted...
+    const signup = await app.request("/api/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "x@y.com", password: "supersecret" }),
+    });
+    assert.equal(signup.status, 201);
+    // ...and the auth tables are provisioned on the database.
+    assert.ok(db.introspect().tables.some((t) => t.name === "_users"));
     db.close();
   });
 

@@ -1,4 +1,5 @@
 import { existsSync, rmSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { DATA_DIR } from "./lib/env.js";
 
 /**
@@ -16,6 +17,44 @@ export default async function globalTeardown(): Promise<void> {
   if (process.env.LOCALBASE_E2E_DATA_DIR) return;
 
   if (existsSync(DATA_DIR)) {
-    rmSync(DATA_DIR, { recursive: true, force: true });
+    try {
+      rmSync(DATA_DIR, { recursive: true, force: true });
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (
+        process.platform !== "win32" ||
+        !code ||
+        !["EBUSY", "ENOTEMPTY", "EPERM"].includes(code)
+      ) {
+        throw err;
+      }
+
+      // Playwright runs globalTeardown before it terminates webServer. Windows
+      // will not unlink the SQLite files while that process still has them
+      // open, so hand cleanup to a detached helper that retries after the
+      // runner has shut the server down. Do not make an otherwise-green suite
+      // fail solely because of teardown ordering.
+      const cleanup = `
+        const fs = require("node:fs");
+        const target = process.argv[1];
+        let attempts = 0;
+        const remove = () => {
+          try {
+            fs.rmSync(target, { recursive: true, force: true });
+            process.exit(0);
+          } catch {
+            if (++attempts >= 50) process.exit(0);
+            setTimeout(remove, 200);
+          }
+        };
+        remove();
+      `;
+      const child = spawn(process.execPath, ["-e", cleanup, DATA_DIR], {
+        detached: true,
+        stdio: "ignore",
+        windowsHide: true,
+      });
+      child.unref();
+    }
   }
 }

@@ -82,7 +82,11 @@ auth: {
 }
 ```
 
-If `jwtSecret` is omitted, a random secret is generated and a warning is logged. Every restart then signs everyone out. Use a stable secret outside throwaway local use.
+Auth is enabled by default, including when this section is omitted. Set
+`auth: { enabled: false }` to opt out explicitly. `localbase init` writes a
+stable, random per-project fallback secret. If `jwtSecret` is omitted, a random
+secret is generated at startup and a warning is logged; every restart then
+signs everyone out. Use a stable secret outside throwaway local use.
 
 Details: [AUTH](./AUTH.md).
 

@@ -68,6 +68,7 @@ export interface AdminRouterOptions {
  * Endpoints (all paths absolute — the host mounts this at root with
  * `app.route("/", createAdminRouter(...))`):
  *
+ *   GET    /_api/admin/meta            → { authEnabled } (ungated, SPA bootstrap)
  *   GET    /_api/admin/schema          → full introspected schema
  *   GET    /_api/admin/tables          → list of table names + row counts
  *   GET    /_api/admin/tables/:t/rows  → paginated/sorted/filtered rows
@@ -107,6 +108,20 @@ export function createAdminRouter(
   // messaging). The variable is only populated when the gate runs, which is
   // exactly when these handlers are reachable.
   const router = new Hono<{ Variables: AdminVariables }>();
+
+  // ── GET /_api/admin/meta ───────────────────────────────────
+  // Registered BEFORE the auth gate below so it is reachable in both
+  // postures. The SPA consults it at boot to learn whether the server has
+  // auth on: when auth is disabled the Studio must skip its login screen
+  // (the /api/auth/* endpoints don't exist in that mode), not render a
+  // sign-in form that can never succeed. Leaks nothing sensitive — only
+  // whether auth is on, which any /api/auth probe reveals anyway.
+  router.get("/_api/admin/meta", (c) => {
+    c.header("Cache-Control", "no-store");
+    return c.json({
+      data: { authEnabled: options.requireAdminSecret !== undefined },
+    });
+  });
 
   // ── Auth gate (optional, but strongly recommended) ──
   // Applied as a wildcard middleware so it runs before every route below.

@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { Database } from "@localbase/core";
 
 /**
@@ -75,10 +76,15 @@ interface RunResult {
 }
 
 function run(args: string[], dir: string): RunResult {
+  // Resolve tsx's CLI entry directly: `npx` is a .cmd shim on Windows that
+  // execFileSync cannot spawn without a shell.
+  const tsxCli = createRequire(path.join(repoRoot, "package.json")).resolve(
+    "tsx/cli"
+  );
   try {
     const stdout = execFileSync(
-      "npx",
-      ["tsx", path.join(repoRoot, "src/index.ts"), ...args],
+      process.execPath,
+      [tsxCli, path.join(repoRoot, "src/index.ts"), ...args],
       {
         cwd: dir,
         encoding: "utf8",

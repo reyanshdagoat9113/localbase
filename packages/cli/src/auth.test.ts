@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 
 /**
  * CLI auth management tests.
@@ -48,10 +49,15 @@ interface RunResult {
 }
 
 function run(args: string[], dir: string): RunResult {
+  // Resolve tsx's CLI entry directly: `npx` is a .cmd shim on Windows that
+  // execFileSync cannot spawn without a shell.
+  const tsxCli = createRequire(path.join(repoRoot, "package.json")).resolve(
+    "tsx/cli"
+  );
   try {
     const stdout = execFileSync(
-      "npx",
-      ["tsx", path.join(repoRoot, "src/index.ts"), ...args],
+      process.execPath,
+      [tsxCli, path.join(repoRoot, "src/index.ts"), ...args],
       {
         cwd: dir,
         encoding: "utf8",
@@ -130,8 +136,13 @@ describe("localbase auth create-user", () => {
 
       // Now set the env vars by passing them through the spawn.
       const withEnv = execFileSync(
-        "npx",
-        ["tsx", path.join(repoRoot, "src/index.ts"), "auth", "create-user"],
+        process.execPath,
+        [
+          createRequire(path.join(repoRoot, "package.json")).resolve("tsx/cli"),
+          path.join(repoRoot, "src/index.ts"),
+          "auth",
+          "create-user",
+        ],
         {
           cwd: dir,
           encoding: "utf8",

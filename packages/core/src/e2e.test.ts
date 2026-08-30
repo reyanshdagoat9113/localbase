@@ -54,7 +54,7 @@ describe("End-to-end: init → dev → SDK CRUD", () => {
       schema,
     });
 
-    const app = createServer(db, schema);
+    const app = createServer(db, schema, { auth: { enabled: false } });
     server = serve({ fetch: app.fetch, port: 0 });
     const port = (server.address() as { port: number }).port;
     baseUrl = `http://localhost:${port}`;

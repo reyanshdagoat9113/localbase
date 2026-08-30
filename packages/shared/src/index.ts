@@ -19,17 +19,19 @@ export interface DatabaseSchema {
 }
 
 /**
- * Configuration for the optional auth subsystem.
+ * Configuration for the auth subsystem, which is enabled by default.
  *
- * When `enabled: true`, LocalBase provisions the `_users` and `_sessions`
- * system tables and exposes `/api/auth/*` endpoints.
+ * Omit the whole section (or set `enabled: true`) to provision the `_users`
+ * and `_sessions` system tables and expose `/api/auth/*` endpoints. Set
+ * `enabled: false` to explicitly opt out.
  *
  * If `jwtSecret` is omitted, a random one is generated at startup and a
  * warning is logged. In production, always set an explicit secret — random
  * secrets are invalidated on every restart and will sign everyone out.
  */
 export interface AuthConfig {
-  enabled: boolean;
+  /** Set to false to opt out. Auth defaults to enabled. */
+  enabled?: boolean;
   jwtSecret?: string;
   /** JWT expiry shorthand accepted by `jose` (e.g. "1h", "15m", "7d"). Default: "1h" */
   accessTokenExpiry?: string;

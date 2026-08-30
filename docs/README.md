@@ -1,6 +1,6 @@
 # LocalBase documentation
 
-LocalBase is a **single-process SQLite backend** for local development, prototypes, and small internal tools. You declare tables in `localbase.config.ts`; the CLI starts a REST API, optional auth, Storage, realtime, Jobs, and Admin Studio.
+LocalBase is a **single-process SQLite backend** for local development, prototypes, and small internal tools. You declare tables in `localbase.config.ts`; the CLI starts a REST API, default-on auth, Storage, realtime, Jobs, and Admin Studio.
 
 **Developer preview** (`0.1.0-beta.x`). APIs can still change. It is not a multi-instance production platform. Read [Operational limits](../README.md#operational-limits-developer-preview) before exposing it beyond loopback.
 

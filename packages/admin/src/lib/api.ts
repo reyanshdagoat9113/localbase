@@ -246,6 +246,22 @@ export async function createOwner(
   return session;
 }
 
+export interface ServerMeta {
+  authEnabled: boolean;
+}
+
+/**
+ * Ungated by design (`/_api/admin/meta` is registered before the admin auth
+ * gate). The Studio consults it at boot: when the server has auth disabled
+ * there is no `/api/auth/*` surface at all, so the login screen must be
+ * skipped, not shown to fail.
+ */
+export async function getMeta(): Promise<ServerMeta> {
+  return unwrap<ServerMeta>(
+    await rawFetch("/_api/admin/meta", { method: "GET" }, { withAuth: false })
+  );
+}
+
 export async function getAdminRegistration(): Promise<{
   ownerExists: boolean;
 }> {

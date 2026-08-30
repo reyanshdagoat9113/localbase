@@ -26,7 +26,7 @@ export const featureRows: FeatureRow[] = [
     id: 'table',
     eyebrow: 'Schema as config',
     title: 'A TypeScript file is the source of truth',
-    body: 'Tables, columns, references, and optional auth live in localbase.config.ts. Save the file and the dev server hot-reloads. Migrations are generated and applied for you.',
+    body: 'Tables, columns, references, and default-on auth live in localbase.config.ts. Save the file and the dev server hot-reloads. Migrations are generated and applied for you.',
     bullets: [
       'SQLite with auto-migrations from your schema',
       'Generated REST CRUD at localhost:5180',

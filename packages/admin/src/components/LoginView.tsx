@@ -8,7 +8,7 @@ import {
 } from "@/lib/api";
 
 export function LoginView() {
-  const { isAuthenticated, signIn, createOwner } = useAuth();
+  const { isAuthenticated, authEnabled, signIn, createOwner } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [mode, setMode] = useState<"signin" | "register">("signin");
@@ -18,14 +18,18 @@ export function LoginView() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (authEnabled !== true) return;
     getAdminRegistration()
       .then(({ ownerExists }) => setOwnerExists(ownerExists))
       .catch((err) =>
         setError(err instanceof ApiError ? err.message : "Unable to load registration status.")
       );
-  }, []);
+  }, [authEnabled]);
 
-  if (isAuthenticated) return <Navigate to="/tables" replace />;
+  if (isAuthenticated || authEnabled === false) {
+    return <Navigate to="/tables" replace />;
+  }
+  if (authEnabled === null) return null;
 
   async function submit(event: FormEvent) {
     event.preventDefault();

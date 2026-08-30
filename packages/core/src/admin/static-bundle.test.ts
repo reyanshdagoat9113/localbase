@@ -110,7 +110,11 @@ describeIfWorkspace("M6 — static mount serves the bundled SPA", () => {
     // whether the embedded bundle is in place. This lets the test be
     // diagnostic even when the postbuild copy hasn't run yet.
     process.env.LOCALBASE_ADMIN_DIST = ADMIN_DIST;
-    app = createServer(db, testSchema, { admin: { enabled: true } });
+    app = createServer(db, testSchema, {
+      admin: { enabled: true },
+      // Pin the explicit no-auth posture these tests exercise.
+      auth: { enabled: false },
+    });
   });
 
   after(() => {
@@ -202,7 +206,11 @@ describeIfBundle("M6 — end-to-end admin flow (load → list → edit → delet
       { title: "Second task", done: 0 },
       { title: "Done task", done: 1 },
     ]);
-    app = createServer(db, testSchema, { admin: { enabled: true } });
+    app = createServer(db, testSchema, {
+      admin: { enabled: true },
+      // Pin the explicit no-auth posture these tests exercise.
+      auth: { enabled: false },
+    });
   });
 
   after(() => {

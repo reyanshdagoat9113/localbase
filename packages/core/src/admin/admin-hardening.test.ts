@@ -52,7 +52,10 @@ function ungatedApp(schema: DatabaseSchema = baseSchema): {
   app: Hono;
 } {
   const db = track(new Database({ schema }));
-  const app = createServer(db, schema, { admin: { enabled: true } });
+  const app = createServer(db, schema, {
+    admin: { enabled: true },
+    auth: { enabled: false },
+  });
   return { db, app };
 }
 
@@ -610,7 +613,10 @@ describe("Injection guard: SQL in eq/like/in VALUES is bound, not interpolated",
     });
     db.insert("t", { name: "alice" }); // id 1
     db.insert("t", { name: "bob" }); // id 2
-    const app = createServer(db, baseSchema, { admin: { enabled: true } });
+    const app = createServer(db, baseSchema, {
+      admin: { enabled: true },
+      auth: { enabled: false },
+    });
 
     const build = (params: Record<string, string>) =>
       `/_api/admin/tables/t/rows?${new URLSearchParams(params)}`;
@@ -686,7 +692,10 @@ describe("Pagination bounds (limit/offset validation)", () => {
     db.insert("t", { name: "a" });
     db.insert("t", { name: "b" });
     db.insert("t", { name: "c" });
-    const app = createServer(db, baseSchema, { admin: { enabled: true } });
+    const app = createServer(db, baseSchema, {
+      admin: { enabled: true },
+      auth: { enabled: false },
+    });
     const res = await app.request("/_api/admin/tables/t/rows?limit=0");
     const { status, body } = await parseResponse(res);
     assert.equal(status, 200);
@@ -699,7 +708,10 @@ describe("Pagination bounds (limit/offset validation)", () => {
     db.insert("t", { name: "a" });
     db.insert("t", { name: "b" });
     db.insert("t", { name: "c" });
-    const app = createServer(db, baseSchema, { admin: { enabled: true } });
+    const app = createServer(db, baseSchema, {
+      admin: { enabled: true },
+      auth: { enabled: false },
+    });
 
     const page = await app.request(
       "/_api/admin/tables/t/rows?limit=2&offset=1&order=id.asc"
@@ -724,7 +736,10 @@ describe("Pagination bounds (limit/offset validation)", () => {
     const db = track(new Database({ schema: baseSchema }));
     db.insert("t", { name: "a" });
     db.insert("t", { name: "b" });
-    const app = createServer(db, baseSchema, { admin: { enabled: true } });
+    const app = createServer(db, baseSchema, {
+      admin: { enabled: true },
+      auth: { enabled: false },
+    });
 
     const beyond = await app.request("/_api/admin/tables/t/rows?limit=5&offset=999");
     const beyondBody = await parseResponse(beyond);

@@ -411,9 +411,15 @@ function buildBodyLimitMiddleware(security?: SecurityConfig): MiddlewareHandler 
 
 export interface CreateServerOptions {
   /**
-   * If `auth.enabled` is true, mounts the `/api/auth/*` router. The
-   * `requireAuth` middleware is also exposed via `getAuthMiddleware()`
-   * on the returned app so callers can protect their own routes.
+   * Mounts the `/api/auth/*` router. Auth is ENABLED by default — omit the
+   * option (or set `enabled: true`) to get signup/signin/token routes plus
+   * the gated admin posture. Only `auth: { enabled: false }` turns it off,
+   * which also leaves the admin API ungated (localhost binding is then the
+   * host's responsibility). When no `jwtSecret` is provided, a random one
+   * is generated per process and callers are warned — set a stable secret
+   * for anything beyond a throwaway server. The `requireAuth` middleware is
+   * also exposed via `getAuthMiddleware()` on the returned app so callers
+   * can protect their own routes.
    */
   auth?: AuthConfig;
   /**
@@ -463,8 +469,9 @@ export function createServer(
 
   // Row-Level Security requires auth: without an authenticated user there is no
   // owner to scope by. Fail loudly at startup rather than silently ignoring
-  // policies (which would leave data exposed).
-  if (normalized.policies && !normalized.auth?.enabled) {
+  // policies (which would leave data exposed). Auth is on by default, so this
+  // only fires when the config explicitly turns auth off alongside policies.
+  if (normalized.policies && normalized.auth?.enabled === false) {
     throw new Error(
       "[localbase] Row-Level Security policies require auth to be enabled. " +
         'Set auth.enabled = true in localbase.config.ts.'
@@ -494,24 +501,37 @@ export function createServer(
     max: normalized.security?.rateLimits?.max ?? 20,
   });
 
-  // ── Auth router (optional) ──
+  // ── Auth router (on by default) ──
+  // Auth is ENABLED unless the config explicitly opts out with
+  // `auth: { enabled: false }`. A backend that silently boots with no
+  // authentication is how the Admin Studio ends up showing a login page
+  // that can never succeed — the safe default is the other way around.
+  //
   // Mounted first so its specific paths (`/api/auth/signup`, etc.) take
   // precedence over the generic `/api/:table/:id` routes below. Without
   // this, `GET /api/auth/user` would be interpreted as a request for row
   // `user` of table `auth`.
+  const authEnabled = normalized.auth?.enabled !== false;
+  // The resolved config the auth subsystem runs with. Absent config means
+  // the default-on posture above: auth runs with an ephemeral secret until
+  // the user sets `auth.jwtSecret` (warned at startup below).
+  const effectiveAuth: AuthConfig = {
+    ...normalized.auth,
+    enabled: authEnabled,
+  };
   let authRouter: ReturnType<typeof createAuthRouter> | null = null;
   // `resolvedSecret` and `auth` are hoisted out so the admin block can reuse
   // them: the secret gates `/_api/admin/*` with `requireAdmin`, and `auth`
   // mounts the Auth Manager endpoints. Both are only set when auth is enabled.
   let resolvedSecret: string | undefined;
   let auth: Auth | undefined;
-  if (normalized.auth?.enabled) {
+  if (authEnabled) {
     // Ensure the auth tables exist on this database. This covers the case
     // where the user passed auth to createServer but not to the Database
     // constructor (e.g. legacy third-arg form). When both are passed,
     // this is a no-op.
-    db.enableAuth(normalized.auth);
-    const { config, secretWasGenerated } = resolveAuthConfig(normalized.auth);
+    db.enableAuth(effectiveAuth);
+    const { config, secretWasGenerated } = resolveAuthConfig(effectiveAuth);
     resolvedSecret = config.jwtSecret;
     if (secretWasGenerated) {
       console.warn(
@@ -525,6 +545,20 @@ export function createServer(
       rateLimit: rateLimitMiddleware,
     });
     app.route("/", authRouter);
+  } else {
+    // Auth explicitly disabled: intercept `/api/auth/*` before the generic
+    // `/api/:table` routes see it. Without this, a sign-in attempt would be
+    // parsed as CRUD against a table named "auth" and fail with the baffling
+    // `Unknown table: "auth"` instead of explaining the actual problem.
+    app.all("/api/auth/*", (c) =>
+      c.json(
+        {
+          error:
+            "Auth is disabled in this project. Set auth: { enabled: true } in localbase.config.ts.",
+        },
+        404
+      )
+    );
   }
 
   // ── Admin (optional) ──
@@ -533,12 +567,12 @@ export function createServer(
   // Gating policy (Decision #6 / #10 of the admin plan):
   //   - When auth is enabled, every /_api/admin/* route is gated by
   //     requireAdmin(secret), which re-reads the live role from _users.
-  //   - When auth is disabled, the admin API mounts UNGATED. Core cannot
-  //     know the network binding, so it logs a warning; the CLI enforces
-  //     the localhost-only policy and refuses public exposure unless the
-  //     user passes an explicit `--admin-unsafe-public` flag.
+  //   - When auth is explicitly disabled, the admin API mounts UNGATED. Core
+  //     cannot know the network binding, so it logs a warning; the CLI
+  //     enforces the localhost-only policy and refuses public exposure unless
+  //     the user passes an explicit `--admin-unsafe-public` flag.
   if (normalized.admin?.enabled) {
-    if (!normalized.auth?.enabled) {
+    if (!authEnabled) {
       console.warn(
         "[localbase] Admin UI is enabled with auth disabled. The admin " +
           "API is therefore UNGATED — anyone who can reach this port has " +

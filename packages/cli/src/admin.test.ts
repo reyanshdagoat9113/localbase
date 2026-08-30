@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 
 /**
  * CLI admin role management tests.
@@ -55,10 +56,15 @@ interface RunResult {
 }
 
 function run(args: string[], dir: string): RunResult {
+  // Resolve tsx's CLI entry directly: `npx` is a .cmd shim on Windows that
+  // execFileSync cannot spawn without a shell.
+  const tsxCli = createRequire(path.join(repoRoot, "package.json")).resolve(
+    "tsx/cli"
+  );
   try {
     const stdout = execFileSync(
-      "npx",
-      ["tsx", path.join(repoRoot, "src/index.ts"), ...args],
+      process.execPath,
+      [tsxCli, path.join(repoRoot, "src/index.ts"), ...args],
       {
         cwd: dir,
         encoding: "utf8",
@@ -123,12 +129,13 @@ describe("localbase admin list", () => {
     assert.match(result.stdout, /Admins \(2\)/);
   });
 
-  it("fails when auth is disabled", () => {
+  it("fails when auth is explicitly disabled", () => {
     const dir = path.join(tmpRoot, `list-noauth-${Date.now()}`);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(
       path.join(dir, "localbase.config.ts"),
       `export default {
+        auth: { enabled: false },
         tables: { items: { id: { type: "integer", primaryKey: true, autoIncrement: true }, name: { type: "text", nullable: false } } },
       };
 `

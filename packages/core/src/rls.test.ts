@@ -384,12 +384,25 @@ describe("resolvePolicies", () => {
 // ─── policies require auth ─────────────────────────────────────
 
 describe("policies require auth", () => {
-  it("createServer throws when policies are set but auth is disabled", () => {
+  it("createServer throws when policies are set but auth is explicitly disabled", () => {
     const db = new Database({ schema });
     assert.throws(
-      () => createServer(db, schema, { policies: POLICY }),
+      () =>
+        createServer(db, schema, {
+          auth: { enabled: false },
+          policies: POLICY,
+        }),
       /auth/i
     );
+    db.close();
+  });
+
+  it("policies alone are fine — auth is on by default", async () => {
+    const db = new Database({ schema });
+    const app = createServer(db, schema, { policies: POLICY });
+    // The policy'd table demands a token even though no auth config was given.
+    const res = await app.request("/api/posts");
+    assert.equal(res.status, 401);
     db.close();
   });
 });

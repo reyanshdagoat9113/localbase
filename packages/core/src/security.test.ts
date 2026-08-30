@@ -58,7 +58,7 @@ describe("CORS default (loopback-only)", () => {
   before(() => {
     db = new Database({ schema: testSchema });
     // No security config → loopback-safe defaults apply.
-    app = createServer(db, testSchema);
+    app = createServer(db, testSchema, { auth: { enabled: false } });
   });
   after(() => db.close());
 
@@ -293,7 +293,7 @@ describe("security headers", () => {
 
   before(() => {
     db = new Database({ schema: testSchema });
-    app = createServer(db, testSchema);
+    app = createServer(db, testSchema, { auth: { enabled: false } });
   });
   after(() => db.close());
 
@@ -353,7 +353,7 @@ describe("loopback default unchanged (no regression)", () => {
   before(() => {
     db = new Database({ schema: testSchema });
     // No security config at all — anonymous localhost behavior must still work.
-    app = createServer(db, testSchema);
+    app = createServer(db, testSchema, { auth: { enabled: false } });
     db.insert("posts", [{ title: "hello" }, { title: "world" }]);
   });
   after(() => db.close());

@@ -45,7 +45,7 @@ Walkthrough: [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md).
 - **Admin Studio** at `/admin/` — tables, schema, users, Storage, Jobs
 - **Realtime** — `db.subscribe(...)` over WebSockets
 - **Scheduled jobs** — cron TypeScript handlers with run history
-- **Optional auth** — JWT sessions, Argon2id passwords, refresh-token rotation
+- **Default-on auth** — JWT sessions, Argon2id passwords, refresh-token rotation
 - **Owner policies (RLS)** — public API scoped to the signed-in user
 - **Local file Storage** — private buckets and signed URLs
 - **Hot-reload** when the config file changes
@@ -58,6 +58,10 @@ Edit `localbase.config.ts`:
 
 ```ts
 export default {
+  auth: {
+    enabled: true,
+    jwtSecret: process.env.JWT_SECRET ?? "replace-with-a-long-random-secret",
+  },
   tables: {
     users: {
       id: { type: "integer", primaryKey: true, autoIncrement: true },
@@ -75,7 +79,10 @@ export default {
 };
 ```
 
-Save the file — the dev server hot-reloads. Full config (auth, policies,
+`localbase init` generates the fallback secret for you. Auth is enabled when
+the section is omitted too, but then the server uses a new random secret on
+each start; set `auth.enabled: false` to opt out explicitly. Save the file —
+the dev server hot-reloads. Full config (auth, policies,
 Storage, Jobs, CORS): [docs/CONFIG.md](docs/CONFIG.md).
 
 ![LocalBase Admin Studio](docs/admin-ui.png)

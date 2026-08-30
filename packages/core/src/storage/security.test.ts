@@ -781,7 +781,7 @@ describe("storage without auth fails closed", () => {
       dataDir: tmp,
       buckets: [{ name: "public-assets", public: true }],
     });
-    app = createServer(db, testSchema);
+    app = createServer(db, testSchema, { auth: { enabled: false } });
   });
   after(() => {
     db.close();

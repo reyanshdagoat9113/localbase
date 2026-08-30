@@ -157,7 +157,7 @@ describe("Realtime", () => {
 
     before(async () => {
       db = new Database({ schema: testSchema });
-      app = createServer(db, testSchema);
+      app = createServer(db, testSchema, { auth: { enabled: false } });
       server = serve({ fetch: app.fetch, port: 0 });
       port = (server.address() as { port: number }).port;
       realtime = createRealtimeServer({ server: server as HttpServer, database: db });

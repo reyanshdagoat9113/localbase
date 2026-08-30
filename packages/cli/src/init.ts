@@ -1,9 +1,21 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { log } from "./log.js";
 import { CONFIG_FILE, DB_DIR } from "./config.js";
 
-const EXAMPLE_CONFIG = `export default {
+// Auth is scaffolded ON with a stable per-project secret (not a per-process
+// random one) so sessions survive restarts out of the box. The ?? env-var
+// escape hatch keeps committed-config / production usage honest.
+function exampleConfig(): string {
+  const jwtSecret = crypto.randomBytes(32).toString("hex");
+  return `export default {
+  auth: {
+    enabled: true,
+    jwtSecret: process.env.JWT_SECRET ?? "${jwtSecret}",
+    minPasswordLength: 8,
+  },
+
   tables: {
     users: {
       id: { type: "integer", primaryKey: true, autoIncrement: true },
@@ -14,6 +26,7 @@ const EXAMPLE_CONFIG = `export default {
   },
 };
 `;
+}
 
 export function initCommand(): void {
   const cwd = process.cwd();
@@ -30,7 +43,7 @@ export function initCommand(): void {
 
   // Create config file
   if (!fs.existsSync(configPath)) {
-    fs.writeFileSync(configPath, EXAMPLE_CONFIG, "utf-8");
+    fs.writeFileSync(configPath, exampleConfig(), "utf-8");
     log.success(`Created ${CONFIG_FILE}`);
   } else {
     log.info(`${CONFIG_FILE} already exists`);

@@ -27,6 +27,9 @@ const db = new Database({ path: ".localbase/data.db", schema });
 const app = createServer(db, schema, { admin: { enabled: true } });
 ```
 
+`createServer` enables auth by default. Pass a stable `auth.jwtSecret` for
+persistent sessions, or set `auth: { enabled: false }` to opt out explicitly.
+
 The CLI also starts the WebSocket realtime server and job scheduler. Embedding those yourself is documented in [docs/CORE.md](https://github.com/reyanshdagoat9113/localbase/blob/dev/docs/CORE.md).
 
 ## Related

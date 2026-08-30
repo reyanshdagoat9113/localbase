@@ -300,3 +300,72 @@ describe("LOCALBASE_DATA_DIR override", () => {
     assert.equal(dbDir, path.join(dir, DB_DIR));
   });
 });
+
+describe("auth default (via loadConfig)", () => {
+  /** Writes a config with the given raw auth literal ("" for none). */
+  async function loadWithAuth(
+    authLiteral: string
+  ): Promise<LocalBaseConfig> {
+    const dir = path.join(tmpRoot, `auth-${Math.random().toString(36).slice(2)}`);
+    fs.mkdirSync(dir, { recursive: true });
+    const contents = `export default {
+  ${authLiteral}
+  tables: {
+    widgets: {
+      id: { type: "integer", primaryKey: true, autoIncrement: true },
+      name: { type: "text", nullable: false },
+    },
+  },
+};
+`;
+    fs.writeFileSync(path.join(dir, "localbase.config.ts"), contents);
+    const { config } = await loadConfig(dir);
+    return config;
+  }
+
+  it("auth is enabled when the config has no auth section", async () => {
+    const config = await loadWithAuth(``);
+    assert.equal(config.auth?.enabled, true);
+  });
+
+  it("an auth section without `enabled` still defaults to enabled", async () => {
+    const config = await loadWithAuth(
+      `auth: { jwtSecret: "cfg-secret" },`
+    );
+    assert.equal(config.auth?.enabled, true);
+    assert.equal(config.auth?.jwtSecret, "cfg-secret");
+  });
+
+  it("an explicit enabled: false is preserved", async () => {
+    const config = await loadWithAuth(
+      `auth: { enabled: false, jwtSecret: "off" },`
+    );
+    assert.equal(config.auth?.enabled, false);
+  });
+
+  it("rejects a primitive config before applying auth defaults", async () => {
+    const dir = path.join(tmpRoot, `auth-primitive-${Date.now()}`);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "localbase.config.ts"), "export default 42;\n");
+
+    await assert.rejects(
+      () => loadConfig(dir),
+      (err: unknown) => {
+        assert.ok(err instanceof ConfigError);
+        assert.match(err.message, /must export an object/);
+        return true;
+      }
+    );
+  });
+
+  it("rejects a non-boolean auth.enabled", async () => {
+    const dir = path.join(tmpRoot, `auth-invalid-${Date.now()}`);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "localbase.config.ts"),
+      `export default { auth: { enabled: "false" }, tables: {} };\n`
+    );
+
+    await assert.rejects(() => loadConfig(dir), /auth\.enabled.*boolean/i);
+  });
+});

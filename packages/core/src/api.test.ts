@@ -50,7 +50,7 @@ describe("REST API", () => {
 
   before(() => {
     db = new Database({ schema: testSchema });
-    app = createServer(db, testSchema);
+    app = createServer(db, testSchema, { auth: { enabled: false } });
     seedUsers(db);
   });
 

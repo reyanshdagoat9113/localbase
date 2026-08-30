@@ -88,7 +88,11 @@ describe("GET /_api/admin/schema", () => {
 
   before(() => {
     db = new Database({ schema: testSchema });
-    app = createServer(db, testSchema, { admin: { enabled: true } });
+    app = createServer(db, testSchema, {
+      admin: { enabled: true },
+      // Pin the explicit no-auth posture these tests exercise.
+      auth: { enabled: false },
+    });
     seedUsers(db);
   });
 
@@ -132,6 +136,7 @@ describe("GET /_api/admin/schema", () => {
     try {
       const app2 = createServer(db2, { messages: testSchema.users }, {
         admin: { enabled: true },
+        auth: { enabled: false },
       });
       const res = await app2.request("/_api/admin/schema");
       const { body } = await parseResponse(res);
@@ -154,7 +159,11 @@ describe("GET /_api/admin/tables", () => {
 
   before(() => {
     db = new Database({ schema: testSchema });
-    app = createServer(db, testSchema, { admin: { enabled: true } });
+    app = createServer(db, testSchema, {
+      admin: { enabled: true },
+      // Pin the explicit no-auth posture these tests exercise.
+      auth: { enabled: false },
+    });
     seedUsers(db);
   });
 
@@ -180,7 +189,11 @@ describe("Rows CRUD (/_api/admin/tables/:table/rows)", () => {
 
   beforeEach(() => {
     db = new Database({ schema: testSchema });
-    app = createServer(db, testSchema, { admin: { enabled: true } });
+    app = createServer(db, testSchema, {
+      admin: { enabled: true },
+      // Pin the explicit no-auth posture these tests exercise.
+      auth: { enabled: false },
+    });
     seedUsers(db);
   });
 
@@ -370,11 +383,11 @@ describe("Rows CRUD (/_api/admin/tables/:table/rows)", () => {
 
 describe("System-table write protection (defense-in-depth gate)", () => {
   // These tests isolate the system-table gate by running the admin API
-  // UNGATED (createServer has no `auth` option, so admin mounts without
-  // requireAdmin). The Database still provisions `_users`/`_sessions` so the
-  // tables exist. The system-table block is a second layer of defense that
-  // must hold even if an admin token reaches it — the M2 admin-auth tests
-  // cover the auth layer.
+  // UNGATED (createServer gets `auth: { enabled: false }`, so admin mounts
+  // without requireAdmin — auth is on by default now). The Database still
+  // provisions `_users`/`_sessions` so the tables exist. The system-table
+  // block is a second layer of defense that must hold even if an admin
+  // token reaches it — the M2 admin-auth tests cover the auth layer.
 
   it("POST to _users returns 403 with a helpful error", async () => {
     const db = new Database({
@@ -384,6 +397,7 @@ describe("System-table write protection (defense-in-depth gate)", () => {
     try {
       const app = createServer(db, authSchema, {
         admin: { enabled: true },
+        auth: { enabled: false },
       });
       const res = await app.request("/_api/admin/tables/_users/rows", {
         method: "POST",
@@ -415,6 +429,7 @@ describe("System-table write protection (defense-in-depth gate)", () => {
       });
       const app = createServer(db, authSchema, {
         admin: { enabled: true },
+        auth: { enabled: false },
       });
       const res = await app.request("/_api/admin/tables/_users/rows/1", {
         method: "PATCH",
@@ -436,6 +451,7 @@ describe("System-table write protection (defense-in-depth gate)", () => {
     try {
       const app = createServer(db, authSchema, {
         admin: { enabled: true },
+        auth: { enabled: false },
       });
       const res = await app.request("/_api/admin/tables/_sessions/rows/1", {
         method: "DELETE",
@@ -460,6 +476,7 @@ describe("System-table write protection (defense-in-depth gate)", () => {
       });
       const app = createServer(db, authSchema, {
         admin: { enabled: true },
+        auth: { enabled: false },
       });
       const res = await app.request("/_api/admin/tables/_users/rows");
       const { status, body } = await parseResponse(res);
@@ -495,7 +512,11 @@ describe("Admin static mount (M1 deliverable)", () => {
   it("serves placeholder HTML at /admin when no bundle is present", async () => {
     const db = new Database({ schema: testSchema });
     try {
-      const app = createServer(db, testSchema, { admin: { enabled: true } });
+      const app = createServer(db, testSchema, {
+        admin: { enabled: true },
+        // Pin the explicit no-auth posture these tests exercise.
+        auth: { enabled: false },
+      });
       const res = await app.request("/admin");
       const text = await res.text();
       assert.equal(res.status, 200);
@@ -509,7 +530,11 @@ describe("Admin static mount (M1 deliverable)", () => {
   it("serves placeholder HTML at /admin/some-path (SPA fallback)", async () => {
     const db = new Database({ schema: testSchema });
     try {
-      const app = createServer(db, testSchema, { admin: { enabled: true } });
+      const app = createServer(db, testSchema, {
+        admin: { enabled: true },
+        // Pin the explicit no-auth posture these tests exercise.
+        auth: { enabled: false },
+      });
       const res = await app.request("/admin/tables/users");
       const text = await res.text();
       assert.equal(res.status, 200);

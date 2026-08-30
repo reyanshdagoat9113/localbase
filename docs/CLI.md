@@ -14,7 +14,7 @@ Requires a `localbase.config.ts` in the current working directory (except `init`
 
 ## `init`
 
-Scaffold cwd: create `localbase.config.ts` and `.localbase/`. Safe to re-run (does not overwrite an existing config). If `.gitignore` already exists, appends `.localbase/`.
+Scaffold cwd: create `localbase.config.ts` with auth enabled and a random per-project fallback secret, plus `.localbase/`. Safe to re-run (does not overwrite an existing config). If `.gitignore` already exists, appends `.localbase/`.
 
 There is **no** `init <path>` form.
 

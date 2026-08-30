@@ -1,6 +1,6 @@
 # Auth and row-level security
 
-Optional. Off until `auth.enabled` is true. Then LocalBase provisions `_users`, `_sessions`, and `_admin_requests` and mounts `/api/auth/*`.
+Enabled by default. LocalBase provisions `_users`, `_sessions`, and `_admin_requests` and mounts `/api/auth/*` unless the config explicitly sets `auth.enabled: false`.
 
 Config: [CONFIG](./CONFIG.md#auth).
 
@@ -14,7 +14,7 @@ Config: [CONFIG](./CONFIG.md#auth).
 - **Roles** — `owner`, `admin`, `user`. The JWT `role` claim is a snapshot. Admin gates and `adminBypass` **re-read `_users.role`** on each request, so a demotion takes effect on the next call.
 - **System tables** survive `localbase db reset`.
 
-If `jwtSecret` is omitted, a random one is generated at startup. Restarts then invalidate every session. Set a stable secret for anything you care about.
+`localbase init` writes a stable, random per-project fallback secret. If a hand-written config omits `jwtSecret` (or the entire `auth` section), a random one is generated at startup; restarts then invalidate every session. Set a stable secret for anything you care about.
 
 ---
 

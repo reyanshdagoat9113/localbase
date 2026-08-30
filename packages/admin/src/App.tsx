@@ -43,8 +43,14 @@ export default function App() {
 }
 
 function ProtectedRoute() {
-  const { isAuthenticated } = useAuth();
-  return isAuthenticated ? <Outlet /> : <Navigate to="/login" replace />;
+  const { isAuthenticated, authEnabled } = useAuth();
+  // Wait for the server meta before deciding — otherwise an auth-disabled
+  // server would flash the login screen on every load.
+  if (authEnabled === null && !isAuthenticated) return null;
+  // Ungated mode: the server has auth disabled, so there is nothing to
+  // sign in to — the Studio is open (localhost-bound) by explicit choice.
+  if (isAuthenticated || authEnabled === false) return <Outlet />;
+  return <Navigate to="/login" replace />;
 }
 
 function Shell() {

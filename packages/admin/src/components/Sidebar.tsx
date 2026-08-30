@@ -4,17 +4,22 @@ import { useAdminRequests, useTables } from "@/hooks/useAdmin";
 import { cn } from "@/lib/utils";
 
 const nav = [
-  { label: "Tables", href: "/tables", ownerOnly: false },
-  { label: "Schema", href: "/schema", ownerOnly: false },
-  { label: "Users", href: "/users", ownerOnly: false },
-  { label: "Admin Requests", href: "/admin-requests", ownerOnly: true },
-  { label: "Realtime", href: "/realtime", ownerOnly: false },
-  { label: "Storage", href: "/storage", ownerOnly: false },
-  { label: "Jobs", href: "/jobs", ownerOnly: false },
+  { label: "Tables", href: "/tables", ownerOnly: false, requiresAuth: false },
+  { label: "Schema", href: "/schema", ownerOnly: false, requiresAuth: false },
+  { label: "Users", href: "/users", ownerOnly: false, requiresAuth: true },
+  {
+    label: "Admin Requests",
+    href: "/admin-requests",
+    ownerOnly: true,
+    requiresAuth: true,
+  },
+  { label: "Realtime", href: "/realtime", ownerOnly: false, requiresAuth: false },
+  { label: "Storage", href: "/storage", ownerOnly: false, requiresAuth: false },
+  { label: "Jobs", href: "/jobs", ownerOnly: false, requiresAuth: false },
 ] as const;
 
 export function Sidebar() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, authEnabled } = useAuth();
   const { data: tables } = useTables();
   const isOwner = user?.role === "owner";
   const { data: requests } = useAdminRequests(isOwner);
@@ -27,27 +32,33 @@ export function Sidebar() {
       </div>
 
       <nav className="mt-8 space-y-1">
-        {nav.filter((item) => !item.ownerOnly || isOwner).map(({ label, href }) => (
-          <NavLink
-            key={href}
-            to={href}
-            className={({ isActive }) =>
-              cn(
-                "block rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground",
-                isActive && "bg-accent text-foreground"
-              )
-            }
-          >
-            <span className="flex items-center justify-between gap-2">
-              {label}
-              {href === "/admin-requests" && requests?.total ? (
-                <span className="min-w-5 rounded-full bg-primary px-1.5 py-0.5 text-center text-[10px] font-semibold text-primary-foreground">
-                  {requests.total}
-                </span>
-              ) : null}
-            </span>
-          </NavLink>
-        ))}
+        {nav
+          .filter(
+            (item) =>
+              (!item.ownerOnly || isOwner) &&
+              (!item.requiresAuth || authEnabled !== false)
+          )
+          .map(({ label, href }) => (
+            <NavLink
+              key={href}
+              to={href}
+              className={({ isActive }) =>
+                cn(
+                  "block rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground",
+                  isActive && "bg-accent text-foreground"
+                )
+              }
+            >
+              <span className="flex items-center justify-between gap-2">
+                {label}
+                {href === "/admin-requests" && requests?.total ? (
+                  <span className="min-w-5 rounded-full bg-primary px-1.5 py-0.5 text-center text-[10px] font-semibold text-primary-foreground">
+                    {requests.total}
+                  </span>
+                ) : null}
+              </span>
+            </NavLink>
+          ))}
       </nav>
 
       <div className="mt-8 min-h-0 flex-1 overflow-y-auto">
@@ -73,14 +84,22 @@ export function Sidebar() {
       </div>
 
       <div className="mt-6 border-t border-border pt-4 text-sm">
-        <p className="truncate text-muted-foreground">{user?.email}</p>
-        <button
-          type="button"
-          onClick={() => void signOut()}
-          className="mt-2 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent"
-        >
-          Sign out
-        </button>
+        {authEnabled === false ? (
+          <p className="text-xs text-muted-foreground">
+            Auth disabled — ungated mode
+          </p>
+        ) : (
+          <>
+            <p className="truncate text-muted-foreground">{user?.email}</p>
+            <button
+              type="button"
+              onClick={() => void signOut()}
+              className="mt-2 rounded-md border border-border px-3 py-1.5 text-xs hover:bg-accent"
+            >
+              Sign out
+            </button>
+          </>
+        )}
       </div>
     </aside>
   );
