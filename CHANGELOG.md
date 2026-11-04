@@ -8,6 +8,13 @@ Versions follow [Semantic Versioning](https://semver.org/) with a beta prereleas
 
 ## [Unreleased]
 
+## [0.1.0-beta.2] — 2026-11-04
+
+### Changed
+
+- **Auth is now enabled by default.** `_users`, `_sessions`, and `_admin_requests` are provisioned and `/api/auth/*` is mounted unless the config sets `auth.enabled: false`. Admin Studio gains the matching sign-in / owner-bootstrap flow.
+- If a hand-written config omits `jwtSecret`, a random one is generated at startup (sessions do not survive restarts); `localbase init` writes a stable per-project secret.
+
 ### Documentation
 
 - User docs live under `docs/` (index, getting started, config, CLI, REST, SDK, auth/RLS, realtime, Storage, Jobs, Admin Studio, core, backup)

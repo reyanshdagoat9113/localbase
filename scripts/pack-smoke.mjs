@@ -497,8 +497,14 @@ console.log("realtime-ok", events.length);
     if (KEEP) {
       info(`PACK_SMOKE_KEEP=1 — leaving ${projectDir} and ${packDir}`);
     } else {
-      fs.rmSync(projectDir, { recursive: true, force: true });
-      fs.rmSync(packDir, { recursive: true, force: true });
+      // Best-effort: Windows can briefly hold SQLite/pack files after shutdown (EPERM).
+      for (const dir of [projectDir, packDir]) {
+        try {
+          fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+        } catch (err) {
+          info(`could not remove ${dir}: ${err.code ?? err}`);
+        }
+      }
     }
   }
 }

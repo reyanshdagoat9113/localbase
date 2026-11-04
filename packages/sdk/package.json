@@ -1,6 +1,6 @@
 {
   "name": "@localbase/sdk",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.2",
   "description": "TypeScript client SDK for LocalBase — query builder, auth, realtime, and Storage",
   "license": "MIT",
   "type": "module",
@@ -49,11 +49,11 @@
     "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
-    "@localbase/shared": "0.1.0-beta.1"
+    "@localbase/shared": "0.1.0-beta.2"
   },
   "devDependencies": {
     "@hono/node-server": "^2.1.0",
-    "@localbase/core": "0.1.0-beta.1",
+    "@localbase/core": "0.1.0-beta.2",
     "tsup": "^8.0.0",
     "tsx": "^4.22.4",
     "typescript": "^5.7.0"

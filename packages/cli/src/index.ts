@@ -31,7 +31,7 @@ const program = new Command();
 program
   .name("localbase")
   .description("LocalBase — local-first backend platform")
-  .version("0.1.0-beta.1");
+  .version("0.1.0-beta.2");
 
 // ── localbase init ──
 program
