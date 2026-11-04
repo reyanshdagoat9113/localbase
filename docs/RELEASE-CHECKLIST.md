@@ -72,3 +72,11 @@ Provenance only on GitHub Actions (or `--provenance`); local execute skips it.
 ## Promote to `latest`
 
 Only after private-beta gate (BETA-P0) and explicit owner approval.
+
+## 0.1.0-beta.2 (2026-11-04)
+
+- Published `@localbase/{shared,core,sdk,cli}@0.1.0-beta.2` under dist-tag `beta` (commit `27aa678`; local publish, no provenance).
+- Change: auth enabled by default.
+- Local gates: `npm run verify` and `npm run pack:smoke` green. Browser E2E not run for this release.
+- Registry smoke (fresh dir): install cli+sdk, `init` (auth enabled in scaffold), `dev`, Studio `/admin/` 200, auth signup 201 (first user becomes owner) — PASS.
+- `latest` still points at `0.1.0-beta.1`.
