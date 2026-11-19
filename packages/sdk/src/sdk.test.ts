@@ -247,6 +247,23 @@ describe("SDK", () => {
     });
   });
 
+  describe("update/delete without an id filter", () => {
+    it("update() explains that an id filter is required", async () => {
+      const { data, error } = await client
+        .from("users")
+        .update({ name: "Nope" })
+        .eq("email", "alice@test.com");
+      assert.equal(data, null);
+      assert.match(String(error), /update\(\) requires \.eq\("id", value\)/);
+    });
+
+    it("delete() explains that an id filter is required", async () => {
+      const { data, error } = await client.from("users").delete().eq("name", "x");
+      assert.equal(data, null);
+      assert.match(String(error), /delete\(\) requires \.eq\("id", value\)/);
+    });
+  });
+
   describe("error handling", () => {
     it("should handle connection refused", async () => {
       const badClient = createClient("http://localhost:1");

@@ -201,10 +201,35 @@ export class QueryBuilder<T = unknown> implements PromiseLike<ResponseShape<T>> 
   }
 
   private async _execute(): Promise<ResponseShape<T>> {
+    // The REST API only supports single-row PATCH/DELETE by primary key.
+    // Fail fast with an actionable message instead of sending a request the
+    // server will reject with a plain-text 404.
+    if (
+      (this._method === "PATCH" || this._method === "DELETE") &&
+      !this._filters.some((f) => f.column === "id" && f.operator === "eq")
+    ) {
+      const verb = this._method === "PATCH" ? "update" : "delete";
+      return {
+        data: null,
+        error: `${verb}() requires .eq("id", value): LocalBase only supports ${verb} by primary key.`,
+      };
+    }
+
     try {
       const url = this._buildUrl();
       const res = await fetch(url, this._buildOptions());
-      const json = await res.json();
+      const text = await res.text();
+      let json: { data?: unknown; error?: string } = {};
+      if (text.length > 0) {
+        try {
+          json = JSON.parse(text);
+        } catch {
+          return {
+            data: null,
+            error: `Request failed with status ${res.status}: ${text.slice(0, 200)}`,
+          };
+        }
+      }
 
       if (!res.ok) {
         return {

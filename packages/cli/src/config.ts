@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { createJiti } from "jiti";
 import { Cron } from "croner";
 import type { LocalBaseConfig } from "@localbase/shared";
+import { cliInvocation } from "./invocation.js";
 
 const CONFIG_FILE = "localbase.config.ts";
 const DB_DIR = ".localbase";
@@ -67,7 +68,7 @@ export async function loadConfig(
   if (!fs.existsSync(configPath)) {
     throw new ConfigError(
       `No ${CONFIG_FILE} found in ${cwd}`,
-      `Run \`localbase init\` to create one.`
+      `Run \`${cliInvocation()} init\` to create one, or cd into your project directory.`
     );
   }
 
@@ -574,3 +575,13 @@ function validateSecurity(config: LocalBaseConfig): void {
 }
 
 export { CONFIG_FILE, DB_DIR, DB_FILE };
+
+/**
+ * User tables with no owner policy. When auth is enabled these are still
+ * readable and writable by anonymous REST clients, which surprises users who
+ * read "auth enabled" as "data is protected". Used for startup/status warnings.
+ */
+export function unprotectedTables(config: LocalBaseConfig): string[] {
+  const policies = (config.policies ?? {}) as Record<string, unknown>;
+  return Object.keys(config.tables).filter((table) => !(table in policies));
+}

@@ -11,7 +11,7 @@ import {
   resolvePolicies,
 } from "@localbase/core";
 import type { RealtimeServer } from "@localbase/core";
-import { loadConfig, ConfigError } from "./config.js";
+import { loadConfig, ConfigError, unprotectedTables } from "./config.js";
 import { log } from "./log.js";
 import { unsafeAdminBinding } from "./admin-bind-policy.js";
 import { adminUrl, openBrowser } from "./open-browser.js";
@@ -107,6 +107,20 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
             : " (random secret — sessions reset on restart)"
         }`
       );
+      // Auth alone does not protect table data: without an owner policy a
+      // table's REST endpoints accept anonymous reads and writes. Say so
+      // explicitly, since "auth enabled" reads like "tables are protected".
+      const unprotected = unprotectedTables(config);
+      if (unprotected.length > 0) {
+        log.warn(
+          `No policy on: ${unprotected.join(", ")} — anyone who can reach the API can read and write ${
+            unprotected.length === 1 ? "this table" : "these tables"
+          }.`
+        );
+        log.hint(
+          `Add policies: { <table>: { ownerColumn: "user_id" } } to scope rows to the signed-in user. See https://github.com/reyanshdagoat9113/localbase/blob/main/docs/AUTH.md`
+        );
+      }
     }
 
     // Construct the process-owned scheduler before the API so the admin

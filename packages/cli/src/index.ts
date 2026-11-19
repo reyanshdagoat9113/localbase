@@ -10,6 +10,7 @@ import {
 } from "./auth.js";
 import { promoteCommand, demoteCommand, listAdminsCommand } from "./admin.js";
 import { listJobsCommand, runJobCommand, jobLogsCommand } from "./jobs.js";
+import { statusCommand } from "./status.js";
 import { ConfigError } from "./config.js";
 import { log } from "./log.js";
 
@@ -139,6 +140,27 @@ program
       }
     }
   );
+
+// ── localbase status ──
+program
+  .command("status")
+  .description(
+    "Check your setup: Node version, config, database, pending migrations, " +
+      "auth, and whether the dev server is running. Never modifies data."
+  )
+  .option("-p, --port <number>", "Port to check for a running server", "5180")
+  .option("--json", "Print a machine-readable JSON report", false)
+  .action(async (opts: { port: string; json?: boolean }) => {
+    const port = Number.parseInt(opts.port, 10);
+    if (!Number.isFinite(port) || port < 1 || port > 65535) {
+      fail(new Error(`Invalid port: "${opts.port}". Must be between 1 and 65535.`));
+    }
+    try {
+      await statusCommand({ port, json: opts.json === true });
+    } catch (err) {
+      fail(err);
+    }
+  });
 
 // ── localbase db migrate ──
 const dbCmd = program

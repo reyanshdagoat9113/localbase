@@ -74,4 +74,26 @@ describe("localbase init", () => {
     assert.ok(secondSecret);
     assert.notEqual(secondSecret, firstSecret);
   });
+
+  it("creates a .gitignore for data and backups when none exists", () => {
+    const gitignore = fs.readFileSync(path.join(tmpRoot, ".gitignore"), "utf8");
+    assert.deepEqual(gitignore.trim().split("\n"), [".localbase/", "backups/"]);
+  });
+
+  it("appends only missing entries to an existing .gitignore", () => {
+    const dir = path.join(tmpRoot, "existing-gitignore");
+    fs.mkdirSync(dir);
+    fs.writeFileSync(path.join(dir, ".gitignore"), "node_modules\n.localbase\n");
+    process.chdir(dir);
+    try {
+      initCommand();
+      initCommand();
+    } finally {
+      process.chdir(tmpRoot);
+    }
+    assert.equal(
+      fs.readFileSync(path.join(dir, ".gitignore"), "utf8"),
+      "node_modules\n.localbase\nbackups/\n"
+    );
+  });
 });
