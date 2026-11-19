@@ -11,12 +11,18 @@
 #   - `concurrency` cancels superseded runs on the same ref.
 #   - Node is installed once per job with `setup-node`'s built-in npm cache
 #     (keyed on package-lock.json).
-#   - The unit-test/build job runs on a Node matrix (22 = min LTS, 24 = current
-#     LTS) so the supported-runtime contract (Workstream 2.2) is enforced.
+#   - The unit-test/build job runs on an OS x Node matrix (ubuntu/windows/macos
+#     x Node 22 = min LTS, 24 = current LTS) so the supported-runtime contract
+#     (Workstream 2.2) is enforced and native-module (better-sqlite3, Argon2)
+#     install/load failures surface before beta users hit them.
+#   - Pack smoke (tarball install) runs on all three OSes for the same reason.
 #   - E2E runs on a single Node version (24) to keep browser-suite minutes
-#     bounded; the dev server + CLI it exercises are already matrix-tested by
-#     the build-test job. E2E is deterministic (ephemeral per-run data dir,
-#     Workstream 2.1) so retries are 0 and a failure is a real signal.
+#     bounded, on Linux and Windows (the suite takes ~10s; macOS adds little
+#     over Linux for a Chromium-driven SPA). The dev server + CLI it exercises
+#     are already matrix-tested by the build-test job. E2E is deterministic
+#     (ephemeral per-run data dir, Workstream 2.1) so retries are 0 and a
+#     failure is a real signal.
+#   - Audit is OS-independent (lockfile-based) and stays on Linux only.
 
 name: CI
 
@@ -35,13 +41,16 @@ permissions:
   contents: read
 
 jobs:
-  # ── Build, typecheck, and unit tests on the supported Node matrix ──
+  # ── Build, typecheck, and unit tests on the supported OS x Node matrix ──
   build-test:
-    name: Build & test (Node ${{ matrix.node }})
-    runs-on: ubuntu-24.04
+    name: Build & test (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        # Native modules (better-sqlite3, Argon2) ship per-platform prebuilds,
+        # so each OS is exercised independently.
+        os: [ubuntu-24.04, windows-latest, macos-latest]
         # Workstream 2.2: support the active LTS lines. As of 2026-07 these are
         # Node 22 (maintenance LTS) and Node 24 (active LTS). Node 20 is EOL.
         node: ["22", "24"]
@@ -76,8 +85,12 @@ jobs:
   # Runs on a single Node LTS (24) to bound native-module + install time; the
   # packages themselves are matrix-built above.
   pack-smoke:
-    name: Pack smoke (tarball install)
-    runs-on: ubuntu-24.04
+    name: Pack smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-latest]
     steps:
       - name: Checkout
         # actions/checkout@v7.0.0
@@ -98,8 +111,16 @@ jobs:
 
   # ── Playwright E2E (real admin SPA + dev server) ──
   e2e:
-    name: E2E (Playwright)
-    runs-on: ubuntu-24.04
+    name: E2E (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            playwright-cache: ~/.cache/ms-playwright
+          - os: windows-latest
+            playwright-cache: ~\AppData\Local\ms-playwright
     steps:
       - name: Checkout
         # actions/checkout@v7.0.0
@@ -121,7 +142,7 @@ jobs:
         # actions/cache@v4.2.4 — restore by package-lock hash
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809
         with:
-          path: ~/.cache/ms-playwright
+          path: ${{ matrix.playwright-cache }}
           key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
 
       - name: Install Playwright browser (chromium)
@@ -139,7 +160,7 @@ jobs:
         # actions/upload-artifact@v4.6.0
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
         with:
-          name: playwright-report-${{ github.run_id }}
+          name: playwright-report-${{ matrix.os }}-${{ github.run_id }}
           path: |
             packages/e2e/playwright-report
             packages/e2e/test-results
