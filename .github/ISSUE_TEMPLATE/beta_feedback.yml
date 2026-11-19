@@ -1,61 +1,50 @@
 name: Beta feedback
-description: Feedback from installing or using the developer-preview / beta packages
+description: Share your experience trying the LocalBase private beta
 title: "[beta] "
 labels: ["beta-feedback"]
 body:
   - type: markdown
     attributes:
       value: |
-        Use this form if you installed the npm beta or followed the quickstart as an external tester.
+        Thanks for testing LocalBase. Short answers are fine. Do not paste secrets or application data.
+  - type: textarea
+    id: built
+    attributes:
+      label: What were you trying to build?
+    validations:
+      required: true
+  - type: input
+    id: ttfr
+    attributes:
+      label: How long did it take to get the first API response?
+      placeholder: e.g. 5 minutes, or "never got there"
+    validations:
+      required: true
+  - type: textarea
+    id: confusing
+    attributes:
+      label: What was the first confusing or broken step?
+    validations:
+      required: true
+  - type: textarea
+    id: missing
+    attributes:
+      label: Which feature did you expect but could not find?
   - type: dropdown
-    id: outcome
+    id: reuse
     attributes:
-      label: Outcome
+      label: Would you use LocalBase again for local development or an internal tool?
       options:
-        - Quickstart completed without help
-        - Quickstart completed with help
-        - Blocked during install
-        - Blocked after install
-        - Feature feedback only
+        - "Yes"
+        - Maybe
+        - "No"
     validations:
       required: true
   - type: input
-    id: node
+    id: env
     attributes:
-      label: Node version
-      placeholder: v22.x / v24.x
+      label: Environment
+      description: LocalBase version (`npx @localbase/cli --version`), Node version, and OS.
+      placeholder: 0.1.0-beta.2, Node v22, Windows 11
     validations:
       required: true
-  - type: input
-    id: platform
-    attributes:
-      label: OS / platform
-      placeholder: Ubuntu 24.04, macOS 15, Windows 11, …
-    validations:
-      required: true
-  - type: input
-    id: package
-    attributes:
-      label: Package version / dist-tag
-      placeholder: 0.1.0-beta.1 / beta
-    validations:
-      required: true
-  - type: textarea
-    id: steps
-    attributes:
-      label: What you tried
-      description: Install method and first commands you ran.
-    validations:
-      required: true
-  - type: textarea
-    id: confusion
-    attributes:
-      label: First confusing or broken step
-      description: Where did you get stuck? What would have helped?
-    validations:
-      required: true
-  - type: textarea
-    id: extra
-    attributes:
-      label: Additional notes
-      description: Do not paste application data or secrets.

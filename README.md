@@ -149,7 +149,7 @@ Remaining launch work (private beta, go decision): [TASKS.md](TASKS.md).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Bugs, feature requests, and beta feedback: [open an issue](https://github.com/reyanshdagoat9113/localbase/issues/new/choose). Security reports: [SECURITY.md](SECURITY.md).
 Release process: [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md).
 
 ## License

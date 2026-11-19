@@ -6,19 +6,50 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for filing a bug. For **security** issues, use [SECURITY.md](../SECURITY.md) — do not report vulnerabilities here.
-  - type: textarea
-    id: summary
+        Thanks for filing a bug. For **security** issues do not use this form; see the [security policy](https://github.com/reyanshdagoat9113/localbase/security/policy).
+  - type: input
+    id: version
     attributes:
-      label: Summary
-      description: What went wrong in one or two sentences?
+      label: LocalBase version
+      description: Output of `npx @localbase/cli --version`
+      placeholder: 0.1.0-beta.2
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      description: Output of `node -v`
+      placeholder: v22.x
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: dropdown
+    id: package
+    attributes:
+      label: Package affected
+      options:
+        - cli
+        - core
+        - sdk
+        - admin
+        - Not sure
     validations:
       required: true
   - type: textarea
     id: repro
     attributes:
       label: Steps to reproduce
-      description: Minimal steps starting from a clean directory if possible.
+      description: Minimal steps, ideally from a clean directory.
       placeholder: |
         1. npx @localbase/cli init
         2. ...
@@ -36,22 +67,15 @@ body:
       label: Actual behavior
     validations:
       required: true
-  - type: input
-    id: version
-    attributes:
-      label: LocalBase / package version
-      description: e.g. @localbase/cli@0.1.0-beta.1 or git commit SHA
-    validations:
-      required: true
-  - type: input
-    id: env
-    attributes:
-      label: Environment
-      description: OS, Node version (`node -v`), install method (npm/npx)
-    validations:
-      required: true
   - type: textarea
     id: logs
     attributes:
-      label: Logs / stack traces
+      label: Logs
+      description: Relevant output or stack trace. Remove secrets and tokens.
       render: shell
+  - type: textarea
+    id: config
+    attributes:
+      label: localbase.config.ts (sanitized)
+      description: Remove secrets, keys, and private data.
+      render: ts
