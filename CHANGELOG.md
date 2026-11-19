@@ -8,6 +8,21 @@ Versions follow [Semantic Versioning](https://semver.org/) with a beta prereleas
 
 ## [Unreleased]
 
+### Added
+
+- `localbase status`: a read-only setup check (Node version, database, pending migrations, schema drift, auth, tables without policies, running server). `--json` for scripts.
+
+### Changed
+
+- `localbase init` creates a `.gitignore` (`.localbase/`, `backups/`) when none exists, and appends missing entries to an existing one.
+- CLI hints print `npx @localbase/cli …` when the CLI was launched through npx, instead of a `localbase` command that isn't on PATH.
+- `localbase dev` warns when auth is enabled but tables have no owner policy, since anonymous clients can still read and write them.
+- SDK: `update()` / `delete()` without `.eq("id", …)` now return a clear error instead of a JSON parse error, and non-JSON error responses are reported with their status and body.
+
+### Documentation
+
+- REST envelope: successful responses are `{ "data": … }`; the SDK adds `error: null`.
+
 ## [0.1.0-beta.2] — 2026-11-04
 
 ### Changed

@@ -14,9 +14,26 @@ Requires a `localbase.config.ts` in the current working directory (except `init`
 
 ## `init`
 
-Scaffold cwd: create `localbase.config.ts` with auth enabled and a random per-project fallback secret, plus `.localbase/`. Safe to re-run (does not overwrite an existing config). If `.gitignore` already exists, appends `.localbase/`.
+Scaffold cwd: create `localbase.config.ts` with auth enabled and a random per-project fallback secret, plus `.localbase/`. Safe to re-run (does not overwrite an existing config). Creates `.gitignore` with `.localbase/` and `backups/`, or appends whichever entries are missing to an existing one.
 
 There is **no** `init <path>` form.
+
+---
+
+## `status`
+
+Check your setup without changing anything: Node version, config path, database (size, locked or not), whether the server is running, auth (secret source, user count), jobs, buckets, and per-table row counts.
+
+It also flags:
+
+- **Pending migrations**: declared tables or columns not yet in the database.
+- **Schema drift**: columns in the database that are no longer in the config. Migrations only add columns, so removing these needs `db reset`.
+- **Tables with no policy** while auth is enabled. Anonymous clients can read and write those tables.
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `-p, --port <n>` | `5180` | Port to check for a running server |
+| `--json` | off | Print a machine-readable report |
 
 ---
 

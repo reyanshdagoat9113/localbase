@@ -5,10 +5,10 @@ Generated from `tables` in `localbase.config.ts`. Base URL defaults to `http://1
 Envelope:
 
 ```json
-{ "data": {}, "error": null }
+{ "data": {} }
 ```
 
-Errors use `{ "error": "message" }` (no `data`). Auth routes use the same envelope.
+Errors use `{ "error": "message" }` (no `data`). Auth routes use the same envelope. The SDK normalizes both into `{ data, error }`, with `error: null` on success.
 
 There are **no SQL joins**. Fetch related tables separately. Column lists on `GET` are not a projection — rows return every column.
 

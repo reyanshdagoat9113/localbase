@@ -28,8 +28,11 @@ npx @localbase/cli init
 ```
 my-app/
   localbase.config.ts    schema
-  .localbase/            SQLite + uploaded files (gitignored if a .gitignore already exists)
+  .localbase/            SQLite + uploaded files
+  .gitignore             ignores .localbase/ and backups/ (created, or appended to if it exists)
 ```
+
+Run `npx @localbase/cli status` at any point to check your setup: Node version, database, pending migrations, auth, and whether the server is running.
 
 The npm package is `@localbase/cli`; the binary is `localbase`. After `npm install -g @localbase/cli` (or a local dependency), use `localbase …`. There is no package named `localbase`.
 
