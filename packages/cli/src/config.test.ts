@@ -285,7 +285,9 @@ describe("LOCALBASE_DATA_DIR override", () => {
     try {
       process.chdir(dir);
       const { dbDir } = await loadConfig(dir);
-      assert.equal(dbDir, path.resolve(dir, "custom-data"));
+      // Compare against process.cwd(), not `dir`: on macOS the temp dir is
+      // under /var, a symlink to /private/var, and cwd reports the real path.
+      assert.equal(dbDir, path.resolve(process.cwd(), "custom-data"));
     } finally {
       process.chdir(prevCwd);
     }
