@@ -3,3 +3,6 @@ contact_links:
   - name: Report a security vulnerability (private)
     url: https://github.com/reyanshdagoat9113/localbase/security/advisories/new
     about: Report security issues privately. Do not open a public issue. See SECURITY.md.
+  - name: Documentation
+    url: https://github.com/reyanshdagoat9113/localbase/blob/main/docs/GETTING-STARTED.md
+    about: Getting started guide, CLI reference, and troubleshooting.
