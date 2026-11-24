@@ -25,6 +25,7 @@ Versions follow [Semantic Versioning](https://semver.org/) with a beta prereleas
 
 ### Changed
 
+- **Proxy headers ignored by default (`security.trustProxy: false`):** rate limiting ignores `X-Forwarded-For` and signed storage URLs ignore `X-Forwarded-Host` / `X-Forwarded-Proto` unless explicitly enabled. Behind a reverse proxy, set `security.trustProxy: true`.
 - `localbase init` creates a `.gitignore` (`.localbase/`, `backups/`) when none exists, and appends missing entries to an existing one.
 - CLI hints print `npx @localbase/cli …` when the CLI was launched through npx, instead of a `localbase` command that isn't on PATH.
 - `localbase dev` warns when auth is enabled but tables have no owner policy, since anonymous clients can still read and write them.

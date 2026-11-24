@@ -203,7 +203,7 @@ security: {
 }
 ```
 
-Rate limits apply to abuse-sensitive routes (sign-up, sign-in, refresh, admin-account requests, password reset, signed-URL creation). Each route has its own counter. Exceeding the budget returns **429** with `Retry-After`. Set `security.trustProxy: true` only behind a reverse proxy that strips/overwrites `X-Forwarded-*` headers; otherwise direct clients could spoof client IPs or signed-URL origins.
+Rate limits apply to abuse-sensitive routes (sign-up, sign-in, refresh, admin-account requests, password reset, signed-URL creation). Each route has its own counter. Exceeding the budget returns **429** with `Retry-After`. Behind a reverse proxy, set `security.trustProxy: true` so rate limiting keys on `X-Forwarded-For` and signed storage URLs use `X-Forwarded-Host` / `X-Forwarded-Proto` (leave it `false` when exposed directly so clients cannot spoof headers).
 
 Default response headers: `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`. `headers.extra` overrides by name.
 
