@@ -10,6 +10,7 @@ export default defineConfig({
     "@localbase/shared",
     "@hono/node-server",
     "better-sqlite3",
+    "pg",
     "node:fs",
     "node:path",
     "node:url",
