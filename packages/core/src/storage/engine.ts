@@ -91,8 +91,6 @@ export class StorageEngine {
       assertValidBucketName(bucket.name);
       this.buckets.set(bucket.name, { public: bucket.public ?? false });
     }
-
-    this.ensureIndexes();
   }
 
   /**

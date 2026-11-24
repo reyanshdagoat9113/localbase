@@ -6,7 +6,7 @@ import type { SqlDialect } from "./types.js";
  * (`YYYY-MM-DDTHH:MM:SSZ`), matching the format Postgres produces via
  * `to_char(CURRENT_TIMESTAMP AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`.
  */
-const SQLITE_ISO_UTC_NOW = "(strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))";
+const SQLITE_ISO_UTC_NOW = "(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))";
 
 export const sqliteDialect: SqlDialect = {
   engine: "sqlite",
