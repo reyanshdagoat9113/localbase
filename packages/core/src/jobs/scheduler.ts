@@ -126,6 +126,7 @@ export class Scheduler {
   start(): void {
     if (this.started) return;
     this.ensureIndexes();
+    this.reconcileOrphanedRuns();
 
     for (const [name, job] of Object.entries(this.jobs)) {
       // `enabled` defaults to true; an explicit `false` registers-but-pauses.
@@ -318,6 +319,31 @@ export class Scheduler {
       CREATE INDEX IF NOT EXISTS "_job_runs_name_started_idx"
         ON "_job_runs" ("job_name", "started_at" DESC);
     `);
+  }
+
+  /**
+   * Mark any leftover `status = "running"` rows from a previous crashed or
+   * killed process as failed so they do not stay stuck as "running" forever
+   * in `jobs logs` and Admin Studio.
+   */
+  private reconcileOrphanedRuns(): void {
+    const exists = this.db
+      .raw()
+      .prepare(
+        `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_job_runs'`
+      )
+      .get();
+    if (!exists) return;
+
+    this.db.update(
+      "_job_runs",
+      {
+        status: "failed",
+        ended_at: new Date().toISOString(),
+        error: "interrupted: server restarted",
+      },
+      [{ column: "status", operator: "eq", value: "running" }]
+    );
   }
 
   /** Run through the shared runner while tracking the promise for shutdown drains. */
