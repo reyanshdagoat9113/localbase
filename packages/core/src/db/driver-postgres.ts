@@ -48,6 +48,17 @@ export function redactConnectionUrl(input: string): string {
 
 function redactErrorMessage(err: unknown, rawUrl?: string): string {
   let msg = err instanceof Error ? err.message : String(err);
+  if (
+    !msg &&
+    typeof AggregateError !== "undefined" &&
+    err instanceof AggregateError &&
+    Array.isArray(err.errors)
+  ) {
+    msg = err.errors
+      .map((inner) => (inner instanceof Error ? inner.message : String(inner)))
+      .filter(Boolean)
+      .join("; ");
+  }
   if (rawUrl) {
     try {
       const parsed = new URL(rawUrl);
@@ -89,6 +100,12 @@ function normalizePgColumnType(dataType: string, udtName: string): string {
   return dataType.toUpperCase();
 }
 
+interface ActiveTxState {
+  client: PoolClient;
+  executor: QueryExecutor;
+  active: boolean;
+}
+
 /**
  * {@link DbDriver} implementation backed by `pg` (`node-postgres`).
  *
@@ -102,7 +119,7 @@ export class PostgresDriver implements DbDriver {
   private readonly pool: Pool;
   private readonly schema: string;
   private readonly rawUrl: string;
-  private readonly txContext = new AsyncLocalStorage<PoolClient>();
+  private readonly txContext = new AsyncLocalStorage<ActiveTxState>();
   private readonly initializedClients = new WeakSet<PoolClient>();
 
   private constructor(pool: Pool, schema: string, rawUrl: string) {
@@ -194,10 +211,15 @@ export class PostgresDriver implements DbDriver {
     this.initializedClients.add(client);
   }
 
+  private getActiveTx(): ActiveTxState | undefined {
+    const store = this.txContext.getStore();
+    return store?.active === true ? store : undefined;
+  }
+
   private async withClient<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
-    const active = this.txContext.getStore();
+    const active = this.getActiveTx();
     if (active) {
-      return fn(active);
+      return fn(active.client);
     }
     let client: PoolClient;
     try {
@@ -213,15 +235,21 @@ export class PostgresDriver implements DbDriver {
     }
   }
 
-  private createTxExecutor(client: PoolClient): QueryExecutor {
+  private createTxExecutor(state: ActiveTxState): QueryExecutor {
+    const assertActive = (): void => {
+      if (!state.active) {
+        throw new Error("Transaction has already finished.");
+      }
+    };
     return {
       dialect: this.dialect,
       query: async <T = Record<string, unknown>>(
         sql: string,
         params: unknown[] = []
       ): Promise<T[]> => {
+        assertActive();
         try {
-          const res = await client.query(sql, params);
+          const res = await state.client.query(sql, params);
           return res.rows as T[];
         } catch (err) {
           wrapPgError(err, this.rawUrl);
@@ -231,8 +259,9 @@ export class PostgresDriver implements DbDriver {
         sql: string,
         params: unknown[] = []
       ): Promise<T | undefined> => {
+        assertActive();
         try {
-          const res = await client.query(sql, params);
+          const res = await state.client.query(sql, params);
           return res.rows[0] as T | undefined;
         } catch (err) {
           wrapPgError(err, this.rawUrl);
@@ -242,16 +271,18 @@ export class PostgresDriver implements DbDriver {
         sql: string,
         params: unknown[] = []
       ): Promise<{ rowCount: number }> => {
+        assertActive();
         try {
-          const res = await client.query(sql, params);
+          const res = await state.client.query(sql, params);
           return { rowCount: res.rowCount ?? 0 };
         } catch (err) {
           wrapPgError(err, this.rawUrl);
         }
       },
       execBatch: async (sql: string): Promise<void> => {
+        assertActive();
         try {
-          await client.query(sql);
+          await state.client.query(sql);
         } catch (err) {
           wrapPgError(err, this.rawUrl);
         }
@@ -312,7 +343,7 @@ export class PostgresDriver implements DbDriver {
   }
 
   async transaction<T>(fn: (tx: QueryExecutor) => Promise<T>): Promise<T> {
-    if (this.txContext.getStore()) {
+    if (this.getActiveTx()) {
       throw new Error(
         "Nested transactions are not supported on PostgresDriver."
       );
@@ -325,15 +356,23 @@ export class PostgresDriver implements DbDriver {
       wrapPgError(err, this.rawUrl);
     }
 
+    const state: ActiveTxState = {
+      client,
+      executor: null as unknown as QueryExecutor,
+      active: true,
+    };
+    state.executor = this.createTxExecutor(state);
+
     try {
       await this.ensureSearchPath(client);
       await client.query("BEGIN");
-      const tx = this.createTxExecutor(client);
       try {
-        const result = await this.txContext.run(client, () => fn(tx));
+        const result = await this.txContext.run(state, () => fn(state.executor));
+        state.active = false;
         await client.query("COMMIT");
         return result;
       } catch (err) {
+        state.active = false;
         try {
           await client.query("ROLLBACK");
         } catch {
@@ -342,6 +381,7 @@ export class PostgresDriver implements DbDriver {
         throw err;
       }
     } finally {
+      state.active = false;
       client.release();
     }
   }

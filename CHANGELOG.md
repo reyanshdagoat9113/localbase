@@ -13,6 +13,7 @@ Versions follow [Semantic Versioning](https://semver.org/) with a beta prereleas
 - `localbase status`: a read-only setup check (Node version, database, pending migrations, schema drift, auth, tables without policies, running server). `--json` for scripts.
 - `security.trustProxy` option (default `false`): ignores `X-Forwarded-For` in rate limiting and `X-Forwarded-Host`/`X-Forwarded-Proto` in signed storage URLs unless explicitly opted in behind a reverse proxy; rate-limit bucket map is now size-capped.
 - `@localbase/core`: engine-agnostic `DbDriver` / `SqlDialect` / `DatabaseError` abstraction (`SqliteDriver`, `sqliteDialect`) and targeted `Database.introspectTable(name)`.
+- `@localbase/core`: PostgreSQL driver (`PostgresDriver`, `postgresDialect`, `redactConnectionUrl`) with optional `pg` peer dependency, lazy `import("pg")`, credential redaction on error paths, `information_schema`/`pg_catalog` introspection, and PostgreSQL 16 CI coverage.
 
 ### Fixed
 

@@ -192,3 +192,45 @@ jobs:
 
       - name: Audit (fail on critical/high in production deps)
         run: npm audit --omit=dev --audit-level=high
+
+  # ── PostgreSQL 16 integration tests (core driver) ──
+  postgres-core:
+    name: PostgreSQL 16 core tests
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: localbase
+          POSTGRES_PASSWORD: localbase
+          POSTGRES_DB: localbase_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U localbase -d localbase_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    steps:
+      - name: Checkout
+        # actions/checkout@v7.0.0
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Setup Node 24
+        # actions/setup-node@v5.0.0
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Run PostgreSQL driver integration tests
+        working-directory: packages/core
+        env:
+          TEST_POSTGRES_URL: postgres://localbase:localbase@127.0.0.1:5432/localbase_test
+        run: npx tsx --test "src/db/postgres.test.ts"
