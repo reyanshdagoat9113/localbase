@@ -76,6 +76,47 @@ function redactErrorMessage(err: unknown, rawUrl?: string): string {
   return redactConnectionUrl(msg);
 }
 
+function isConnectionLevelError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { code?: unknown; message?: unknown };
+  const code = typeof e.code === "string" ? e.code : "";
+  if (code.startsWith("08")) return true;
+  if (
+    code === "ECONNRESET" ||
+    code === "ECONNREFUSED" ||
+    code === "EPIPE" ||
+    code === "ETIMEDOUT"
+  ) {
+    return true;
+  }
+  const msg = typeof e.message === "string" ? e.message : "";
+  if (
+    msg.includes("Connection terminated") ||
+    msg.includes("Client has encountered a connection error")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Attach an `error` listener to a `pg.Pool` so idle-client disconnects
+ * (Postgres restarts, network blips, idle timeouts) do not crash Node with an
+ * unhandled `error` event, and always redact credentials from logged messages.
+ *
+ * @internal Exported for unit testing.
+ */
+export function attachPoolErrorHandler(
+  pool: Pick<Pool, "on">,
+  rawUrl?: string,
+  log: (message: string) => void = console.error
+): void {
+  pool.on("error", (err: unknown) => {
+    const safeMsg = redactErrorMessage(err, rawUrl);
+    log(`[localbase:postgres] Idle client error: ${safeMsg}`);
+  });
+}
+
 function wrapPgError(err: unknown, rawUrl?: string): never {
   if (err instanceof DatabaseError) throw err;
   const safeMessage = redactErrorMessage(err, rawUrl);
@@ -181,6 +222,7 @@ export class PostgresDriver implements DbDriver {
     };
 
     const pool = new PoolCtor(poolConfig);
+    attachPoolErrorHandler(pool, options.url);
     const driver = new PostgresDriver(pool, schema, options.url);
 
     // Verify connectivity up-front and redact credentials on any failure.
@@ -227,11 +269,22 @@ export class PostgresDriver implements DbDriver {
     } catch (err) {
       wrapPgError(err, this.rawUrl);
     }
+    let releaseError: Error | undefined;
     try {
       await this.ensureSearchPath(client);
       return await fn(client);
+    } catch (err) {
+      const raw = err instanceof DatabaseError ? err.cause : err;
+      if (
+        !this.initializedClients.has(client) ||
+        isConnectionLevelError(err) ||
+        isConnectionLevelError(raw)
+      ) {
+        releaseError = err instanceof Error ? err : new Error(String(err));
+      }
+      throw err;
     } finally {
-      client.release();
+      client.release(releaseError);
     }
   }
 
@@ -363,9 +416,12 @@ export class PostgresDriver implements DbDriver {
     };
     state.executor = this.createTxExecutor(state);
 
+    let txStarted = false;
+    let releaseError: Error | undefined;
     try {
       await this.ensureSearchPath(client);
       await client.query("BEGIN");
+      txStarted = true;
       try {
         const result = await this.txContext.run(state, () => fn(state.executor));
         state.active = false;
@@ -375,14 +431,29 @@ export class PostgresDriver implements DbDriver {
         state.active = false;
         try {
           await client.query("ROLLBACK");
-        } catch {
-          // Best-effort rollback.
+        } catch (rollbackErr) {
+          releaseError =
+            rollbackErr instanceof Error
+              ? rollbackErr
+              : new Error(String(rollbackErr));
+        }
+        const raw = err instanceof DatabaseError ? err.cause : err;
+        if (
+          !releaseError &&
+          (isConnectionLevelError(err) || isConnectionLevelError(raw))
+        ) {
+          releaseError = err instanceof Error ? err : new Error(String(err));
         }
         throw err;
       }
+    } catch (err) {
+      if (!txStarted && !releaseError) {
+        releaseError = err instanceof Error ? err : new Error(String(err));
+      }
+      throw err;
     } finally {
       state.active = false;
-      client.release();
+      client.release(releaseError);
     }
   }
 
@@ -465,19 +536,24 @@ export class PostgresDriver implements DbDriver {
       to_column: string;
     }>(
       `SELECT
-         kcu.column_name AS from_column,
-         ccu.table_name AS to_table,
-         ccu.column_name AS to_column
-       FROM information_schema.table_constraints tc
-       JOIN information_schema.key_column_usage kcu
-         ON tc.constraint_name = kcu.constraint_name
-        AND tc.table_schema = kcu.table_schema
-       JOIN information_schema.constraint_column_usage ccu
-         ON ccu.constraint_name = tc.constraint_name
-        AND ccu.table_schema = tc.table_schema
-       WHERE tc.constraint_type = 'FOREIGN KEY'
-         AND tc.table_schema = $1
-         AND tc.table_name = $2`,
+         a_from.attname AS from_column,
+         c_to.relname AS to_table,
+         a_to.attname AS to_column
+       FROM pg_constraint con
+       JOIN pg_class c_from ON c_from.oid = con.conrelid
+       JOIN pg_namespace n_from ON n_from.oid = c_from.relnamespace
+       JOIN pg_class c_to ON c_to.oid = con.confrelid
+       JOIN LATERAL unnest(con.conkey, con.confkey) WITH ORDINALITY AS cols(from_attnum, to_attnum, ord) ON true
+       JOIN pg_attribute a_from
+         ON a_from.attrelid = con.conrelid
+        AND a_from.attnum = cols.from_attnum
+       JOIN pg_attribute a_to
+         ON a_to.attrelid = con.confrelid
+        AND a_to.attnum = cols.to_attnum
+       WHERE con.contype = 'f'
+         AND n_from.nspname = $1
+         AND c_from.relname = $2
+       ORDER BY con.conname, cols.ord`,
       [this.schema, name]
     );
     const foreignKeys: IntrospectedForeignKey[] = fkRows.map((fk) => ({
@@ -519,6 +595,8 @@ export class PostgresDriver implements DbDriver {
 
     let rowCount = 0;
     if (includeRowCount) {
+      // TODO(postgres): switch to a pg_class.reltuples estimate for large tables
+      // so introspect() avoids a full sequential scan on every table.
       const countRow = await this.queryOne<{ n: string | number }>(
         `SELECT COUNT(*) AS n FROM "${this.schema}"."${name}"`
       );

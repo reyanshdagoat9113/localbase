@@ -1,11 +1,16 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
 import type { DatabaseSchema } from "@localbase/shared";
 import { Database } from "../db.js";
 import { Auth, resolveAuthConfig } from "../auth/index.js";
 import { postgresDialect } from "./dialect-postgres.js";
-import { PostgresDriver, redactConnectionUrl } from "./driver-postgres.js";
+import {
+  PostgresDriver,
+  attachPoolErrorHandler,
+  redactConnectionUrl,
+} from "./driver-postgres.js";
 import { DatabaseError, normalizeDatabaseError } from "./types.js";
 
 const ISO_MS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -122,6 +127,25 @@ describe("PostgresDriver credential redaction & error mapping (unit)", () => {
       (err: unknown) =>
         err instanceof DatabaseError && err.code === "invalid_input"
     );
+  });
+
+  it("attaches a pool error handler that absorbs idle-client errors and redacts credentials", () => {
+    const fakePool = new EventEmitter();
+    const logged: string[] = [];
+    attachPoolErrorHandler(
+      fakePool as unknown as Parameters<typeof attachPoolErrorHandler>[0],
+      "postgres://user:supersecret@127.0.0.1:5432/db",
+      (msg) => logged.push(msg)
+    );
+    assert.doesNotThrow(() => {
+      fakePool.emit(
+        "error",
+        new Error("idle client lost: postgres://user:supersecret@127.0.0.1:5432/db (supersecret)")
+      );
+    });
+    assert.equal(logged.length, 1);
+    assert.ok(!logged[0].includes("supersecret"), `leaked password: ${logged[0]}`);
+    assert.ok(logged[0].includes("postgres://***@127.0.0.1:5432/db"));
   });
 
   it("rejects unreachable connections with DatabaseError('connection') and redacts credentials", async () => {
@@ -460,5 +484,12 @@ describe("PostgresDriver live integration", { skip: !TEST_POSTGRES_URL }, () => 
     await db.reset();
     assert.equal(await db.count("authors"), 0);
     assert.equal(await db.count("posts"), 0);
+  });
+
+  it("survives an idle-client error event emitted by the underlying pg.Pool", () => {
+    const pool = (driver as unknown as { pool: EventEmitter }).pool;
+    assert.doesNotThrow(() => {
+      pool.emit("error", new Error("simulated idle client disconnect"));
+    });
   });
 });
