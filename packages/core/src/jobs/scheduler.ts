@@ -304,13 +304,7 @@ export class Scheduler {
    * operations that need it will fail later with a clear SQLite error.
    */
   ensureIndexes(): void {
-    const exists = this.db
-      .raw()
-      .prepare(
-        `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_job_runs'`
-      )
-      .get();
-    if (!exists) return;
+    if (!this.hasRunsTable()) return;
 
     // Covers the per-job history query (filter by job_name, order by
     // started_at desc) that `getRuns`, `localbase jobs logs`, and the admin
@@ -327,13 +321,7 @@ export class Scheduler {
    * in `jobs logs` and Admin Studio.
    */
   private reconcileOrphanedRuns(): void {
-    const exists = this.db
-      .raw()
-      .prepare(
-        `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_job_runs'`
-      )
-      .get();
-    if (!exists) return;
+    if (!this.hasRunsTable()) return;
 
     this.db.update(
       "_job_runs",
@@ -343,6 +331,17 @@ export class Scheduler {
         error: "interrupted: server restarted",
       },
       [{ column: "status", operator: "eq", value: "running" }]
+    );
+  }
+
+  private hasRunsTable(): boolean {
+    return (
+      this.db
+        .raw()
+        .prepare(
+          `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_job_runs'`
+        )
+        .get() !== undefined
     );
   }
 
