@@ -11,9 +11,21 @@ Versions follow [Semantic Versioning](https://semver.org/) with a beta prereleas
 ### Added
 
 - `localbase status`: a read-only setup check (Node version, database, pending migrations, schema drift, auth, tables without policies, running server). `--json` for scripts.
+- `security.trustProxy` option (default `false`): ignores `X-Forwarded-For` in rate limiting and `X-Forwarded-Host`/`X-Forwarded-Proto` in signed storage URLs unless explicitly opted in behind a reverse proxy; rate-limit bucket map is now size-capped.
+
+### Fixed
+
+- Storage: `POST /api/storage/:bucket/:filename/sign` checks file existence via metadata + `fs.existsSync` without opening an unconsumed read stream (fixing a file-descriptor leak).
+- REST API: boolean columns now accept JS `true`/`false` in JSON bodies and `"true"`/`"false"` (in addition to `1`/`0`) in query filters.
+- Auth: `setPassword` (and `setPasswordById`) now revokes all active `_sessions` for the user; `setRole` now distinguishes self-demotion from demoting another admin.
+- Jobs: `Scheduler.start()` reconciles orphaned `status = "running"` rows from a previous crashed/restarted process as `failed` (`"interrupted: server restarted"`).
+- SDK: `update()` / `delete()` now reject additional non-`id` filters instead of silently ignoring them, and URL-encode the `id` path segment.
+- Dependencies: updated `hono` and `@hono/node-server` to resolve moderate production audit advisories.
+- Release tooling: `scripts/version-set.mjs` now also syncs `VERSION` in `@localbase/shared` and `APP_VERSION` in the landing site.
 
 ### Changed
 
+- **Proxy headers ignored by default (`security.trustProxy: false`):** rate limiting ignores `X-Forwarded-For` and signed storage URLs ignore `X-Forwarded-Host` / `X-Forwarded-Proto` unless explicitly enabled. Behind a reverse proxy, set `security.trustProxy: true`.
 - `localbase init` creates a `.gitignore` (`.localbase/`, `backups/`) when none exists, and appends missing entries to an existing one.
 - CLI hints print `npx @localbase/cli …` when the CLI was launched through npx, instead of a `localbase` command that isn't on PATH.
 - `localbase dev` warns when auth is enabled but tables have no owner policy, since anonymous clients can still read and write them.

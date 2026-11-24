@@ -562,4 +562,43 @@ describe("Scheduler — index provisioning", () => {
       db.close();
     }
   });
+
+  it("start() reconciles orphaned running rows from a previous process as failed", () => {
+    const cwd = writeHandler(`export default async () => {}`);
+    const jobs = { a: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
+    const { scheduler, db } = makeScheduler(cwd, jobs);
+
+    try {
+      // Simulate a crashed process leaving a "running" row alongside a completed row.
+      db.insert("_job_runs", {
+        job_name: "a",
+        status: "running",
+        started_at: "2026-01-01T00:00:00.000Z",
+      });
+      db.insert("_job_runs", {
+        job_name: "a",
+        status: "success",
+        started_at: "2026-01-01T00:00:00.000Z",
+        ended_at: "2026-01-01T00:00:01.000Z",
+      });
+
+      scheduler.start();
+
+      const { runs } = scheduler.getRuns("a");
+      const orphan = runs.find((r) => r.id === 1);
+      const completed = runs.find((r) => r.id === 2);
+
+      assert.ok(orphan);
+      assert.equal(orphan.status, "failed");
+      assert.equal(orphan.error, "interrupted: server restarted");
+      assert.ok(orphan.ended_at, "ended_at should be stamped");
+
+      assert.ok(completed);
+      assert.equal(completed.status, "success");
+      assert.equal(completed.error, null);
+    } finally {
+      scheduler.stop();
+      db.close();
+    }
+  });
 });

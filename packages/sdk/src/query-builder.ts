@@ -138,7 +138,7 @@ export class QueryBuilder<T = unknown> implements PromiseLike<ResponseShape<T>> 
     if (this._method === "PATCH" || this._method === "DELETE") {
       const idFilter = this._filters.find((f) => f.column === "id" && f.operator === "eq");
       if (idFilter) {
-        return `${base}/${idFilter.value}`;
+        return `${base}/${encodeURIComponent(String(idFilter.value))}`;
       }
       return base;
     }
@@ -203,16 +203,24 @@ export class QueryBuilder<T = unknown> implements PromiseLike<ResponseShape<T>> 
   private async _execute(): Promise<ResponseShape<T>> {
     // The REST API only supports single-row PATCH/DELETE by primary key.
     // Fail fast with an actionable message instead of sending a request the
-    // server will reject with a plain-text 404.
-    if (
-      (this._method === "PATCH" || this._method === "DELETE") &&
-      !this._filters.some((f) => f.column === "id" && f.operator === "eq")
-    ) {
+    // server will reject with a plain-text 404 or silently ignoring extra filters.
+    if (this._method === "PATCH" || this._method === "DELETE") {
       const verb = this._method === "PATCH" ? "update" : "delete";
-      return {
-        data: null,
-        error: `${verb}() requires .eq("id", value): LocalBase only supports ${verb} by primary key.`,
-      };
+      const hasIdEq = this._filters.some(
+        (f) => f.column === "id" && f.operator === "eq"
+      );
+      if (!hasIdEq) {
+        return {
+          data: null,
+          error: `${verb}() requires .eq("id", value): LocalBase only supports ${verb} by primary key.`,
+        };
+      }
+      if (this._filters.length > 1) {
+        return {
+          data: null,
+          error: `${verb}() only supports a single .eq("id", value) filter; additional filters are not supported.`,
+        };
+      }
     }
 
     try {

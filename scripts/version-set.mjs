@@ -102,5 +102,33 @@ if (fs.existsSync(cliIndex)) {
   }
 }
 
+// Keep @localbase/shared VERSION export in sync.
+const sharedIndex = path.join(REPO_ROOT, "packages", "shared", "src", "index.ts");
+if (fs.existsSync(sharedIndex)) {
+  const src = fs.readFileSync(sharedIndex, "utf8");
+  const next = src.replace(
+    /export const VERSION = ["'][^"']+["'];/,
+    `export const VERSION = "${version}";`
+  );
+  if (next !== src) {
+    fs.writeFileSync(sharedIndex, next);
+    console.log(`packages/shared/src/index.ts VERSION → ${version}`);
+  }
+}
+
+// Keep landing site APP_VERSION in sync.
+const landingSite = path.join(REPO_ROOT, "packages", "landing", "src", "config", "site.ts");
+if (fs.existsSync(landingSite)) {
+  const src = fs.readFileSync(landingSite, "utf8");
+  const next = src.replace(
+    /export const APP_VERSION = ["'][^"']+["']/,
+    `export const APP_VERSION = '${version}'`
+  );
+  if (next !== src) {
+    fs.writeFileSync(landingSite, next);
+    console.log(`packages/landing/src/config/site.ts APP_VERSION → ${version}`);
+  }
+}
+
 console.log("\nDone. Public versions, workspace dependency pins, and package-lock.json are in sync.");
 console.log("Do not publish until pack:smoke is green.");

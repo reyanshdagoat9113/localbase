@@ -262,6 +262,47 @@ describe("SDK", () => {
       assert.equal(data, null);
       assert.match(String(error), /delete\(\) requires \.eq\("id", value\)/);
     });
+
+    it("update() rejects additional filters alongside .eq('id', ...)", async () => {
+      const { data, error } = await client
+        .from("users")
+        .update({ name: "Nope" })
+        .eq("id", 1)
+        .eq("email", "alice@test.com");
+      assert.equal(data, null);
+      assert.match(String(error), /additional filters are not supported/);
+    });
+
+    it("delete() rejects additional filters alongside .eq('id', ...)", async () => {
+      const { data, error } = await client
+        .from("users")
+        .delete()
+        .eq("id", 1)
+        .eq("name", "Alice");
+      assert.equal(data, null);
+      assert.match(String(error), /additional filters are not supported/);
+    });
+
+    it("URL-encodes the id path segment on update/delete", async () => {
+      const origFetch = globalThis.fetch;
+      let seenUrl = "";
+      globalThis.fetch = (async (input: string | URL | Request) => {
+        seenUrl = String(input);
+        return new Response(JSON.stringify({ data: { deleted: true } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }) as typeof fetch;
+      try {
+        await client.from("users").delete().eq("id", "a/b c");
+        assert.ok(
+          seenUrl.endsWith("/api/users/a%2Fb%20c"),
+          `expected encoded id, got ${seenUrl}`
+        );
+      } finally {
+        globalThis.fetch = origFetch;
+      }
+    });
   });
 
   describe("error handling", () => {

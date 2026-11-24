@@ -184,7 +184,7 @@ describe("CORS configured allowlist", () => {
 
 // ─── Rate limiting ─────────────────────────────────────────────
 
-describe("rate limiting (per route, per IP)", () => {
+describe("rate limiting (per route, per IP with trustProxy: true)", () => {
   let db: Database;
   let app: Hono;
 
@@ -192,7 +192,10 @@ describe("rate limiting (per route, per IP)", () => {
     db = new Database({ schema: testSchema, auth: authConfig });
     app = createServer(db, testSchema, {
       auth: authConfig,
-      security: { rateLimits: { windowMs: 1000, max: 3 } },
+      security: {
+        trustProxy: true,
+        rateLimits: { windowMs: 1000, max: 3 },
+      },
     });
   });
   after(() => db.close());
@@ -251,6 +254,115 @@ describe("rate limiting (per route, per IP)", () => {
       )
     );
     assert.notEqual(res.status, 429);
+  });
+});
+
+describe("rate limiting (trustProxy default false & bucket cap)", () => {
+  it("ignores X-Forwarded-For when trustProxy is omitted/false", async () => {
+    const db = new Database({ schema: testSchema, auth: authConfig });
+    const app = createServer(db, testSchema, {
+      auth: authConfig,
+      security: { rateLimits: { windowMs: 1000, max: 2 } },
+    });
+    try {
+      for (let i = 0; i < 2; i++) {
+        const res = await app.request(
+          "/api/auth/signin",
+          jsonPost(
+            { email: `spoof${i}@x.com`, password: "whatever123" },
+            { "X-Forwarded-For": `203.0.113.${i + 1}` }
+          )
+        );
+        assert.equal(res.status, 401);
+      }
+      // Rotating X-Forwarded-For must NOT bypass the limit when trustProxy is false.
+      const blocked = await app.request(
+        "/api/auth/signin",
+        jsonPost(
+          { email: "spoof3@x.com", password: "whatever123" },
+          { "X-Forwarded-For": "198.51.100.99" }
+        )
+      );
+      assert.equal(blocked.status, 429);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("enforces maxEntries cap by evicting oldest buckets", async () => {
+    const { Hono } = await import("hono");
+    const { rateLimit } = await import("./rate-limit.js");
+    const app = new Hono();
+    app.use(
+      "/limited",
+      rateLimit({ windowMs: 60_000, max: 1, trustProxy: true, maxEntries: 2 })
+    );
+    app.get("/limited", (c) => c.json({ ok: true }));
+
+    // IP 1 uses its 1 request and is now rate-limited.
+    assert.equal(
+      (await app.request("/limited", { headers: { "X-Forwarded-For": "10.0.0.1" } })).status,
+      200
+    );
+    assert.equal(
+      (await app.request("/limited", { headers: { "X-Forwarded-For": "10.0.0.1" } })).status,
+      429
+    );
+
+    // IP 2 and IP 3 fill the cap of 2, evicting IP 1 (oldest).
+    assert.equal(
+      (await app.request("/limited", { headers: { "X-Forwarded-For": "10.0.0.2" } })).status,
+      200
+    );
+    assert.equal(
+      (await app.request("/limited", { headers: { "X-Forwarded-For": "10.0.0.3" } })).status,
+      200
+    );
+
+    // IP 1 was evicted, so its bucket starts fresh (200).
+    assert.equal(
+      (await app.request("/limited", { headers: { "X-Forwarded-For": "10.0.0.1" } })).status,
+      200
+    );
+  });
+
+  it("resolves real socket remoteAddress under @hono/node-server instead of collapsing to unknown", async () => {
+    const { Hono } = await import("hono");
+    const { serve } = await import("@hono/node-server");
+    const { rateLimit } = await import("./rate-limit.js");
+
+    const app = new Hono();
+    app.use("/ping", rateLimit({ windowMs: 60_000, max: 1 }));
+    app.get("/ping", (c) => c.json({ ok: true }));
+
+    // Exhaust the "unknown" bucket via in-process app.request (no socket).
+    assert.equal((await app.request("/ping")).status, 200);
+    assert.equal((await app.request("/ping")).status, 429);
+
+    // Start a real @hono/node-server listener on an ephemeral loopback port.
+    let port = 0;
+    const server = await new Promise<ReturnType<typeof serve>>((resolve) => {
+      const s = serve(
+        { fetch: app.fetch, port: 0, hostname: "127.0.0.1" },
+        (info) => {
+          port = info.port;
+          resolve(s);
+        }
+      );
+    });
+
+    try {
+      // Real HTTP request has socket remoteAddress (127.0.0.1), so it must NOT
+      // share the already-exhausted "unknown" bucket.
+      const first = await fetch(`http://127.0.0.1:${port}/ping`);
+      assert.equal(first.status, 200);
+
+      // Second real HTTP request from the same loopback socket hits 429.
+      const second = await fetch(`http://127.0.0.1:${port}/ping`);
+      assert.equal(second.status, 429);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });
 

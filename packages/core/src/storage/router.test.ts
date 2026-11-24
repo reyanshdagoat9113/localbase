@@ -366,6 +366,108 @@ describe("Storage REST API", () => {
       }
     });
   });
+
+  describe("POST /api/storage/:bucket/:filename/sign — FD safety & trustProxy", () => {
+    it("checks existence without opening a read stream and allows immediate DELETE", async () => {
+      const upload = await app.request("/api/storage/sign-fd", {
+        method: "POST",
+        headers: authHeaders(token),
+        body: makeUploadForm(makeFile("doc.txt", "hello world")),
+      });
+      const { data: uploaded } = (await upload.json()) as {
+        data: { storedName: string };
+      };
+
+      const origGet = db.storage.get.bind(db.storage);
+      let getCalled = false;
+      db.storage.get = (...args) => {
+        getCalled = true;
+        return origGet(...args);
+      };
+      try {
+        const signRes = await app.request(
+          `/api/storage/sign-fd/${uploaded.storedName}/sign`,
+          {
+            method: "POST",
+            headers: { ...authHeaders(token), "Content-Type": "application/json" },
+            body: JSON.stringify({ expiresIn: 60 }),
+          }
+        );
+        assert.equal(signRes.status, 200);
+        assert.equal(getCalled, false, "/sign must not call storage.get() / open a stream");
+      } finally {
+        db.storage.get = origGet;
+      }
+
+      // Immediate DELETE must succeed cleanly (no leaked open file descriptor).
+      const delRes = await app.request(
+        `/api/storage/sign-fd/${uploaded.storedName}`,
+        { method: "DELETE", headers: authHeaders(token) }
+      );
+      assert.equal(delRes.status, 200);
+    });
+
+    it("ignores X-Forwarded-Host/Proto by default and honors them when trustProxy is true", async () => {
+      const upload = await app.request("/api/storage/sign-proxy", {
+        method: "POST",
+        headers: authHeaders(token),
+        body: makeUploadForm(makeFile("proxy.txt", "data")),
+      });
+      const { data: uploaded } = (await upload.json()) as {
+        data: { storedName: string };
+      };
+
+      // Default app has trustProxy: false → ignores spoofed forwarding headers.
+      const defaultRes = await app.request(
+        `http://localhost:5180/api/storage/sign-proxy/${uploaded.storedName}/sign`,
+        {
+          method: "POST",
+          headers: {
+            ...authHeaders(token),
+            "Content-Type": "application/json",
+            "X-Forwarded-Host": "evil.example.com",
+            "X-Forwarded-Proto": "https",
+          },
+          body: JSON.stringify({ expiresIn: 60 }),
+        }
+      );
+      assert.equal(defaultRes.status, 200);
+      const defaultBody = (await defaultRes.json()) as {
+        data: { signedUrl: string };
+      };
+      assert.ok(
+        defaultBody.data.signedUrl.startsWith("http://localhost:5180/api/storage/"),
+        `expected request origin, got ${defaultBody.data.signedUrl}`
+      );
+
+      // With trustProxy: true → honors X-Forwarded-Host/Proto.
+      const trustedApp = createServer(db, testSchema, {
+        auth: authConfig,
+        security: { trustProxy: true },
+      });
+      const trustedRes = await trustedApp.request(
+        `http://localhost:5180/api/storage/sign-proxy/${uploaded.storedName}/sign`,
+        {
+          method: "POST",
+          headers: {
+            ...authHeaders(token),
+            "Content-Type": "application/json",
+            "X-Forwarded-Host": "cdn.example.com",
+            "X-Forwarded-Proto": "https",
+          },
+          body: JSON.stringify({ expiresIn: 60 }),
+        }
+      );
+      assert.equal(trustedRes.status, 200);
+      const trustedBody = (await trustedRes.json()) as {
+        data: { signedUrl: string };
+      };
+      assert.ok(
+        trustedBody.data.signedUrl.startsWith("https://cdn.example.com/api/storage/"),
+        `expected forwarded origin, got ${trustedBody.data.signedUrl}`
+      );
+    });
+  });
 });
 
 async function parseJson(res: Response): Promise<{ status: number; body: any }> {

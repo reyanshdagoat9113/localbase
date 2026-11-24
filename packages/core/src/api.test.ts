@@ -410,4 +410,79 @@ describe("REST API", () => {
       assert.equal(status, 404);
     });
   });
+
+  // ── Boolean coercion (body + query filters) ──
+
+  describe("boolean coercion", () => {
+    it("accepts JS booleans, string booleans, and 1/0 in POST/PATCH bodies and stores 1/0", async () => {
+      const boolSchema: DatabaseSchema = {
+        flags: {
+          id: { type: "integer", primaryKey: true, autoIncrement: true },
+          name: { type: "text", nullable: false },
+          active: { type: "boolean", nullable: false },
+        },
+      };
+      const boolDb = new Database({ schema: boolSchema });
+      const boolApp = createServer(boolDb, boolSchema, {
+        auth: { enabled: false },
+      });
+
+      try {
+        const resTrue = await boolApp.request("/api/flags", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "a", active: true }),
+        });
+        assert.equal(resTrue.status, 201);
+        const bodyTrue = (await resTrue.json()) as { data: { id: number; active: number } };
+        assert.equal(bodyTrue.data.active, 1);
+
+        const resFalse = await boolApp.request("/api/flags", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "b", active: false }),
+        });
+        assert.equal(resFalse.status, 201);
+        const bodyFalse = (await resFalse.json()) as { data: { id: number; active: number } };
+        assert.equal(bodyFalse.data.active, 0);
+
+        const resPatch = await boolApp.request(`/api/flags/${bodyFalse.data.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ active: "true" }),
+        });
+        assert.equal(resPatch.status, 200);
+        const bodyPatch = (await resPatch.json()) as { data: { active: number } };
+        assert.equal(bodyPatch.data.active, 1);
+
+        const resBad = await boolApp.request("/api/flags", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "c", active: "maybe" }),
+        });
+        assert.equal(resBad.status, 400);
+
+        // Query filters: "true", "false", "1", "0"
+        const qTrue = await boolApp.request("/api/flags?active=eq.true");
+        assert.equal(qTrue.status, 200);
+        const qTrueBody = (await qTrue.json()) as { data: unknown[] };
+        assert.equal(qTrueBody.data.length, 2);
+
+        const qFalse = await boolApp.request("/api/flags?active=eq.false");
+        assert.equal(qFalse.status, 200);
+        const qFalseBody = (await qFalse.json()) as { data: unknown[] };
+        assert.equal(qFalseBody.data.length, 0);
+
+        const qNum = await boolApp.request("/api/flags?active=eq.1");
+        assert.equal(qNum.status, 200);
+        const qNumBody = (await qNum.json()) as { data: unknown[] };
+        assert.equal(qNumBody.data.length, 2);
+
+        const qBad = await boolApp.request("/api/flags?active=eq.notabool");
+        assert.equal(qBad.status, 400);
+      } finally {
+        boolDb.close();
+      }
+    });
+  });
 });

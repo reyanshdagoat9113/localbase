@@ -572,6 +572,16 @@ function validateSecurity(config: LocalBaseConfig): void {
       }
     }
   }
+
+  if (
+    s.trustProxy !== undefined &&
+    typeof s.trustProxy !== "boolean"
+  ) {
+    throw new ConfigError(
+      `Invalid config: "security.trustProxy" must be a boolean.`,
+      `Omit it for the default (false), or set true only when behind a trusted reverse proxy.`
+    );
+  }
 }
 
 export { CONFIG_FILE, DB_DIR, DB_FILE };

@@ -572,6 +572,11 @@ export class Auth {
       { password_hash: passwordHash },
       [{ column: "email", operator: "eq", value: email }]
     );
+    // Revoke all active refresh sessions so existing tokens cannot mint new
+    // access tokens after a password reset.
+    this.db.delete("_sessions", [
+      { column: "user_id", operator: "eq", value: user.id },
+    ]);
   }
 
   /**
@@ -664,7 +669,7 @@ export class Auth {
           throw new AuthError(
             409,
             self
-              ? `Cannot demote "${email}": they are the last admin. Promote another user first.`
+              ? `Cannot demote yourself ("${email}"): you are the last admin. Promote another user first.`
               : `Cannot demote "${email}": they are the last admin. Promote another user first.`
           );
         }

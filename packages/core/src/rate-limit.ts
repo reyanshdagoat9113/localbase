@@ -5,7 +5,19 @@ export interface RateLimitOptions {
   windowMs: number;
   /** Maximum requests permitted within one window. */
   max: number;
+  /**
+   * Whether to trust `X-Forwarded-For` for client IP keying. Default `false`
+   * so direct clients cannot spoof arbitrary IPs to bypass rate limits.
+   */
+  trustProxy?: boolean;
+  /**
+   * Maximum number of active buckets kept in memory. When exceeded, expired
+   * entries are swept first, then the oldest entry is evicted. Default 10000.
+   */
+  maxEntries?: number;
 }
+
+const DEFAULT_MAX_ENTRIES = 10_000;
 
 interface Bucket {
   count: number;
@@ -17,26 +29,32 @@ interface Bucket {
  * Resolve the client IP used to key rate-limit buckets.
  *
  * Order of preference:
- *   1. The FIRST address in `X-Forwarded-For`. Only the first hop is used so
- *      a spoofed trailing entry cannot dilute the limit. This header is only
- *      trustworthy when the server sits behind a proxy that overwrites it —
- *      a direct client can set it themselves, which is why the limiter is a
- *      abuse speed-bump, not an authoritative identity.
- *   2. The TCP socket's remote address (present under @hono/node-server).
- *   3. The literal `"unknown"`, so requests with no resolvable address share a
- *      single bucket rather than bypassing the limit entirely.
+ *   1. When `trustProxy` is true, the FIRST address in `X-Forwarded-For`.
+ *   2. The Node TCP socket's remote address via `c.env.incoming.socket.remoteAddress`
+ *      (populated by `@hono/node-server`), with a fallback to `c.req.raw.socket`.
+ *   3. The literal `"unknown"`, so requests with no resolvable address (e.g.
+ *      in-process `app.request(...)` calls) share a single bucket rather than
+ *      bypassing the limit entirely.
  */
-function clientIp(c: Context): string {
-  const xff = c.req.header("x-forwarded-for");
-  if (xff) {
-    const first = xff.split(",")[0].trim();
-    if (first) return first;
+function clientIp(c: Context, trustProxy: boolean): string {
+  if (trustProxy) {
+    const xff = c.req.header("x-forwarded-for");
+    if (xff) {
+      const first = xff.split(",")[0].trim();
+      if (first) return first;
+    }
   }
-  // `c.req.raw` is the underlying Request. Under @hono/node-server it carries
-  // the Node socket; under `app.request(...)` (tests) it has no socket.
+  // Under @hono/node-server, the Node IncomingMessage lives on `c.env.incoming`.
+  const incoming = (
+    c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined
+  )?.incoming;
+  const nodeAddr = incoming?.socket?.remoteAddress;
+  if (nodeAddr) return nodeAddr;
+
   const raw = c.req.raw as Request & { socket?: { remoteAddress?: string } };
-  const addr = raw.socket?.remoteAddress;
-  if (addr) return addr;
+  const rawAddr = raw.socket?.remoteAddress;
+  if (rawAddr) return rawAddr;
+
   return "unknown";
 }
 
@@ -62,7 +80,12 @@ function clientIp(c: Context): string {
  * process (or a test run) alive on its own.
  */
 export function rateLimit(opts: RateLimitOptions): MiddlewareHandler {
-  const { windowMs, max } = opts;
+  const {
+    windowMs,
+    max,
+    trustProxy = false,
+    maxEntries = DEFAULT_MAX_ENTRIES,
+  } = opts;
   const buckets = new Map<string, Bucket>();
 
   // Sweep roughly once per window (clamped to [1s, 60s]) to reclaim buckets
@@ -80,12 +103,24 @@ export function rateLimit(opts: RateLimitOptions): MiddlewareHandler {
   }
 
   return async (c, next) => {
-    const ip = clientIp(c);
+    const ip = clientIp(c, trustProxy);
     const key = `${c.req.routePath}|${ip}`;
     const now = Date.now();
 
     let bucket = buckets.get(key);
     if (!bucket || bucket.resetAt <= now) {
+      if (bucket) {
+        // Delete before re-inserting so Map insertion order stays aligned
+        // with expiry order (all buckets share the same fixed `windowMs`).
+        buckets.delete(key);
+      } else {
+        // O(1) amortized cap enforcement: evict oldest entries from the head.
+        while (buckets.size >= maxEntries) {
+          const oldest = buckets.keys().next().value;
+          if (oldest === undefined) break;
+          buckets.delete(oldest);
+        }
+      }
       bucket = { count: 0, resetAt: now + windowMs };
       buckets.set(key, bucket);
     }

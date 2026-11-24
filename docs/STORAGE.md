@@ -57,7 +57,7 @@ const { data: signed } = await storage.createSignedUrl("report.pdf", {
 | `DELETE` | `/api/storage/:bucket/:storedName` | Bearer |
 | `POST` | `/api/storage/:bucket/:storedName/sign` | Bearer; body `{ expiresIn? }` seconds |
 
-REST paths use **stored** (UUID) names. Signed URLs carry `?expires=<unix>&sig=<hmac>` (constant-time verify, expiry checked). Rotating `storage.secret` revokes outstanding URLs.
+REST paths use **stored** (UUID) names. Signed URLs carry `?expires=<unix>&sig=<hmac>` (constant-time verify, expiry checked). Rotating `storage.secret` revokes outstanding URLs. Behind a reverse proxy, set `security.trustProxy: true` so signed URLs use `X-Forwarded-Host` / `X-Forwarded-Proto` instead of the internal host.
 
 Studio has a Storage browser for list/delete.
 

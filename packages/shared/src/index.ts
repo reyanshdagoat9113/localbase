@@ -201,6 +201,13 @@ export interface SecurityConfig {
    * Entries here override a default of the same header name.
    */
   headers?: { extra?: Record<string, string> };
+  /**
+   * Whether to trust reverse-proxy forwarding headers (`X-Forwarded-For` for
+   * rate-limit client IPs, `X-Forwarded-Host` / `X-Forwarded-Proto` for signed
+   * storage URL origins). Default `false` — enable only when LocalBase sits
+   * behind a trusted reverse proxy that strips/overwrites these headers.
+   */
+  trustProxy?: boolean;
 }
 
 export interface LocalBaseConfig {
@@ -327,7 +334,7 @@ export interface PresenceEvent<T = unknown> {
   states?: PresenceState<T>[];
 }
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.1.0-beta.2";
 
 // ─── Admin UI types ───────────────────────────────────────────
 
