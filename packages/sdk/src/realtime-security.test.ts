@@ -69,9 +69,9 @@ async function setup(): Promise<{
   bobToken: string;
   close: () => Promise<void>;
 }> {
-  const db = new Database({ schema, auth: authConfig });
+  const db = await Database.open({ schema, auth: authConfig });
   const insertUser = db
-    .raw()
+    .sqliteRaw()
     .prepare(`INSERT INTO "_users" ("id","email","password_hash","role") VALUES (?,?,?,?)`);
   insertUser.run(1, "alice@x.com", "x", "user");
   insertUser.run(2, "bob@x.com", "x", "user");
@@ -110,7 +110,7 @@ async function setup(): Promise<{
         server.closeAllConnections();
       }
       await new Promise<void>((res, rej) => server.close((e) => (e ? rej(e) : res())));
-      db.close();
+      await db.close();
     },
   };
 }
@@ -172,7 +172,7 @@ describe("SDK realtime security", () => {
 
       assert.ok(authError !== null, "onAuthError must be surfaced");
       assert.equal(received, 0, "no events should be delivered with a bad token");
-      db.close();
+      await db.close();
     } finally {
       await h.close();
     }

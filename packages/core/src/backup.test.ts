@@ -62,7 +62,7 @@ async function makeProject(): Promise<Project> {
   const dbDir = path.join(root, ".localbase");
   const dbPath = path.join(dbDir, "data.db");
   await fsp.mkdir(dbDir, { recursive: true });
-  const db = new Database({ schema, path: dbPath, dataDir: dbDir });
+  const db = await Database.open({ schema, path: dbPath, dataDir: dbDir });
   return { root, dbPath, dbDir, db };
 }
 
@@ -86,15 +86,15 @@ function track<T extends string>(p: T): T {
 // ─── Backup format / PRAGMA tests ──────────────────────────────────────
 
 describe("backup: durable PRAGMAs are set on open", () => {
-  it("sets journal_mode=wal, synchronous=NORMAL(1), busy_timeout=5000", () => {
+  it("sets journal_mode=wal, synchronous=NORMAL(1), busy_timeout=5000", async () => {
     const root = track(fs.mkdtempSync(path.join(os.tmpdir(), "lb-pragmas-")));
     const dbPath = path.join(root, "data.db");
-    const db = new Database({ schema, path: dbPath, dataDir: root });
+    const db = await Database.open({ schema, path: dbPath, dataDir: root });
     try {
-      const journalMode = String(db.raw().pragma("journal_mode", { simple: true }));
-      const synchronous = db.raw().pragma("synchronous", { simple: true });
-      const busyTimeout = Number(db.raw().pragma("busy_timeout", { simple: true }));
-      const foreignKeys = db.raw().pragma("foreign_keys", { simple: true });
+      const journalMode = String(db.sqliteRaw().pragma("journal_mode", { simple: true }));
+      const synchronous = db.sqliteRaw().pragma("synchronous", { simple: true });
+      const busyTimeout = Number(db.sqliteRaw().pragma("busy_timeout", { simple: true }));
+      const foreignKeys = db.sqliteRaw().pragma("foreign_keys", { simple: true });
 
       assert.equal(journalMode.toLowerCase(), "wal");
       // NORMAL maps to the integer 1 in SQLite.
@@ -109,7 +109,7 @@ describe("backup: durable PRAGMAs are set on open", () => {
         `foreign_keys should be ON, got ${String(foreignKeys)}`
       );
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });
@@ -120,7 +120,7 @@ describe("backup: manifest shape", () => {
     track(project.root);
     const backupDir = track(path.join(project.root, "backup"));
 
-    project.db.insert("notes", { body: "hello" });
+    await project.db.insert("notes", { body: "hello" });
     // Drop a real file into storage so it appears in the manifest.
     const storageRoot = path.join(project.dbDir, "storage", "uploads");
     await fsp.mkdir(storageRoot, { recursive: true });
@@ -157,7 +157,7 @@ describe("backup: manifest shape", () => {
     );
     assert.equal(manifest.databaseSha256, dbEntry.sha256);
 
-    project.db.close();
+    await project.db.close();
   });
 });
 
@@ -170,7 +170,7 @@ describe("backup: round-trip (backup -> mutate -> restore)", () => {
     const backupDir = track(path.join(project.root, "backup"));
 
     // Baseline state: one row + one storage file.
-    project.db.insert("notes", { body: "original" });
+    await project.db.insert("notes", { body: "original" });
     const storageFile = path.join(project.dbDir, "storage", "uploads", "pic.bin");
     await fsp.mkdir(path.dirname(storageFile), { recursive: true });
     await fsp.writeFile(storageFile, Buffer.from("original-bytes"));
@@ -179,20 +179,20 @@ describe("backup: round-trip (backup -> mutate -> restore)", () => {
     await createBackup({ database: project.db, destDir: backupDir });
 
     // Close the live db so restore can operate on file paths alone.
-    project.db.close();
+    await project.db.close();
 
     // Mutate the live data AFTER the backup: add rows, delete the storage file.
-    const mutator = new Database({ schema, path: project.dbPath, dataDir: project.dbDir });
+    const mutator = await Database.open({ schema, path: project.dbPath, dataDir: project.dbDir });
     mutator.insert("notes", { body: "after-backup-1" });
     mutator.insert("notes", { body: "after-backup-2" });
     await fsp.rm(storageFile, { force: true });
     mutator.close();
 
     // Sanity: the live DB now has 3 rows and the storage file is gone.
-    let checker = new Database({ schema, path: project.dbPath, dataDir: project.dbDir });
-    assert.equal(checker.select("notes").length, 3);
+    let checker = await Database.open({ schema, path: project.dbPath, dataDir: project.dbDir });
+    assert.equal((await checker.select("notes")).length, 3);
     assert.ok(!fs.existsSync(storageFile));
-    checker.close();
+    await checker.close();
 
     // Restore (server is stopped — purely file-path based).
     await restoreBackup({
@@ -203,11 +203,11 @@ describe("backup: round-trip (backup -> mutate -> restore)", () => {
 
     // Reopen and assert the ORIGINAL state is back: only the "original" row
     // and the storage file with its original bytes.
-    checker = new Database({ schema, path: project.dbPath, dataDir: project.dbDir });
-    const rows = checker.select("notes") as Array<{ body: string }>;
+    checker = await Database.open({ schema, path: project.dbPath, dataDir: project.dbDir });
+    const rows = (await checker.select("notes")) as Array<{ body: string }>;
     assert.equal(rows.length, 1);
     assert.equal(rows[0].body, "original");
-    checker.close();
+    await checker.close();
 
     assert.ok(fs.existsSync(storageFile), "storage file should be restored");
     const restoredBytes = await fsp.readFile(storageFile);
@@ -228,7 +228,7 @@ describe("backup: round-trip (backup -> mutate -> restore)", () => {
 
     // Insert a row that "points at" a storage object (mirrors how _files +
     // on-disk objects relate). Both should survive the round-trip together.
-    project.db.raw()
+    project.db.sqliteRaw()
       .prepare(`INSERT INTO "notes" ("body") VALUES (?)`)
       .run("points-at:uploads/companion.bin");
     const companion = path.join(project.dbDir, "storage", "uploads", "companion.bin");
@@ -236,7 +236,7 @@ describe("backup: round-trip (backup -> mutate -> restore)", () => {
     await fsp.writeFile(companion, Buffer.from("companion"));
 
     await createBackup({ database: project.db, destDir: backupDir });
-    project.db.close();
+    await project.db.close();
 
     // Wipe live state entirely and restore.
     await fsp.rm(path.join(project.dbDir, "storage"), { recursive: true, force: true });
@@ -249,11 +249,11 @@ describe("backup: round-trip (backup -> mutate -> restore)", () => {
 
     // Both the DB row and the companion file are present together.
     assert.ok(fs.existsSync(companion), "companion storage file restored");
-    const checker = new Database({ schema, path: project.dbPath, dataDir: project.dbDir });
-    const rows = checker.select("notes") as Array<{ body: string }>;
+    const checker = await Database.open({ schema, path: project.dbPath, dataDir: project.dbDir });
+    const rows = (await checker.select("notes")) as Array<{ body: string }>;
     assert.equal(rows.length, 1);
     assert.equal(rows[0].body, "points-at:uploads/companion.bin");
-    checker.close();
+    await checker.close();
   });
 });
 
@@ -265,9 +265,9 @@ describe("backup: refused restore leaves live data untouched", () => {
     track(project.root);
     const backupDir = track(path.join(project.root, "backup"));
 
-    project.db.insert("notes", { body: "keep-me" });
+    await project.db.insert("notes", { body: "keep-me" });
     await createBackup({ database: project.db, destDir: backupDir });
-    project.db.close();
+    await project.db.close();
 
     // Corrupt the manifest so it's invalid JSON.
     const manifestPath = path.join(backupDir, "manifest.json");
@@ -289,12 +289,12 @@ describe("backup: refused restore leaves live data untouched", () => {
     track(project.root);
     const backupDir = track(path.join(project.root, "backup"));
 
-    project.db.insert("notes", { body: "keep-me" });
+    await project.db.insert("notes", { body: "keep-me" });
     const liveStorage = path.join(project.dbDir, "storage", "uploads", "doc.bin");
     await fsp.mkdir(path.dirname(liveStorage), { recursive: true });
     await fsp.writeFile(liveStorage, Buffer.from("payload"));
     await createBackup({ database: project.db, destDir: backupDir });
-    project.db.close();
+    await project.db.close();
 
     // Tamper with the BACKUP copy of the storage file so its SHA-256 no longer
     // matches the manifest. Integrity check would still pass on the db, so
@@ -323,9 +323,9 @@ describe("backup: refused restore leaves live data untouched", () => {
     track(project.root);
     const backupDir = track(path.join(project.root, "backup"));
 
-    project.db.insert("notes", { body: "keep-me" });
+    await project.db.insert("notes", { body: "keep-me" });
     await createBackup({ database: project.db, destDir: backupDir });
-    project.db.close();
+    await project.db.close();
 
     // Flip bytes in the BACKUP's database.db. We must also update the
     // manifest's recorded SHA-256 for that file to its new digest, otherwise
@@ -364,9 +364,9 @@ describe("backup: refused restore leaves live data untouched", () => {
     track(project.root);
     const backupDir = track(path.join(project.root, "backup"));
 
-    project.db.insert("notes", { body: "keep-me" });
+    await project.db.insert("notes", { body: "keep-me" });
     await createBackup({ database: project.db, destDir: backupDir });
-    project.db.close();
+    await project.db.close();
 
     // Add a malicious entry that tries to escape the backup dir.
     const manifestPath = path.join(backupDir, "manifest.json");
@@ -392,12 +392,12 @@ describe("backup: refused restore leaves live data untouched", () => {
     track(project.root);
     const backupDir = track(path.join(project.root, "backup"));
 
-    project.db.insert("notes", { body: "keep-me" });
+    await project.db.insert("notes", { body: "keep-me" });
     const liveStorage = path.join(project.dbDir, "storage", "uploads", "gone.bin");
     await fsp.mkdir(path.dirname(liveStorage), { recursive: true });
     await fsp.writeFile(liveStorage, Buffer.from("here"));
     await createBackup({ database: project.db, destDir: backupDir });
-    project.db.close();
+    await project.db.close();
 
     // Delete a file from the BACKUP dir so verification can't read it.
     await fsp.rm(path.join(backupDir, "storage", "uploads", "gone.bin"));
@@ -420,9 +420,9 @@ describe("backup: restore cleans up stale WAL sidecars", () => {
     track(project.root);
     const backupDir = track(path.join(project.root, "backup"));
 
-    project.db.insert("notes", { body: "snapshotted" });
+    await project.db.insert("notes", { body: "snapshotted" });
     await createBackup({ database: project.db, destDir: backupDir });
-    project.db.close();
+    await project.db.close();
 
     // Simulate a server that was killed (not closed cleanly) by leaving a
     // stale -wal/-shm next to the live db. Restore must move these aside
@@ -446,11 +446,11 @@ describe("backup: restore cleans up stale WAL sidecars", () => {
     assert.equal(aside, undefined, "no aside leftovers should remain");
 
     // The db opens cleanly and reflects the backup.
-    const checker = new Database({ schema, path: project.dbPath, dataDir: project.dbDir });
-    const rows = checker.select("notes") as Array<{ body: string }>;
+    const checker = await Database.open({ schema, path: project.dbPath, dataDir: project.dbDir });
+    const rows = (await checker.select("notes")) as Array<{ body: string }>;
     assert.equal(rows.length, 1);
     assert.equal(rows[0].body, "snapshotted");
-    checker.close();
+    await checker.close();
   });
 });
 
@@ -462,9 +462,9 @@ describe("backup: empty storage tree", () => {
     track(project.root);
     const backupDir = track(path.join(project.root, "backup"));
 
-    project.db.insert("notes", { body: "no-files" });
+    await project.db.insert("notes", { body: "no-files" });
     await createBackup({ database: project.db, destDir: backupDir });
-    project.db.close();
+    await project.db.close();
 
     // Add a stray file into live storage AFTER the backup, then restore —
     // restore should remove it (the backup had no storage files).
@@ -479,11 +479,11 @@ describe("backup: empty storage tree", () => {
     });
 
     assert.ok(!fs.existsSync(stray), "stray post-backup storage file should be gone");
-    const checker = new Database({ schema, path: project.dbPath, dataDir: project.dbDir });
-    const rows = checker.select("notes") as Array<{ body: string }>;
+    const checker = await Database.open({ schema, path: project.dbPath, dataDir: project.dbDir });
+    const rows = (await checker.select("notes")) as Array<{ body: string }>;
     assert.equal(rows.length, 1);
     assert.equal(rows[0].body, "no-files");
-    checker.close();
+    await checker.close();
   });
 });
 

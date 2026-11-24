@@ -30,7 +30,7 @@ before(() => {
 
 after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-function setup(auth = false) {
+async function setup(auth = false) {
   const jobs: Record<string, JobConfig> = {
     cleanup: {
       schedule: "0 3 * * *",
@@ -41,9 +41,9 @@ function setup(auth = false) {
   const authConfig = auth
     ? { enabled: true, jwtSecret: secret }
     : { enabled: false };
-  const db = new Database({ schema, jobs, auth: authConfig, dataDir: root });
+  const db = await Database.open({ schema, jobs, auth: authConfig, dataDir: root });
   const scheduler = new Scheduler({ db, cwd: root, jobs });
-  scheduler.start();
+  await scheduler.start();
   const app = createServer(db, schema, {
     auth: authConfig,
     admin: { enabled: true },
@@ -54,7 +54,7 @@ function setup(auth = false) {
 
 describe("admin jobs API", () => {
   it("lists registered jobs and rejects unknown names", async () => {
-    const { app, db, scheduler } = setup();
+    const { app, db, scheduler } = await setup();
     try {
       const list = await app.request("/_api/admin/jobs");
       assert.equal(list.status, 200);
@@ -69,12 +69,12 @@ describe("admin jobs API", () => {
     } finally {
       scheduler.stop();
       await scheduler.waitForIdle();
-      db.close();
+      await db.close();
     }
   });
 
   it("triggers a run asynchronously and paginates history", async () => {
-    const { app, db, scheduler } = setup();
+    const { app, db, scheduler } = await setup();
     try {
       for (let index = 0; index < 3; index++) {
         const response = await app.request("/_api/admin/jobs/cleanup/run", {
@@ -97,12 +97,12 @@ describe("admin jobs API", () => {
     } finally {
       scheduler.stop();
       await scheduler.waitForIdle();
-      db.close();
+      await db.close();
     }
   });
 
   it("inherits the admin gate and rejects a regular user", async () => {
-    const { app, db, scheduler } = setup(true);
+    const { app, db, scheduler } = await setup(true);
     try {
       const { config } = resolveAuthConfig({ enabled: true, jwtSecret: secret });
       const auth = new Auth(db, config);
@@ -116,7 +116,7 @@ describe("admin jobs API", () => {
     } finally {
       scheduler.stop();
       await scheduler.waitForIdle();
-      db.close();
+      await db.close();
     }
   });
 });

@@ -24,6 +24,7 @@ import { Database } from "../db.js";
 import { createServer } from "../api.js";
 import { count } from "../query.js";
 import { AdminError } from "./system-tables.js";
+import BetterSqlite3 from "better-sqlite3";
 import type { DatabaseSchema } from "@localbase/shared";
 import type { Hono } from "hono";
 
@@ -47,11 +48,11 @@ function track(db: Database): Database {
 }
 
 /** Admin app with auth OFF (ungated) — isolates the SQL/mutation surface. */
-function ungatedApp(schema: DatabaseSchema = baseSchema): {
+async function ungatedApp(schema: DatabaseSchema = baseSchema): Promise<{
   db: Database;
   app: Hono;
-} {
-  const db = track(new Database({ schema }));
+}> {
+  const db = track(await Database.open({ schema }));
   const app = createServer(db, schema, {
     admin: { enabled: true },
     auth: { enabled: false },
@@ -64,20 +65,14 @@ async function parseResponse(res: Response) {
   return { status: res.status, body: json };
 }
 
-afterEach(() => {
-  while (openDbs.length) openDbs.pop()!.close();
+afterEach(async () => {
+  while (openDbs.length) await openDbs.pop()!.close();
 });
 
-/**
- * fts5 is a compile-time option (SQLITE_ENABLE_FTS5). The official
- * better-sqlite3 prebuilds include it, but a musl/source/custom build may not.
- * Probe once and skip the virtual-table tests if it is unavailable, so the
- * suite degrades gracefully instead of hard-crashing on an environment trait.
- */
 const HAS_FTS5 = (() => {
   try {
-    const probe = new Database({ schema: {} });
-    probe.raw().exec("CREATE VIRTUAL TABLE __probe USING fts5(x)");
+    const probe = new BetterSqlite3(":memory:");
+    probe.exec("CREATE VIRTUAL TABLE __probe USING fts5(x)");
     probe.close();
     return true;
   } catch {
@@ -91,18 +86,18 @@ const vtabDescribe = HAS_FTS5 ? describe : describe.skip;
 vtabDescribe("Virtual-table write blocking (fts5 + shadow tables are read-only)", () => {
   // fts5 is compiled into the better-sqlite3 build this repo ships; if a
   // future build omits it, these setups throw with a clear SQLite error.
-  function ftsApp() {
-    const { db, app } = ungatedApp({
+  async function ftsApp() {
+    const { db, app } = await ungatedApp({
       dummy: {
         id: { type: "integer", primaryKey: true, autoIncrement: true },
       },
     });
-    db.raw().exec("CREATE VIRTUAL TABLE ft USING fts5(content)");
+    db.sqliteRaw().exec("CREATE VIRTUAL TABLE ft USING fts5(content)");
     return { db, app };
   }
 
   it("POST to an fts5 virtual table is rejected (403) and nothing persists", async () => {
-    const { db, app } = ftsApp();
+    const { db, app } = await ftsApp();
     const res = await app.request("/_api/admin/tables/ft/rows", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -111,13 +106,13 @@ vtabDescribe("Virtual-table write blocking (fts5 + shadow tables are read-only)"
     const { status, body } = await parseResponse(res);
     assert.equal(status, 403);
     assert.match(body.error, /virtual|read-only/i);
-    const rows = db.raw().prepare('SELECT * FROM "ft"').all();
+    const rows = db.sqliteRaw().prepare('SELECT * FROM "ft"').all();
     assert.equal(rows.length, 0, "no row should have been inserted");
   });
 
   it("reads on a virtual table still work, but PATCH and DELETE are blocked", async () => {
-    const { db, app } = ftsApp();
-    db.raw().exec("INSERT INTO ft(content) VALUES ('seed')");
+    const { db, app } = await ftsApp();
+    db.sqliteRaw().exec("INSERT INTO ft(content) VALUES ('seed')");
 
     const get = await app.request("/_api/admin/tables/ft/rows");
     assert.equal(get.status, 200);
@@ -134,15 +129,15 @@ vtabDescribe("Virtual-table write blocking (fts5 + shadow tables are read-only)"
     });
     assert.equal(del.status, 403);
 
-    const rows = db.raw().prepare('SELECT content FROM "ft"').all() as {
+    const rows = db.sqliteRaw().prepare('SELECT content FROM "ft"').all() as {
       content: string;
     }[];
     assert.deepEqual(rows.map((r) => r.content), ["seed"]);
   });
 
   it("writes to an fts5 shadow table (ft_content) are rejected", async () => {
-    const { db, app } = ftsApp();
-    db.raw().exec("INSERT INTO ft(content) VALUES ('seed')"); // ensures shadows exist
+    const { db, app } = await ftsApp();
+    db.sqliteRaw().exec("INSERT INTO ft(content) VALUES ('seed')"); // ensures shadows exist
     // ft_content backs the index; writing to it would corrupt ft.
     const res = await app.request("/_api/admin/tables/ft_content/rows", {
       method: "POST",
@@ -152,10 +147,10 @@ vtabDescribe("Virtual-table write blocking (fts5 + shadow tables are read-only)"
     assert.equal(res.status, 403);
   });
 
-  it("introspection flags a virtual table and its shadow as virtual: true", () => {
-    const { db } = ftsApp();
-    db.raw().exec("INSERT INTO ft(content) VALUES ('seed')");
-    const schema = db.introspect();
+  it("introspection flags a virtual table and its shadow as virtual: true", async () => {
+    const { db } = await ftsApp();
+    db.sqliteRaw().exec("INSERT INTO ft(content) VALUES ('seed')");
+    const schema = await db.introspect();
     const find = (name: string) =>
       schema.tables.find((t) => t.name === name);
     assert.equal(find("ft")?.virtual, true);
@@ -168,15 +163,15 @@ vtabDescribe("Virtual-table write blocking (fts5 + shadow tables are read-only)"
     // Pins the PRAGMA table_list classification: a real user table named
     // ft_archive must remain writable even when an fts5 table `ft` exists.
     // (A naive name-prefix heuristic would wrongly flag it virtual.)
-    const { db, app } = ungatedApp({
+    const { db, app } = await ungatedApp({
       dummy: {
         id: { type: "integer", primaryKey: true, autoIncrement: true },
       },
     });
-    db.raw().exec("CREATE VIRTUAL TABLE ft USING fts5(content)");
-    db.raw().exec('CREATE TABLE "ft_archive" (id INTEGER PRIMARY KEY, v TEXT)');
+    db.sqliteRaw().exec("CREATE VIRTUAL TABLE ft USING fts5(content)");
+    db.sqliteRaw().exec('CREATE TABLE "ft_archive" (id INTEGER PRIMARY KEY, v TEXT)');
 
-    const schema = db.introspect();
+    const schema = await db.introspect();
     const arch = schema.tables.find((t) => t.name === "ft_archive");
     assert.ok(arch, "ft_archive should be introspected");
     assert.equal(arch!.virtual, false, "ft_archive must not be flagged virtual");
@@ -194,15 +189,15 @@ vtabDescribe("Virtual-table write blocking (fts5 + shadow tables are read-only)"
 
 describe("Read-only surfaces: sqlite_%, views, _-prefixed, no-PK DELETE", () => {
   it("rejects writes to sqlite_% bookkeeping tables (sqlite_sequence, sqlite_master)", async () => {
-    const { db, app } = ungatedApp({
+    const { db, app } = await ungatedApp({
       seq: {
         id: { type: "integer", primaryKey: true, autoIncrement: true },
         v: { type: "text" },
       },
     });
-    db.insert("seq", { v: "a" }); // materializes sqlite_sequence
+    await db.insert("seq", { v: "a" }); // materializes sqlite_sequence
     // Snapshot BEFORE: _migrations (also AUTOINCREMENT) + seq both appear here.
-    const beforeSeq = db.raw().prepare("SELECT * FROM sqlite_sequence").all();
+    const beforeSeq = db.sqliteRaw().prepare("SELECT * FROM sqlite_sequence").all();
     for (const table of ["sqlite_sequence", "sqlite_master"]) {
       const post = await app.request(`/_api/admin/tables/${table}/rows`, {
         method: "POST",
@@ -216,7 +211,7 @@ describe("Read-only surfaces: sqlite_%, views, _-prefixed, no-PK DELETE", () => 
     }
     // sqlite_sequence must be byte-for-byte unchanged by any attempt, and the
     // `seq` counter row must still be present.
-    const afterSeq = db.raw().prepare("SELECT * FROM sqlite_sequence").all();
+    const afterSeq = db.sqliteRaw().prepare("SELECT * FROM sqlite_sequence").all();
     assert.deepEqual(afterSeq, beforeSeq, "sqlite_sequence was mutated");
     assert.ok(
       (afterSeq as Array<{ name: string }>).some((r) => r.name === "seq"),
@@ -225,14 +220,14 @@ describe("Read-only surfaces: sqlite_%, views, _-prefixed, no-PK DELETE", () => 
   });
 
   it("rejects writes to SQL VIEWs and leaves the underlying table untouched", async () => {
-    const { db, app } = ungatedApp({
+    const { db, app } = await ungatedApp({
       seq: {
         id: { type: "integer", primaryKey: true, autoIncrement: true },
         v: { type: "text" },
       },
     });
-    db.raw().exec("CREATE VIEW v_seq AS SELECT id, v FROM seq");
-    db.insert("seq", { v: "first" });
+    db.sqliteRaw().exec("CREATE VIEW v_seq AS SELECT id, v FROM seq");
+    await db.insert("seq", { v: "first" });
 
     const post = await app.request("/_api/admin/tables/v_seq/rows", {
       method: "POST",
@@ -248,18 +243,18 @@ describe("Read-only surfaces: sqlite_%, views, _-prefixed, no-PK DELETE", () => 
     });
     assert.ok([400, 403, 404].includes(del.status));
 
-    const rows = db.raw().prepare('SELECT v FROM "seq"').all() as {
+    const rows = db.sqliteRaw().prepare('SELECT v FROM "seq"').all() as {
       v: string;
     }[];
     assert.deepEqual(rows.map((r) => r.v), ["first"]);
   });
 
   it("rejects writes to ANY _-prefixed table (not only _users/_sessions)", async () => {
-    const { db, app } = ungatedApp({
+    const { db, app } = await ungatedApp({
       filler: { id: { type: "integer", primaryKey: true, autoIncrement: true } },
     });
-    db.raw().exec('CREATE TABLE "_future" (id INTEGER PRIMARY KEY, v TEXT)');
-    db.raw().exec("INSERT INTO _future (id, v) VALUES (1, 'orig')");
+    db.sqliteRaw().exec('CREATE TABLE "_future" (id INTEGER PRIMARY KEY, v TEXT)');
+    db.sqliteRaw().exec("INSERT INTO _future (id, v) VALUES (1, 'orig')");
 
     const post = await app.request("/_api/admin/tables/_future/rows", {
       method: "POST",
@@ -278,30 +273,30 @@ describe("Read-only surfaces: sqlite_%, views, _-prefixed, no-PK DELETE", () => 
     });
     assert.equal((await parseResponse(del)).status, 403);
 
-    const row = db.raw().prepare('SELECT v FROM "_future"').get() as {
+    const row = db.sqliteRaw().prepare('SELECT v FROM "_future"').get() as {
       v: string;
     };
     assert.equal(row.v, "orig");
   });
 
   it("DELETE on a no-PK table returns 400 (browse-only, like PATCH)", async () => {
-    const { db, app } = ungatedApp({ nopk: { message: { type: "text" } } });
-    db.raw().exec("INSERT INTO nopk (message) VALUES ('keep')");
+    const { db, app } = await ungatedApp({ nopk: { message: { type: "text" } } });
+    db.sqliteRaw().exec("INSERT INTO nopk (message) VALUES ('keep')");
     const del = await app.request("/_api/admin/tables/nopk/rows/1", {
       method: "DELETE",
     });
     assert.equal((await parseResponse(del)).status, 400);
-    const rows = db.raw().prepare('SELECT * FROM "nopk"').all();
+    const rows = db.sqliteRaw().prepare('SELECT * FROM "nopk"').all();
     assert.equal(rows.length, 1);
   });
 
-  it("count() rejects an injection table name (pins the centralized table-name guard)", () => {
+  it("count() rejects an injection table name (pins the centralized table-name guard)", async () => {
     // If someone reverted db.count() to a hand-rolled `FROM "${table}"`,
     // these identifiers would be interpolated. count() routes the table name
     // through assertSafeTable, independent of the router's earlier gates.
-    const db = track(new Database({ schema: baseSchema }));
-    assert.throws(() => count(db.raw(), "t; DROP TABLE x", []), AdminError);
-    assert.throws(() => count(db.raw(), 't" OR 1=1--', []), AdminError);
+    const db = track(await Database.open({ schema: baseSchema }));
+    await assert.rejects(() => count(db.getDriver(), "t; DROP TABLE x", []), AdminError);
+    await assert.rejects(() => count(db.getDriver(), 't" OR 1=1--', []), AdminError);
   });
 });
 
@@ -312,19 +307,19 @@ describe("Identifier safety: regex-failing names return 400, never 500", () => {
   // raw ALTER). The admin router accepts it by introspect-membership, but the
   // shared query layer's central regex rejects it — and now throws AdminError
   // (400) rather than a plain Error (500).
-  function spacedColumnApp() {
-    const { db, app } = ungatedApp({
+  async function spacedColumnApp() {
+    const { db, app } = await ungatedApp({
       t: {
         id: { type: "integer", primaryKey: true, autoIncrement: true },
       },
     });
-    db.raw().exec('ALTER TABLE "t" ADD COLUMN "a b" TEXT');
-    db.raw().exec('INSERT INTO "t" DEFAULT VALUES'); // row id = 1
+    db.sqliteRaw().exec('ALTER TABLE "t" ADD COLUMN "a b" TEXT');
+    db.sqliteRaw().exec('INSERT INTO "t" DEFAULT VALUES'); // row id = 1
     return { db, app };
   }
 
   it("GET filter on a regex-failing column name → 400", async () => {
-    const { app } = spacedColumnApp();
+    const { app } = await spacedColumnApp();
     const sp = new URLSearchParams();
     sp.set("a b", "eq.spaced");
     const res = await app.request(`/_api/admin/tables/t/rows?${sp}`);
@@ -333,7 +328,7 @@ describe("Identifier safety: regex-failing names return 400, never 500", () => {
   });
 
   it("GET ORDER BY a regex-failing column name → 400", async () => {
-    const { app } = spacedColumnApp();
+    const { app } = await spacedColumnApp();
     const res = await app.request(
       "/_api/admin/tables/t/rows?order=a%20b.asc"
     );
@@ -342,7 +337,7 @@ describe("Identifier safety: regex-failing names return 400, never 500", () => {
   });
 
   it("POST body key that is a regex-failing column → 400 and nothing inserted", async () => {
-    const { db, app } = spacedColumnApp();
+    const { db, app } = await spacedColumnApp();
     const res = await app.request("/_api/admin/tables/t/rows", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -351,7 +346,7 @@ describe("Identifier safety: regex-failing names return 400, never 500", () => {
     const { status } = await parseResponse(res);
     assert.equal(status, 400);
     assert.equal(
-      (db.raw().prepare('SELECT COUNT(*) AS n FROM "t"').get() as { n: number })
+      (db.sqliteRaw().prepare('SELECT COUNT(*) AS n FROM "t"').get() as { n: number })
         .n,
       1,
       "no new row"
@@ -359,7 +354,7 @@ describe("Identifier safety: regex-failing names return 400, never 500", () => {
   });
 
   it("PATCH body key that is a regex-failing column → 400 and row unchanged", async () => {
-    const { db, app } = spacedColumnApp();
+    const { db, app } = await spacedColumnApp();
     const res = await app.request("/_api/admin/tables/t/rows/1", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -367,20 +362,20 @@ describe("Identifier safety: regex-failing names return 400, never 500", () => {
     });
     const { status } = await parseResponse(res);
     assert.equal(status, 400);
-    const row = db.raw().prepare('SELECT "a b" AS ab FROM "t"').get() as {
+    const row = db.sqliteRaw().prepare('SELECT "a b" AS ab FROM "t"').get() as {
       ab: unknown;
     };
     assert.equal(row.ab, null, "row untouched");
   });
 
   it("PATCH/DELETE on a table whose PK name fails the regex → 400, not 500", async () => {
-    const { db, app } = ungatedApp({
+    const { db, app } = await ungatedApp({
       filler: {
         id: { type: "integer", primaryKey: true, autoIncrement: true },
       },
     });
-    db.raw().exec('CREATE TABLE "weird" ("my id" TEXT PRIMARY KEY, val TEXT)');
-    db.raw().exec("INSERT INTO weird (\"my id\", val) VALUES ('k1','v1')");
+    db.sqliteRaw().exec('CREATE TABLE "weird" ("my id" TEXT PRIMARY KEY, val TEXT)');
+    db.sqliteRaw().exec("INSERT INTO weird (\"my id\", val) VALUES ('k1','v1')");
 
     const patch = await app.request("/_api/admin/tables/weird/rows/k1", {
       method: "PATCH",
@@ -395,7 +390,7 @@ describe("Identifier safety: regex-failing names return 400, never 500", () => {
     assert.equal((await parseResponse(del)).status, 400);
 
     // Nothing changed.
-    const row = db.raw().prepare('SELECT val FROM "weird"').get() as {
+    const row = db.sqliteRaw().prepare('SELECT val FROM "weird"').get() as {
       val: string;
     };
     assert.equal(row.val, "v1");
@@ -406,7 +401,7 @@ describe("Identifier safety: regex-failing names return 400, never 500", () => {
 
 describe("Insert works on non-id-PK tables (fetch-by-id fix)", () => {
   it("POST on a no-PK table inserts a row (201)", async () => {
-    const { db, app } = ungatedApp({
+    const { db, app } = await ungatedApp({
       nopk: { message: { type: "text" } },
     });
     const res = await app.request("/_api/admin/tables/nopk/rows", {
@@ -417,17 +412,17 @@ describe("Insert works on non-id-PK tables (fetch-by-id fix)", () => {
     const { status, body } = await parseResponse(res);
     assert.equal(status, 201);
     assert.equal(body.data.message, "hello");
-    const rows = db.raw().prepare('SELECT * FROM "nopk"').all();
+    const rows = db.sqliteRaw().prepare('SELECT * FROM "nopk"').all();
     assert.equal(rows.length, 1);
   });
 
   it("POST on a composite-PK table inserts a row (201)", async () => {
-    const { db, app } = ungatedApp({
+    const { db, app } = await ungatedApp({
       filler: {
         id: { type: "integer", primaryKey: true, autoIncrement: true },
       },
     });
-    db.raw().exec(
+    db.sqliteRaw().exec(
       'CREATE TABLE "comp" ("a" INTEGER, "b" INTEGER, "v" TEXT, PRIMARY KEY("a","b"))'
     );
     const res = await app.request("/_api/admin/tables/comp/rows", {
@@ -437,7 +432,7 @@ describe("Insert works on non-id-PK tables (fetch-by-id fix)", () => {
     });
     const { status } = await parseResponse(res);
     assert.equal(status, 201);
-    const row = db.raw().prepare('SELECT * FROM "comp"').get() as {
+    const row = db.sqliteRaw().prepare('SELECT * FROM "comp"').get() as {
       a: number;
       b: number;
       v: string;
@@ -446,7 +441,7 @@ describe("Insert works on non-id-PK tables (fetch-by-id fix)", () => {
   });
 
   it("POST on a single text-PK table (PK not named id) inserts a row (201)", async () => {
-    const { db, app } = ungatedApp({
+    const { db, app } = await ungatedApp({
       textpk: {
         slug: { type: "text", primaryKey: true },
         label: { type: "text" },
@@ -459,22 +454,22 @@ describe("Insert works on non-id-PK tables (fetch-by-id fix)", () => {
     });
     const { status } = await parseResponse(res);
     assert.equal(status, 201);
-    const row = db.raw().prepare('SELECT * FROM "textpk"').get() as {
+    const row = db.sqliteRaw().prepare('SELECT * FROM "textpk"').get() as {
       slug: string;
     };
     assert.equal(row.slug, "s2");
   });
 
   it("composite-PK tables remain browse-only: PATCH/DELETE → 400", async () => {
-    const { db, app } = ungatedApp({
+    const { db, app } = await ungatedApp({
       filler: {
         id: { type: "integer", primaryKey: true, autoIncrement: true },
       },
     });
-    db.raw().exec(
+    db.sqliteRaw().exec(
       'CREATE TABLE "comp" ("a" INTEGER, "b" INTEGER, "v" TEXT, PRIMARY KEY("a","b"))'
     );
-    db.raw().exec("INSERT INTO comp (\"a\",\"b\",\"v\") VALUES (1,2,'r')");
+    db.sqliteRaw().exec("INSERT INTO comp (\"a\",\"b\",\"v\") VALUES (1,2,'r')");
 
     const patch = await app.request("/_api/admin/tables/comp/rows/1", {
       method: "PATCH",
@@ -488,18 +483,18 @@ describe("Insert works on non-id-PK tables (fetch-by-id fix)", () => {
     assert.equal((await parseResponse(del)).status, 400);
 
     // Row untouched.
-    const row = db.raw().prepare('SELECT v FROM "comp"').get() as { v: string };
+    const row = db.sqliteRaw().prepare('SELECT v FROM "comp"').get() as { v: string };
     assert.equal(row.v, "r");
   });
 
   it("text-PK PATCH/DELETE works (positive control — update() uses RETURNING *)", async () => {
-    const { db, app } = ungatedApp({
+    const { db, app } = await ungatedApp({
       textpk: {
         slug: { type: "text", primaryKey: true },
         label: { type: "text" },
       },
     });
-    db.raw().exec("INSERT INTO textpk (slug,label) VALUES ('s1','first')");
+    db.sqliteRaw().exec("INSERT INTO textpk (slug,label) VALUES ('s1','first')");
 
     const patch = await app.request("/_api/admin/tables/textpk/rows/s1", {
       method: "PATCH",
@@ -515,7 +510,7 @@ describe("Insert works on non-id-PK tables (fetch-by-id fix)", () => {
     });
     assert.equal((await parseResponse(del)).status, 200);
     assert.equal(
-      (db.raw().prepare('SELECT COUNT(*) AS n FROM "textpk"').get() as {
+      (db.sqliteRaw().prepare('SELECT COUNT(*) AS n FROM "textpk"').get() as {
         n: number;
       }).n,
       0
@@ -527,14 +522,14 @@ describe("Insert works on non-id-PK tables (fetch-by-id fix)", () => {
 
 describe("Injection guard: identifier payloads are rejected and mutate nothing", () => {
   it("rejects SQL in filter keys, order columns, path tables, and body keys", async () => {
-    const { db, app } = ungatedApp({
+    const { db, app } = await ungatedApp({
       users: {
         id: { type: "integer", primaryKey: true, autoIncrement: true },
         name: { type: "text", nullable: false },
       },
     });
-    db.insert("users", { name: "Alice" });
-    db.insert("users", { name: "Bob" });
+    await db.insert("users", { name: "Alice" });
+    await db.insert("users", { name: "Bob" });
 
     const enc = (s: string) => encodeURIComponent(s);
     // [label, method, path, allowed statuses]
@@ -577,14 +572,14 @@ describe("Injection guard: identifier payloads are rejected and mutate nothing",
 
     // Post-batch invariant: users intact, nothing dropped/created.
     const userCount = (
-      db.raw().prepare('SELECT COUNT(*) AS n FROM "users"').get() as {
+      db.sqliteRaw().prepare('SELECT COUNT(*) AS n FROM "users"').get() as {
         n: number;
       }
     ).n;
     assert.equal(userCount, 2);
     const tables = (
       db
-        .raw()
+        .sqliteRaw()
         .prepare("SELECT name FROM sqlite_master WHERE type='table'")
         .all() as { name: string }[]
     ).map((r) => r.name);
@@ -601,18 +596,18 @@ describe("Injection guard: SQL in eq/like/in VALUES is bound, not interpolated",
     // Auth-enabled DB so _users exists with a recognizable planted hash, but
     // the SERVER is mounted ungated so we test the query layer directly.
     const db = track(
-      new Database({
+      await Database.open({
         schema: baseSchema,
         auth: { enabled: true, jwtSecret: SECRET },
       })
     );
-    db.insert("_users", {
+    await db.insert("_users", {
       email: "leak@x.com",
       password_hash: "LEAK_HASH_xyz",
       role: "user",
     });
-    db.insert("t", { name: "alice" }); // id 1
-    db.insert("t", { name: "bob" }); // id 2
+    await db.insert("t", { name: "alice" }); // id 1
+    await db.insert("t", { name: "bob" }); // id 2
     const app = createServer(db, baseSchema, {
       admin: { enabled: true },
       auth: { enabled: false },
@@ -655,7 +650,7 @@ describe("Injection guard: SQL in eq/like/in VALUES is bound, not interpolated",
     // _users untouched (no UNION reached it).
     const hash = (
       db
-        .raw()
+        .sqliteRaw()
         .prepare('SELECT password_hash FROM "_users" WHERE email = ?')
         .get("leak@x.com") as { password_hash: string }
     ).password_hash;
@@ -666,13 +661,13 @@ describe("Injection guard: SQL in eq/like/in VALUES is bound, not interpolated",
 // ─── 5. Pagination bounds ───────────────────────────────────────
 
 describe("Pagination bounds (limit/offset validation)", () => {
-  function seeded() {
-    const { app } = ungatedApp(baseSchema);
+  async function seeded() {
+    const { app } = await ungatedApp(baseSchema);
     return { app };
   }
 
   it("rejects limit > 1000, negative, and non-integer limits", async () => {
-    const { app } = seeded();
+    const { app } = await seeded();
     // Need a separate seeded DB per request (afterEach closes them), so build
     // a fresh app inline for the limit=0 total check below.
     for (const limit of ["1001", "-5", "1.5", "abc", "NaN", "Infinity"]) {
@@ -688,10 +683,10 @@ describe("Pagination bounds (limit/offset validation)", () => {
   });
 
   it("limit=0 returns an empty page with the correct total", async () => {
-    const db = track(new Database({ schema: baseSchema }));
-    db.insert("t", { name: "a" });
-    db.insert("t", { name: "b" });
-    db.insert("t", { name: "c" });
+    const db = track(await Database.open({ schema: baseSchema }));
+    await db.insert("t", { name: "a" });
+    await db.insert("t", { name: "b" });
+    await db.insert("t", { name: "c" });
     const app = createServer(db, baseSchema, {
       admin: { enabled: true },
       auth: { enabled: false },
@@ -704,10 +699,10 @@ describe("Pagination bounds (limit/offset validation)", () => {
   });
 
   it("limit=2&offset=1 returns the correct page; limit=1000 is allowed", async () => {
-    const db = track(new Database({ schema: baseSchema }));
-    db.insert("t", { name: "a" });
-    db.insert("t", { name: "b" });
-    db.insert("t", { name: "c" });
+    const db = track(await Database.open({ schema: baseSchema }));
+    await db.insert("t", { name: "a" });
+    await db.insert("t", { name: "b" });
+    await db.insert("t", { name: "c" });
     const app = createServer(db, baseSchema, {
       admin: { enabled: true },
       auth: { enabled: false },
@@ -733,9 +728,9 @@ describe("Pagination bounds (limit/offset validation)", () => {
   });
 
   it("offset beyond the row count returns an empty page with correct total; negative offset → 400", async () => {
-    const db = track(new Database({ schema: baseSchema }));
-    db.insert("t", { name: "a" });
-    db.insert("t", { name: "b" });
+    const db = track(await Database.open({ schema: baseSchema }));
+    await db.insert("t", { name: "a" });
+    await db.insert("t", { name: "b" });
     const app = createServer(db, baseSchema, {
       admin: { enabled: true },
       auth: { enabled: false },

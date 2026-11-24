@@ -32,10 +32,10 @@ let client: LocalBaseClient;
 
 describe("SDK", () => {
   before(async () => {
-    db = new Database({ schema: testSchema });
+    db = await Database.open({ schema: testSchema });
     const app = createServer(db, testSchema);
 
-    db.insert("users", [
+    await db.insert("users", [
       { name: "Alice", email: "alice@test.com", age: 30 },
       { name: "Bob", email: "bob@test.com", age: 25 },
       { name: "Charlie", email: "charlie@test.com", age: 35 },
@@ -46,8 +46,8 @@ describe("SDK", () => {
     client = createClient(`http://localhost:${port}`);
   });
 
-  after(() => {
-    db.close();
+  after(async () => {
+    await db.close();
     server.close();
   });
 

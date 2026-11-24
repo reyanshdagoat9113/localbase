@@ -82,8 +82,8 @@ interface Harness {
 }
 
 async function setup(opts: SetupOpts = {}): Promise<Harness> {
-  const db = new Database({ schema, auth: authConfig });
-  const insertUser = db.raw().prepare(
+  const db = await Database.open({ schema, auth: authConfig });
+  const insertUser = db.sqliteRaw().prepare(
     `INSERT INTO "_users" ("id","email","password_hash","role") VALUES (?,?,?,?)`
   );
   insertUser.run(1, "alice@x.com", "x", "admin");
@@ -126,7 +126,7 @@ async function setup(opts: SetupOpts = {}): Promise<Harness> {
         server.closeAllConnections();
       }
       await new Promise<void>((res, rej) => server.close((e) => (e ? rej(e) : res())));
-      db.close();
+      await db.close();
     },
   };
 }
@@ -466,7 +466,7 @@ describe("Realtime security contract", () => {
 
         // Demote alice to a regular user. roleTtlMs=0 forces a live re-read on
         // the next event delivery, so bypass is revoked immediately.
-        h.db.raw().prepare(`UPDATE "_users" SET "role"='user' WHERE "id"=1`).run();
+        h.db.sqliteRaw().prepare(`UPDATE "_users" SET "role"='user' WHERE "id"=1`).run();
         await insert(h, h.bob, "after-demotion");
         await wait(150);
 
@@ -500,8 +500,8 @@ describe("Realtime security contract", () => {
 
         // While alice is offline, both alice-owned and carol-owned rows are
         // inserted. (Use db.insert so change events enter the replay buffer.)
-        h.db.insert("posts", { title: "alice offline", owner_id: 1 });
-        h.db.insert("posts", { title: "carol offline", owner_id: 3 });
+        await h.db.insert("posts", { title: "alice offline", owner_id: 1 });
+        await h.db.insert("posts", { title: "carol offline", owner_id: 3 });
 
         // Reconnect alice with the captured cursor.
         const a2 = await open(h.port); await authenticate(a2, h.alice);
@@ -544,7 +544,7 @@ describe("Realtime security contract", () => {
 
       // A brand-new realtime server on the same DB has a new epoch. Replaying
       // the stale cursor must yield resync:required, not a partial history.
-      const db = new Database({ path: ":memory:", schema, auth: authConfig });
+      const db = await Database.open({ path: ":memory:", schema, auth: authConfig });
       const app = createServer(db, schema, { auth: authConfig, policies: POLICY });
       const server = serve({ fetch: app.fetch, port: 0 });
       const port = (server.address() as { port: number }).port;
@@ -564,7 +564,7 @@ describe("Realtime security contract", () => {
       } finally {
         await rt.close();
         await new Promise<void>((res, rej) => server.close((e) => (e ? rej(e) : res())));
-        db.close();
+        await db.close();
       }
     });
 
@@ -580,9 +580,9 @@ describe("Realtime security contract", () => {
         const staleCursor = oldEv.event.cursor;
 
         // Push enough new events to evict the old one from the size-2 buffer.
-        h.db.insert("posts", { title: "n1", owner_id: 2 });
-        h.db.insert("posts", { title: "n2", owner_id: 2 });
-        h.db.insert("posts", { title: "n3", owner_id: 2 });
+        await h.db.insert("posts", { title: "n1", owner_id: 2 });
+        await h.db.insert("posts", { title: "n2", owner_id: 2 });
+        await h.db.insert("posts", { title: "n3", owner_id: 2 });
 
         send(ws, { type: "subscribe", id: "r2", table: "posts", cursor: staleCursor });
         const msg = await nextMsg(ws, (m) => m.type === "resync:required");

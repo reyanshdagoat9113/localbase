@@ -73,15 +73,15 @@ describe("collectStatus", () => {
     const dbDir = path.join(dir, DB_DIR);
     fs.mkdirSync(dbDir, { recursive: true });
     const dbPath = path.join(dbDir, DB_FILE);
-    const db = new Database({
+    const db = await Database.open({
       path: dbPath,
       schema: { notes: { id: { type: "integer", primaryKey: true } } },
       dataDir: dbDir,
     });
     try {
-      db.insert("notes", { id: 1 });
+      await db.insert("notes", { id: 1 });
     } finally {
-      db.close();
+      await db.close();
     }
 
     const report = await collectStatus({ port: 1 }, dir);

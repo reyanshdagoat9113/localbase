@@ -20,8 +20,8 @@ const testSchema: DatabaseSchema = {
   },
 };
 
-function newAuthDb(): { db: Database; auth: Auth } {
-  const db = new Database({
+async function newAuthDb(): Promise<{ db: Database; auth: Auth }> {
+  const db = await Database.open({
     schema: testSchema,
     auth: { enabled: true, jwtSecret: SECRET },
   });
@@ -42,7 +42,7 @@ async function signUp(auth: Auth, email: string, password = "password123") {
 
 describe("First-user bootstrap", () => {
   it("the very first signup becomes the owner", async () => {
-    const { db, auth } = newAuthDb();
+    const { db, auth } = await newAuthDb();
     try {
       const session = await signUp(auth, "first@test.com");
       assert.equal(session.user.role, "owner");
@@ -51,28 +51,28 @@ describe("First-user bootstrap", () => {
       assert.equal(session.accessToken.length > 0, true);
 
       // Confirm in the DB.
-      assert.equal(auth.countAdmins(), 1);
-      assert.equal(auth.countUsers(), 1);
+      assert.equal(await auth.countAdmins(), 1);
+      assert.equal(await auth.countUsers(), 1);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("subsequent signups are regular users", async () => {
-    const { db, auth } = newAuthDb();
+    const { db, auth } = await newAuthDb();
     try {
       await signUp(auth, "first@test.com");
       const second = await signUp(auth, "second@test.com");
       assert.equal(second.user.role, "user");
-      assert.equal(auth.countAdmins(), 1);
-      assert.equal(auth.countUsers(), 2);
+      assert.equal(await auth.countAdmins(), 1);
+      assert.equal(await auth.countUsers(), 2);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("the owner claim is actually embedded in the JWT", async () => {
-    const { db, auth } = newAuthDb();
+    const { db, auth } = await newAuthDb();
     try {
       const session = await signUp(auth, "first@test.com");
       // Decode + verify the real session token and assert the role claim is
@@ -83,7 +83,7 @@ describe("First-user bootstrap", () => {
       );
       assert.equal(payload.role, "owner");
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });
@@ -92,90 +92,90 @@ describe("First-user bootstrap", () => {
 
 describe("setRole + last-admin lockout", () => {
   it("promotes a user to admin", async () => {
-    const { db, auth } = newAuthDb();
+    const { db, auth } = await newAuthDb();
     try {
       await signUp(auth, "first@test.com"); // admin
       await signUp(auth, "second@test.com"); // user
-      const promoted = auth.setRole("second@test.com", "admin");
+      const promoted = await auth.setRole("second@test.com", "admin");
       assert.equal(promoted.role, "admin");
-      assert.equal(auth.countAdmins(), 2);
+      assert.equal(await auth.countAdmins(), 2);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("refuses to change the owner role", async () => {
-    const { db, auth } = newAuthDb();
+    const { db, auth } = await newAuthDb();
     try {
       await signUp(auth, "first@test.com"); // admin
-      assert.throws(
-        () => auth.setRole("first@test.com", "admin"),
+      await assert.rejects(
+        async () => await auth.setRole("first@test.com", "admin"),
         /owner role cannot be changed/i
       );
-      assert.equal(auth.countAdmins(), 1);
+      assert.equal(await auth.countAdmins(), 1);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("demotes an admin while the owner remains", async () => {
-    const { db, auth } = newAuthDb();
+    const { db, auth } = await newAuthDb();
     try {
       await signUp(auth, "first@test.com"); // admin
       await signUp(auth, "second@test.com");
-      auth.setRole("second@test.com", "admin");
-      const demoted = auth.setRole("second@test.com", "user");
+      await auth.setRole("second@test.com", "admin");
+      const demoted = await auth.setRole("second@test.com", "user");
       assert.equal(demoted.role, "user");
-      assert.equal(auth.countAdmins(), 1);
+      assert.equal(await auth.countAdmins(), 1);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("REFUSES to demote the owner", async () => {
-    const { db, auth } = newAuthDb();
+    const { db, auth } = await newAuthDb();
     try {
       await signUp(auth, "only@test.com"); // the sole admin
-      assert.throws(
-        () => auth.setRole("only@test.com", "user"),
+      await assert.rejects(
+        async () => await auth.setRole("only@test.com", "user"),
         (err: unknown) =>
           err instanceof Error &&
           (err as { status?: number }).status === 409 &&
           /owner role cannot be changed/i.test(err.message)
       );
       // Still has administrative access.
-      assert.equal(auth.countAdmins(), 1);
+      assert.equal(await auth.countAdmins(), 1);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("rejects an invalid role value", async () => {
-    const { db, auth } = newAuthDb();
+    const { db, auth } = await newAuthDb();
     try {
       await signUp(auth, "first@test.com");
-      assert.throws(
-        () => auth.setRole("first@test.com", "superuser"),
+      await assert.rejects(
+        async () => await auth.setRole("first@test.com", "superuser"),
         (err: unknown) =>
           err instanceof Error &&
           (err as { status?: number }).status === 400
       );
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("404s on an unknown email", async () => {
-    const { db, auth } = newAuthDb();
+    const { db, auth } = await newAuthDb();
     try {
-      assert.throws(
-        () => auth.setRole("ghost@test.com", "admin"),
+      await assert.rejects(
+        async () => await auth.setRole("ghost@test.com", "admin"),
         (err: unknown) =>
           err instanceof Error &&
           (err as { status?: number }).status === 404
       );
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });
@@ -183,8 +183,8 @@ describe("setRole + last-admin lockout", () => {
 // ─── requireAdmin middleware ───────────────────────────────────
 
 describe("requireAdmin middleware", () => {
-  function gatedApp(): { app: Hono; db: Database; auth: Auth } {
-    const { db, auth } = newAuthDb();
+  async function gatedApp(): Promise<{ app: Hono; db: Database; auth: Auth }> {
+    const { db, auth } = await newAuthDb();
     // A minimal app that uses requireAdmin directly so we test the
     // middleware in isolation.
     const app = createServer(db, testSchema, { auth: { enabled: false } });
@@ -195,29 +195,29 @@ describe("requireAdmin middleware", () => {
   }
 
   it("returns 401 when no Authorization header is present", async () => {
-    const { app, db } = gatedApp();
+    const { app, db } = await gatedApp();
     try {
       const res = await app.request("/_test/admin-only");
       assert.equal(res.status, 401);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("returns 401 for a malformed Authorization header", async () => {
-    const { app, db } = gatedApp();
+    const { app, db } = await gatedApp();
     try {
       const res = await app.request("/_test/admin-only", {
         headers: { Authorization: "Token abc" },
       });
       assert.equal(res.status, 401);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("returns 200 for a current admin token", async () => {
-    const { app, db, auth } = gatedApp();
+    const { app, db, auth } = await gatedApp();
     try {
       const session = await signUp(auth, "admin@test.com");
       const res = await app.request("/_test/admin-only", {
@@ -225,12 +225,12 @@ describe("requireAdmin middleware", () => {
       });
       assert.equal(res.status, 200);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("returns 403 for a regular-user token", async () => {
-    const { app, db, auth } = gatedApp();
+    const { app, db, auth } = await gatedApp();
     try {
       await signUp(auth, "admin@test.com");
       const second = await signUp(auth, "user@test.com");
@@ -239,7 +239,7 @@ describe("requireAdmin middleware", () => {
       });
       assert.equal(res.status, 403);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
@@ -247,18 +247,18 @@ describe("requireAdmin middleware", () => {
     // This is the key property the plan calls out: requireAdmin re-reads
     // the live role, so an admin who was demoted loses access before
     // their access token expires.
-    const { app, db, auth } = gatedApp();
+    const { app, db, auth } = await gatedApp();
     try {
       await signUp(auth, "first@test.com"); // admin
       await signUp(auth, "second@test.com");
-      auth.setRole("second@test.com", "admin");
+      await auth.setRole("second@test.com", "admin");
       const secondAdminSession = await auth.signIn({
         email: "second@test.com",
         password: "password123",
       });
 
       // Demote second now (first remains admin, so this is allowed).
-      auth.setRole("second@test.com", "user");
+      await auth.setRole("second@test.com", "user");
 
       // second's token was issued when they were admin. It must NOT work now.
       const staleRes = await app.request("/_test/admin-only", {
@@ -266,20 +266,20 @@ describe("requireAdmin middleware", () => {
       });
       assert.equal(staleRes.status, 403);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("returns 401 for a DELETED admin's token", async () => {
-    const { app, db, auth } = gatedApp();
+    const { app, db, auth } = await gatedApp();
     try {
       const session = await signUp(auth, "admin@test.com");
       // Delete the user's sessions first (they FK _users), then the user.
       // This mirrors what a real deleteUser flow would do.
-      db.delete("_sessions", [
+      await db.delete("_sessions", [
         { column: "user_id", operator: "eq", value: session.user.id },
       ]);
-      db.delete("_users", [
+      await db.delete("_users", [
         { column: "email", operator: "eq", value: "admin@test.com" },
       ]);
       const res = await app.request("/_test/admin-only", {
@@ -291,12 +291,12 @@ describe("requireAdmin middleware", () => {
       const body = await res.json();
       assert.doesNotMatch(body.error, /delete|not found|no longer|removed/i);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("returns 401 for a token signed with a different secret", async () => {
-    const { db, auth } = newAuthDb();
+    const { db, auth } = await newAuthDb();
     try {
       await signUp(auth, "admin@test.com");
       // Sign with the wrong secret.
@@ -316,7 +316,7 @@ describe("requireAdmin middleware", () => {
       });
       assert.equal(res.status, 401);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
@@ -327,14 +327,14 @@ describe("requireAdmin middleware", () => {
     // A token that claims role:"admin" but whose user is role:"user" — even
     // though signed with the correct secret — must be rejected with 403, not
     // honored (and not a 401: the signature verifies).
-    const { app, db, auth } = gatedApp();
+    const { app, db, auth } = await gatedApp();
     try {
       await signUp(auth, "admin@test.com"); // bootstrap admin
-      const victim = db.insert("_users", {
+      const victim = (await db.insert("_users", {
         email: "victim@test.com",
         password_hash: "x",
         role: "user",
-      })[0] as { id: number };
+      }))[0] as { id: number };
       const forged = await signAccessToken(
         { id: victim.id, email: "victim@test.com", role: "admin" },
         SECRET,
@@ -345,14 +345,14 @@ describe("requireAdmin middleware", () => {
       });
       assert.equal(res.status, 403);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("returns 401 for an EXPIRED access token", async () => {
     // signAccessToken cannot mint a past expiry, so forge one directly with
     // jose. Pins the JWTExpired branch in requireAdmin.
-    const { app, db, auth } = gatedApp();
+    const { app, db, auth } = await gatedApp();
     try {
       const s = await signUp(auth, "admin@test.com");
       const now = Math.floor(Date.now() / 1000);
@@ -369,12 +369,12 @@ describe("requireAdmin middleware", () => {
       const body = await res.json();
       assert.match(body.error, /expired/i);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("returns 401 for a TAMPERED token (signature changed)", async () => {
-    const { app, db, auth } = gatedApp();
+    const { app, db, auth } = await gatedApp();
     try {
       const s = await signUp(auth, "admin@test.com");
       // Flip a MIDDLE character of the signature segment. The trailing
@@ -393,21 +393,21 @@ describe("requireAdmin middleware", () => {
       });
       assert.equal(res.status, 401);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("returns 403 for a user whose role is an unexpected value (superuser)", async () => {
     // Guards against a future refactor that swaps strict-equality for
     // "anything but 'user' is admin". Only explicit administrative roles pass.
-    const { app, db, auth } = gatedApp();
+    const { app, db, auth } = await gatedApp();
     try {
       await signUp(auth, "admin@test.com");
-      const weird = db.insert("_users", {
+      const weird = (await db.insert("_users", {
         email: "super@test.com",
         password_hash: "x",
         role: "superuser",
-      })[0] as { id: number };
+      }))[0] as { id: number };
       const token = await signAccessToken(
         { id: weird.id, email: "super@test.com", role: "superuser" },
         SECRET,
@@ -418,12 +418,12 @@ describe("requireAdmin middleware", () => {
       });
       assert.equal(res.status, 403);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("rejects assorted malformed Authorization header forms; lowercase 'bearer' still works", async () => {
-    const { app, db, auth } = gatedApp();
+    const { app, db, auth } = await gatedApp();
     try {
       const s = await signUp(auth, "admin@test.com");
 
@@ -444,7 +444,7 @@ describe("requireAdmin middleware", () => {
       });
       assert.equal(lower.status, 200);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });
@@ -452,8 +452,8 @@ describe("requireAdmin middleware", () => {
 // ─── Gated admin API (end-to-end via createServer) ─────────────
 
 describe("Admin API gating (end-to-end)", () => {
-  function makeApp(): { app: Hono; db: Database; auth: Auth } {
-    const { db, auth } = newAuthDb();
+  async function makeApp(): Promise<{ app: Hono; db: Database; auth: Auth }> {
+    const { db, auth } = await newAuthDb();
     const server = createServer(db, testSchema, {
       auth: { enabled: true, jwtSecret: SECRET },
       admin: { enabled: true },
@@ -462,17 +462,17 @@ describe("Admin API gating (end-to-end)", () => {
   }
 
   it("rejects /_api/admin/schema without a token (401)", async () => {
-    const { app, db } = makeApp();
+    const { app, db } = await makeApp();
     try {
       const res = await app.request("/_api/admin/schema");
       assert.equal(res.status, 401);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("rejects /_api/admin/schema with a user token (403)", async () => {
-    const { app, db, auth } = makeApp();
+    const { app, db, auth } = await makeApp();
     try {
       await signUp(auth, "first@test.com"); // admin
       const user = await signUp(auth, "second@test.com");
@@ -481,12 +481,12 @@ describe("Admin API gating (end-to-end)", () => {
       });
       assert.equal(res.status, 403);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("allows /_api/admin/schema with an admin token (200)", async () => {
-    const { app, db, auth } = makeApp();
+    const { app, db, auth } = await makeApp();
     try {
       const admin = await signUp(auth, "first@test.com");
       const res = await app.request("/_api/admin/schema", {
@@ -496,12 +496,12 @@ describe("Admin API gating (end-to-end)", () => {
       const body = await res.json();
       assert.ok(Array.isArray(body.data.tables));
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("admin row CRUD requires an admin token", async () => {
-    const { app, db, auth } = makeApp();
+    const { app, db, auth } = await makeApp();
     try {
       await signUp(auth, "first@test.com"); // admin
       const user = await signUp(auth, "second@test.com");
@@ -522,16 +522,16 @@ describe("Admin API gating (end-to-end)", () => {
       });
       assert.equal(userAttempt.status, 403);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("a demoted admin immediately loses access to /_api/admin/*", async () => {
-    const { app, db, auth } = makeApp();
+    const { app, db, auth } = await makeApp();
     try {
       await signUp(auth, "first@test.com"); // admin
       await signUp(auth, "second@test.com");
-      auth.setRole("second@test.com", "admin"); // now 2 admins
+      await auth.setRole("second@test.com", "admin"); // now 2 admins
       const secondAdminSession = await auth.signIn({
         email: "second@test.com",
         password: "password123",
@@ -545,7 +545,7 @@ describe("Admin API gating (end-to-end)", () => {
       assert.equal(before.status, 200);
 
       // Demote second (first remains, so allowed).
-      auth.setRole("second@test.com", "user");
+      await auth.setRole("second@test.com", "user");
 
       // Same token now fails.
       const after = await app.request("/_api/admin/schema", {
@@ -553,7 +553,7 @@ describe("Admin API gating (end-to-end)", () => {
       });
       assert.equal(after.status, 403);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
@@ -561,11 +561,11 @@ describe("Admin API gating (end-to-end)", () => {
     // The live-role re-read is the headline authz property. The GET test
     // above pins it for reads; this pins it for MUTATIONS — the dangerous
     // half. A stale role:'admin' token must not reach any write handler.
-    const { app, db, auth } = makeApp();
+    const { app, db, auth } = await makeApp();
     try {
       await signUp(auth, "first@test.com"); // admin
       await signUp(auth, "second@test.com");
-      auth.setRole("second@test.com", "admin"); // now 2 admins
+      await auth.setRole("second@test.com", "admin"); // now 2 admins
       const second = await auth.signIn({
         email: "second@test.com",
         password: "password123",
@@ -582,7 +582,7 @@ describe("Admin API gating (end-to-end)", () => {
       const id = (await insert.json()).data.id;
 
       // Demote second (first remains admin, so this is allowed).
-      auth.setRole("second@test.com", "user");
+      await auth.setRole("second@test.com", "user");
 
       const post = await app.request("/_api/admin/tables/tasks/rows", {
         method: "POST",
@@ -603,10 +603,10 @@ describe("Admin API gating (end-to-end)", () => {
       assert.equal(del.status, 403);
 
       // Only the seeded row remains — no second insert, no mutation, no delete.
-      const tasks = db.select("tasks") as Array<{ title: string }>;
+      const tasks = (await db.select("tasks")) as Array<{ title: string }>;
       assert.deepEqual(tasks.map((t) => t.title), ["seed"]);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });
@@ -615,7 +615,7 @@ describe("Admin API gating (end-to-end)", () => {
 
 describe("createUser (CLI path) defaults to role=user", () => {
   it("creates a regular user, never an admin", async () => {
-    const { db, auth } = newAuthDb();
+    const { db, auth } = await newAuthDb();
     try {
       await signUp(auth, "first@test.com"); // the bootstrap admin
       const created = await auth.createUser({
@@ -623,9 +623,9 @@ describe("createUser (CLI path) defaults to role=user", () => {
         password: "password123",
       });
       assert.equal(created.role, "user");
-      assert.equal(auth.countAdmins(), 1);
+      assert.equal(await auth.countAdmins(), 1);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });
@@ -638,7 +638,7 @@ describe("No-auth mode (admin API ungated — the posture the CLI gate protects)
     // is the exact contract the CLI's unsafeAdminBinding gate exists to keep
     // on localhost — pinning it here catches a future default-deny change
     // that would silently break the no-auth dev workflow.
-    const db = new Database({ schema: testSchema });
+    const db = await Database.open({ schema: testSchema });
     try {
       const app = createServer(db, testSchema, {
         admin: { enabled: true },
@@ -660,14 +660,14 @@ describe("No-auth mode (admin API ungated — the posture the CLI gate protects)
       const postBody = await post.json();
       assert.equal(postBody.data.title, "ungated-insert");
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("GET /_api/admin/meta reports authEnabled: false", async () => {
     // The Studio boots against this endpoint: auth-off servers must never
     // show a login screen, so meta must be reachable and honest.
-    const db = new Database({ schema: testSchema });
+    const db = await Database.open({ schema: testSchema });
     try {
       const app = createServer(db, testSchema, {
         admin: { enabled: true },
@@ -678,12 +678,12 @@ describe("No-auth mode (admin API ungated — the posture the CLI gate protects)
       const body = await res.json();
       assert.equal(body.data.authEnabled, false);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("GET /_api/admin/meta is ungated even when auth is on", async () => {
-    const { db } = newAuthDb();
+    const { db } = await newAuthDb();
     try {
       const app = createServer(db, testSchema, {
         auth: { enabled: true, jwtSecret: SECRET },
@@ -694,7 +694,7 @@ describe("No-auth mode (admin API ungated — the posture the CLI gate protects)
       const body = await res.json();
       assert.equal(body.data.authEnabled, true);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });

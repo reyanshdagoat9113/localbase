@@ -34,8 +34,8 @@ describe("SDK auth", () => {
   let app: Hono;
   let client: LocalBaseClient;
 
-  beforeEach(() => {
-    db = new Database({
+  beforeEach(async () => {
+    db = await Database.open({
       schema: testSchema,
       auth: { enabled: true, ...authOptions },
     });

@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import BetterSqlite3 from "better-sqlite3";
 import type { DatabaseSchema } from "@localbase/shared";
+import { SqliteDriver } from "./db/index.js";
 import { runMigrations, getAppliedMigrations } from "./migrate.js";
 import {
   columnToAddDDL,
@@ -98,8 +98,8 @@ describe("topologicalSort", () => {
 // ─── runMigrations — additive column path ──────────────────────
 
 describe("runMigrations — additive columns", () => {
-  it("adds a missing column to an existing table without dropping data", () => {
-    const db = new BetterSqlite3(":memory:");
+  it("adds a missing column to an existing table without dropping data", async () => {
+    const db = new SqliteDriver(":memory:");
     try {
       // v1 schema — table without the new column.
       const v1: DatabaseSchema = {
@@ -109,10 +109,10 @@ describe("runMigrations — additive columns", () => {
           password_hash: { type: "text", nullable: false },
         },
       };
-      runMigrations(db, v1);
+      await runMigrations(db, v1);
 
       // Insert a real user row that must survive the migration.
-      db.prepare(
+      db.sqliteRaw().prepare(
         `INSERT INTO "_users" ("email", "password_hash") VALUES (?, ?)`
       ).run("existing@test.com", "hashed");
 
@@ -125,13 +125,14 @@ describe("runMigrations — additive columns", () => {
           role: { type: "text", default: "'user'", nullable: false },
         },
       };
-      const applied = runMigrations(db, v2);
+      const applied = await runMigrations(db, v2);
 
       // The new column was added and tracked as a column-level migration.
       assert.ok(applied.includes("_users::role"));
 
       // Existing data is intact.
       const row = db
+        .sqliteRaw()
         .prepare(`SELECT * FROM "_users" WHERE "email" = ?`)
         .get("existing@test.com") as { email: string; role: string };
       assert.equal(row.email, "existing@test.com");
@@ -139,38 +140,38 @@ describe("runMigrations — additive columns", () => {
       assert.equal(row.role, "user");
 
       // Re-running is idempotent — nothing new applied.
-      const reapplied = runMigrations(db, v2);
+      const reapplied = await runMigrations(db, v2);
       assert.equal(reapplied.length, 0);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
-  it("records column migrations separately from table migrations", () => {
-    const db = new BetterSqlite3(":memory:");
+  it("records column migrations separately from table migrations", async () => {
+    const db = new SqliteDriver(":memory:");
     try {
       const v1: DatabaseSchema = {
         t: { id: { type: "integer", primaryKey: true, autoIncrement: true } },
       };
-      runMigrations(db, v1);
+      await runMigrations(db, v1);
       const v2: DatabaseSchema = {
         t: {
           id: { type: "integer", primaryKey: true, autoIncrement: true },
           label: { type: "text" },
         },
       };
-      runMigrations(db, v2);
+      await runMigrations(db, v2);
 
-      const applied = getAppliedMigrations(db);
+      const applied = await getAppliedMigrations(db);
       assert.ok(applied.has("t"));
       assert.ok(applied.has("t::label"));
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
-  it("adds promotion user_id to an existing admin-request table", () => {
-    const db = new BetterSqlite3(":memory:");
+  it("adds promotion user_id to an existing admin-request table", async () => {
+    const db = new SqliteDriver(":memory:");
     try {
       const v1: DatabaseSchema = {
         _admin_requests: {
@@ -180,8 +181,8 @@ describe("runMigrations — additive columns", () => {
           created_at: { type: "text", default: "CURRENT_TIMESTAMP" },
         },
       };
-      runMigrations(db, v1);
-      db.prepare(
+      await runMigrations(db, v1);
+      db.sqliteRaw().prepare(
         `INSERT INTO "_admin_requests" ("email", "password_hash") VALUES (?, ?)`
       ).run("pending@test.com", "hash");
 
@@ -191,19 +192,20 @@ describe("runMigrations — additive columns", () => {
           user_id: { type: "integer" },
         },
       };
-      const applied = runMigrations(db, v2);
+      const applied = await runMigrations(db, v2);
       assert.ok(applied.includes("_admin_requests::user_id"));
       const row = db
+        .sqliteRaw()
         .prepare(`SELECT * FROM "_admin_requests" WHERE "email" = ?`)
         .get("pending@test.com") as { user_id: number | null };
       assert.equal(row.user_id, null);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
-  it("creates brand-new tables in phase 1 and skips phase 2 for them", () => {
-    const db = new BetterSqlite3(":memory:");
+  it("creates brand-new tables in phase 1 and skips phase 2 for them", async () => {
+    const db = new SqliteDriver(":memory:");
     try {
       const schema: DatabaseSchema = {
         tasks: {
@@ -212,12 +214,12 @@ describe("runMigrations — additive columns", () => {
           done: { type: "boolean", default: "0" },
         },
       };
-      const applied = runMigrations(db, schema);
+      const applied = await runMigrations(db, schema);
       // A brand-new table is one migration; its columns are not separately
       // recorded because they all came in via CREATE TABLE.
       assert.deepEqual(applied, ["tasks"]);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });

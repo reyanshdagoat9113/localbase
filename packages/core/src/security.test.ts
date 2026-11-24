@@ -55,12 +55,12 @@ describe("CORS default (loopback-only)", () => {
   let db: Database;
   let app: Hono;
 
-  before(() => {
-    db = new Database({ schema: testSchema });
+  before(async () => {
+    db = await Database.open({ schema: testSchema });
     // No security config → loopback-safe defaults apply.
     app = createServer(db, testSchema, { auth: { enabled: false } });
   });
-  after(() => db.close());
+  after(async () => await db.close());
 
   it("reflects a localhost origin", async () => {
     const res = await app.request("/", {
@@ -113,8 +113,8 @@ describe("CORS configured allowlist", () => {
   let db: Database;
   let app: Hono;
 
-  before(() => {
-    db = new Database({ schema: testSchema });
+  before(async () => {
+    db = await Database.open({ schema: testSchema });
     app = createServer(db, testSchema, {
       security: {
         cors: {
@@ -124,7 +124,7 @@ describe("CORS configured allowlist", () => {
       },
     });
   });
-  after(() => db.close());
+  after(async () => await db.close());
 
   it("allows an explicitly listed origin", async () => {
     const res = await app.request("/", {
@@ -188,8 +188,8 @@ describe("rate limiting (per route, per IP with trustProxy: true)", () => {
   let db: Database;
   let app: Hono;
 
-  before(() => {
-    db = new Database({ schema: testSchema, auth: authConfig });
+  before(async () => {
+    db = await Database.open({ schema: testSchema, auth: authConfig });
     app = createServer(db, testSchema, {
       auth: authConfig,
       security: {
@@ -198,7 +198,7 @@ describe("rate limiting (per route, per IP with trustProxy: true)", () => {
       },
     });
   });
-  after(() => db.close());
+  after(async () => await db.close());
 
   it("returns 429 with Retry-After once the per-route budget is exceeded", async () => {
     // Send max+1 requests to /signin from the same IP. Unknown emails make
@@ -259,7 +259,7 @@ describe("rate limiting (per route, per IP with trustProxy: true)", () => {
 
 describe("rate limiting (trustProxy default false & bucket cap)", () => {
   it("ignores X-Forwarded-For when trustProxy is omitted/false", async () => {
-    const db = new Database({ schema: testSchema, auth: authConfig });
+    const db = await Database.open({ schema: testSchema, auth: authConfig });
     const app = createServer(db, testSchema, {
       auth: authConfig,
       security: { rateLimits: { windowMs: 1000, max: 2 } },
@@ -285,7 +285,7 @@ describe("rate limiting (trustProxy default false & bucket cap)", () => {
       );
       assert.equal(blocked.status, 429);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
@@ -372,13 +372,13 @@ describe("request body limit", () => {
   let db: Database;
   let app: Hono;
 
-  before(() => {
-    db = new Database({ schema: testSchema });
+  before(async () => {
+    db = await Database.open({ schema: testSchema });
     app = createServer(db, testSchema, {
       security: { bodyLimitBytes: 100 },
     });
   });
-  after(() => db.close());
+  after(async () => await db.close());
 
   it("rejects an oversized JSON body with 413", async () => {
     const res = await app.request(
@@ -403,11 +403,11 @@ describe("security headers", () => {
   let db: Database;
   let app: Hono;
 
-  before(() => {
-    db = new Database({ schema: testSchema });
+  before(async () => {
+    db = await Database.open({ schema: testSchema });
     app = createServer(db, testSchema, { auth: { enabled: false } });
   });
-  after(() => db.close());
+  after(async () => await db.close());
 
   it("sets X-Content-Type-Options: nosniff", async () => {
     const res = await app.request("/");
@@ -429,8 +429,8 @@ describe("security headers (extra + override)", () => {
   let db: Database;
   let app: Hono;
 
-  before(() => {
-    db = new Database({ schema: testSchema });
+  before(async () => {
+    db = await Database.open({ schema: testSchema });
     app = createServer(db, testSchema, {
       security: {
         headers: {
@@ -443,7 +443,7 @@ describe("security headers (extra + override)", () => {
       },
     });
   });
-  after(() => db.close());
+  after(async () => await db.close());
 
   it("adds an extra header", async () => {
     const res = await app.request("/");
@@ -462,13 +462,13 @@ describe("loopback default unchanged (no regression)", () => {
   let db: Database;
   let app: Hono;
 
-  before(() => {
-    db = new Database({ schema: testSchema });
+  before(async () => {
+    db = await Database.open({ schema: testSchema });
     // No security config at all — anonymous localhost behavior must still work.
     app = createServer(db, testSchema, { auth: { enabled: false } });
-    db.insert("posts", [{ title: "hello" }, { title: "world" }]);
+    await db.insert("posts", [{ title: "hello" }, { title: "world" }]);
   });
-  after(() => db.close());
+  after(async () => await db.close());
 
   it("anonymous GET /api/:table still lists rows", async () => {
     const res = await app.request("/api/posts");
