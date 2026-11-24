@@ -167,13 +167,25 @@ function coerceValue(
   type: string
 ): unknown {
   switch (type) {
-    case "integer":
-    case "boolean": {
+    case "integer": {
       const n = Number(raw);
       if (!Number.isFinite(n)) {
         throw new HttpError(400, `Expected a number, got "${raw}"`);
       }
-      return type === "boolean" ? (n ? 1 : 0) : Math.trunc(n);
+      return Math.trunc(n);
+    }
+    case "boolean": {
+      const lower = raw.trim().toLowerCase();
+      if (lower === "true") return 1;
+      if (lower === "false") return 0;
+      if (lower === "") {
+        throw new HttpError(400, `Expected a boolean, got "${raw}"`);
+      }
+      const n = Number(lower);
+      if (!Number.isFinite(n)) {
+        throw new HttpError(400, `Expected a boolean, got "${raw}"`);
+      }
+      return n ? 1 : 0;
     }
     case "real": {
       const n = Number(raw);
@@ -246,17 +258,36 @@ function coerceBodyValue(
   if (value === null || value === undefined) return value;
 
   switch (type) {
-    case "integer":
-    case "boolean": {
-      if (typeof value === "number") return type === "boolean" ? (value ? 1 : 0) : Math.trunc(value);
+    case "integer": {
+      if (typeof value === "number") return Math.trunc(value);
       if (typeof value === "string") {
         const n = Number(value);
         if (!Number.isFinite(n)) {
           throw new HttpError(400, `Column "${column}": expected a number, got "${value}"`);
         }
-        return type === "boolean" ? (n ? 1 : 0) : Math.trunc(n);
+        return Math.trunc(n);
       }
       throw new HttpError(400, `Column "${column}": expected a number`);
+    }
+    case "boolean": {
+      if (typeof value === "boolean") return value ? 1 : 0;
+      if (typeof value === "number") {
+        if (!Number.isFinite(value)) {
+          throw new HttpError(400, `Column "${column}": expected a boolean`);
+        }
+        return value ? 1 : 0;
+      }
+      if (typeof value === "string") {
+        const lower = value.trim().toLowerCase();
+        if (lower === "true") return 1;
+        if (lower === "false") return 0;
+        if (lower !== "") {
+          const n = Number(lower);
+          if (Number.isFinite(n)) return n ? 1 : 0;
+        }
+        throw new HttpError(400, `Column "${column}": expected a boolean, got "${value}"`);
+      }
+      throw new HttpError(400, `Column "${column}": expected a boolean`);
     }
     case "real": {
       if (typeof value === "number") return value;
@@ -493,12 +524,15 @@ export function createServer(
   app.use("*", buildCorsMiddleware(normalized.security));
   app.use("*", buildBodyLimitMiddleware(normalized.security));
 
+  const trustProxy = normalized.security?.trustProxy === true;
+
   // One shared rate-limit instance, keyed by `routePath|ip`, so each abuse-
   // sensitive route counts independently per client IP. Built from
   // `security.rateLimits` (defaults: 60s window, 20 requests).
   const rateLimitMiddleware = rateLimit({
     windowMs: normalized.security?.rateLimits?.windowMs ?? 60_000,
     max: normalized.security?.rateLimits?.max ?? 20,
+    trustProxy,
   });
 
   // ── Auth router (on by default) ──
@@ -617,6 +651,7 @@ export function createServer(
       authSecret: resolvedSecret,
       signedUrlSecret,
       rateLimit: rateLimitMiddleware,
+      trustProxy,
     })
   );
 

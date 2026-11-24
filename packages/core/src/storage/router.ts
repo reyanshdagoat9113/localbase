@@ -43,6 +43,11 @@ export interface StorageRouterOptions {
    * exposure if an attacker obtains a valid Bearer token.
    */
   rateLimit?: MiddlewareHandler;
+  /**
+   * Whether to trust `X-Forwarded-Host` / `X-Forwarded-Proto` when building
+   * absolute signed URLs. Default `false`.
+   */
+  trustProxy?: boolean;
 }
 
 /**
@@ -289,9 +294,9 @@ export function createStorageRouter(
         return c.json({ error: "Authentication required" }, 401);
       }
 
-      // Confirm the file exists before handing out a URL to it.
-      const found = db.storage.get(bucket, filename);
-      if (!found) {
+      // Confirm the file exists before handing out a URL to it without opening
+      // a file descriptor / read stream.
+      if (!db.storage.exists(bucket, filename)) {
         return c.json({ error: "File not found" }, 404);
       }
 
@@ -302,7 +307,7 @@ export function createStorageRouter(
 
       const now = Math.floor(Date.now() / 1000);
       const expires = now + expiresIn;
-      const origin = originFromRequest(c);
+      const origin = originFromRequest(c, options.trustProxy === true);
       const signedUrl = createSignedUrl({
         bucket,
         storedName: filename,
@@ -353,13 +358,15 @@ function clampExpiresIn(input: number | undefined): number {
  * test hitting `app.request` with no host), the signed URL is returned
  * root-relative and the caller can prefix it.
  */
-function originFromRequest(c: Context): string | undefined {
+function originFromRequest(c: Context, trustProxy: boolean): string | undefined {
   const url = new URL(c.req.url);
-  // Honor a forwarded proto/host so signed URLs survive a reverse proxy.
-  const fwdProto = c.req.header("x-forwarded-proto");
-  const fwdHost = c.req.header("x-forwarded-host");
-  if (fwdHost) {
-    return `${(fwdProto ?? "https").split(",")[0].trim()}://${fwdHost.split(",")[0].trim()}`;
+  // Only honor forwarded proto/host when behind a trusted reverse proxy.
+  if (trustProxy) {
+    const fwdProto = c.req.header("x-forwarded-proto");
+    const fwdHost = c.req.header("x-forwarded-host");
+    if (fwdHost) {
+      return `${(fwdProto ?? "https").split(",")[0].trim()}://${fwdHost.split(",")[0].trim()}`;
+    }
   }
   if (url.host) {
     return `${url.protocol}//${url.host}`;

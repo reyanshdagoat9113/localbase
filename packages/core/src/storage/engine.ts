@@ -174,6 +174,21 @@ export class StorageEngine {
   }
 
   /**
+   * Check whether a stored object exists (both metadata row and on-disk file)
+   * without opening a read stream.
+   */
+  exists(bucket: string, storedName: string): boolean {
+    assertValidBucketName(bucket);
+    assertNoPathSeparators(storedName);
+
+    const metadata = this.findByStoredName(bucket, storedName);
+    if (!metadata) return false;
+
+    const filePath = this.safeFilePath(bucket, storedName);
+    return fs.existsSync(filePath);
+  }
+
+  /**
    * Retrieve a file from a bucket by its stored (UUID) name.
    * Returns the readable byte stream plus metadata, or `null` if no such
    * file exists.

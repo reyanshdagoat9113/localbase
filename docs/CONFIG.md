@@ -197,10 +197,13 @@ security: {
   headers: {
     extra: { "Permissions-Policy": "camera=()" },
   },
+  // Default false: ignore X-Forwarded-For / X-Forwarded-Host / X-Forwarded-Proto.
+  // Set true only when LocalBase runs behind a trusted reverse proxy.
+  trustProxy: false,
 }
 ```
 
-Rate limits apply to abuse-sensitive routes (sign-up, sign-in, refresh, admin-account requests, password reset, signed-URL creation). Each route has its own counter. Exceeding the budget returns **429** with `Retry-After`.
+Rate limits apply to abuse-sensitive routes (sign-up, sign-in, refresh, admin-account requests, password reset, signed-URL creation). Each route has its own counter. Exceeding the budget returns **429** with `Retry-After`. Set `security.trustProxy: true` only behind a reverse proxy that strips/overwrites `X-Forwarded-*` headers; otherwise direct clients could spoof client IPs or signed-URL origins.
 
 Default response headers: `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`. `headers.extra` overrides by name.
 
