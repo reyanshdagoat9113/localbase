@@ -462,11 +462,17 @@ describe("PostgresDriver live integration", { skip: !TEST_POSTGRES_URL }, () => 
     await db.enableAuth(authCfg);
     const auth = new Auth(db, resolveAuthConfig(authCfg).config);
 
-    const signedUp = await auth.signUp("pguser@example.com", "strongpassword123");
+    const signedUp = await auth.signUp({
+      email: "pguser@example.com",
+      password: "strongpassword123",
+    });
     assert.equal(signedUp.user.email, "pguser@example.com");
     assert.ok(signedUp.refreshToken);
 
-    const signedIn = await auth.signIn("pguser@example.com", "strongpassword123");
+    const signedIn = await auth.signIn({
+      email: "pguser@example.com",
+      password: "strongpassword123",
+    });
     assert.equal(signedIn.user.id, signedUp.user.id);
 
     // Two concurrent refreshes using the same refresh token: exactly one must succeed
