@@ -42,7 +42,7 @@ Methods **do not throw** on HTTP errors. Check `error`.
 // Insert
 await db.from("users").insert({ name: "Reyansh", email: "r@r.com" });
 
-// Update / delete — must `.eq("id", …)` so the SDK hits /api/:table/:id
+// Update / delete — must use a single `.eq("id", …)` filter (additional filters return an error)
 await db.from("users").update({ name: "New Name" }).eq("id", 1);
 await db.from("users").delete().eq("id", 1);
 
