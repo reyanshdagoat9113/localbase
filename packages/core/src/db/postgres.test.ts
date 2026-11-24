@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import type { DatabaseSchema } from "@localbase/shared";
 import { Database } from "../db.js";
-import { AuthService } from "../auth/index.js";
+import { Auth, resolveAuthConfig } from "../auth/index.js";
 import { postgresDialect } from "./dialect-postgres.js";
 import { PostgresDriver, redactConnectionUrl } from "./driver-postgres.js";
 import { DatabaseError, normalizeDatabaseError } from "./types.js";
@@ -159,27 +159,22 @@ describe("PostgresDriver live integration", { skip: !TEST_POSTGRES_URL }, () => 
 
   const baseSchema: DatabaseSchema = {
     authors: {
-      columns: {
-        id: { type: "integer", primaryKey: true, autoIncrement: true },
-        name: { type: "text", nullable: false, unique: true },
-        active: { type: "boolean", nullable: false, default: "true" },
-        created_at: { type: "text", nullable: false, default: "CURRENT_TIMESTAMP" },
-      },
+      id: { type: "integer", primaryKey: true, autoIncrement: true },
+      name: { type: "text", nullable: false, unique: true },
+      active: { type: "boolean", nullable: false, default: "true" },
+      created_at: { type: "text", nullable: false, default: "CURRENT_TIMESTAMP" },
     },
     posts: {
-      columns: {
-        id: { type: "integer", primaryKey: true, autoIncrement: true },
-        author_id: {
-          type: "integer",
-          nullable: false,
-          references: { table: "authors", column: "id", onDelete: "CASCADE" },
-        },
-        title: { type: "text", nullable: false },
-        score: { type: "real", default: "0" },
-        published: { type: "boolean", nullable: false, default: "false" },
-        created_at: { type: "text", nullable: false, default: "CURRENT_TIMESTAMP" },
+      id: { type: "integer", primaryKey: true, autoIncrement: true },
+      author_id: {
+        type: "integer",
+        nullable: false,
+        references: { table: "authors", column: "id" },
       },
-      indexes: [["author_id"]],
+      title: { type: "text", nullable: false },
+      score: { type: "real", default: "0" },
+      published: { type: "boolean", nullable: false, default: "false" },
+      created_at: { type: "text", nullable: false, default: "CURRENT_TIMESTAMP" },
     },
   };
 
@@ -198,6 +193,9 @@ describe("PostgresDriver live integration", { skip: !TEST_POSTGRES_URL }, () => 
       schema: baseSchema,
       autoMigrate: true,
     });
+    await db.execBatch(
+      `CREATE INDEX IF NOT EXISTS "idx_posts_author_id" ON "posts" ("author_id")`
+    );
   });
 
   after(async () => {
@@ -212,7 +210,7 @@ describe("PostgresDriver live integration", { skip: !TEST_POSTGRES_URL }, () => 
     }
   });
 
-  it("migrates tables, supports additive ADD COLUMN, and resets cleanly", async () => {
+  it("migrates tables and supports additive ADD COLUMN", async () => {
     const authorsMeta = await db.introspectTable("authors");
     assert.ok(authorsMeta);
     assert.equal(authorsMeta.name, "authors");
@@ -227,10 +225,8 @@ describe("PostgresDriver live integration", { skip: !TEST_POSTGRES_URL }, () => 
     const extendedSchema: DatabaseSchema = {
       ...baseSchema,
       authors: {
-        columns: {
-          ...baseSchema.authors.columns,
-          bio: { type: "text" },
-        },
+        ...baseSchema.authors,
+        bio: { type: "text" },
       },
     };
     const driver2 = await PostgresDriver.connect({
@@ -251,71 +247,82 @@ describe("PostgresDriver live integration", { skip: !TEST_POSTGRES_URL }, () => 
   });
 
   it("supports full CRUD, filtering, ordering, pagination, count, boolean & ISO-8601 UTC ms parity", async () => {
-    const alice = await db.insert("authors", { name: "Alice", active: true });
+    const [alice] = (await db.insert("authors", {
+      name: "Alice",
+      active: true,
+    })) as Record<string, unknown>[];
     assert.strictEqual(alice.active, true);
     assert.match(String(alice.created_at), ISO_MS_RE);
 
-    const bob = await db.insert("authors", { name: "Bob", active: false });
+    const [bob] = (await db.insert("authors", {
+      name: "Bob",
+      active: false,
+    })) as Record<string, unknown>[];
     assert.strictEqual(bob.active, false);
 
-    const insertedPosts = await db.insertMany("posts", [
+    const insertedPosts = (await db.insert("posts", [
       { author_id: alice.id, title: "Hello PG", score: 4.5, published: true },
       { author_id: alice.id, title: "Draft Post", score: 1.5, published: false },
       { author_id: bob.id, title: "Bob Notes", score: 3.0, published: true },
-    ]);
+    ])) as Record<string, unknown>[];
     assert.equal(insertedPosts.length, 3);
     assert.strictEqual(insertedPosts[0].published, true);
     assert.strictEqual(insertedPosts[1].published, false);
 
-    const byId = await db.selectById("authors", alice.id as number);
+    const byId = (await db.selectById("authors", alice.id as number)) as
+      | Record<string, unknown>
+      | undefined;
     assert.equal(byId?.name, "Alice");
     assert.strictEqual(byId?.active, true);
 
-    const published = await db.select("posts", {
-      where: [{ column: "published", op: "eq", value: true }],
+    const published = (await db.select("posts", {
+      filters: [{ column: "published", operator: "eq", value: true }],
       orderBy: [{ column: "score", direction: "desc" }],
-    });
+    })) as Record<string, unknown>[];
     assert.equal(published.length, 2);
     assert.equal(published[0].title, "Hello PG");
     assert.equal(published[1].title, "Bob Notes");
 
-    const filtered = await db.select("posts", {
-      where: [
-        { column: "score", op: "gt", value: 1.5 },
-        { column: "score", op: "lte", value: 4.5 },
-        { column: "title", op: "like", value: "%PG%" },
+    const filtered = (await db.select("posts", {
+      filters: [
+        { column: "score", operator: "gt", value: 1.5 },
+        { column: "score", operator: "lte", value: 4.5 },
+        { column: "title", operator: "like", value: "%PG%" },
       ],
-    });
+    })) as Record<string, unknown>[];
     assert.equal(filtered.length, 1);
     assert.equal(filtered[0].title, "Hello PG");
 
-    const inQuery = await db.select("posts", {
-      where: [{ column: "author_id", op: "in", value: [alice.id, bob.id] }],
+    const inQuery = (await db.select("posts", {
+      filters: [{ column: "author_id", operator: "in", value: [alice.id, bob.id] }],
       orderBy: [{ column: "id", direction: "asc" }],
       limit: 2,
       offset: 1,
-    });
+    })) as Record<string, unknown>[];
     assert.equal(inQuery.length, 2);
 
     const total = await db.count("posts");
     assert.strictEqual(typeof total, "number");
     assert.strictEqual(total, 3);
 
-    const updated = await db.update("posts", insertedPosts[1].id as number, {
-      published: true,
-      title: "Now Published",
-    });
+    const [updated] = (await db.update(
+      "posts",
+      { published: true, title: "Now Published" },
+      [{ column: "id", operator: "eq", value: insertedPosts[1].id }]
+    )) as Record<string, unknown>[];
     assert.strictEqual(updated?.published, true);
     assert.equal(updated?.title, "Now Published");
 
-    const removed = await db.deleteReturning("posts", [
-      { column: "id", op: "eq", value: insertedPosts[2].id },
-    ]);
+    const removed = (await db.deleteReturning("posts", [
+      { column: "id", operator: "eq", value: insertedPosts[2].id },
+    ])) as Record<string, unknown>[];
     assert.equal(removed.length, 1);
     assert.equal(removed[0].title, "Bob Notes");
 
-    const deleted = await db.delete("posts", insertedPosts[0].id as number);
-    assert.strictEqual(deleted, true);
+    const deletedCount = await db.delete("posts", [
+      { column: "id", operator: "eq", value: insertedPosts[0].id },
+    ]);
+    assert.strictEqual(deletedCount, 1);
     assert.strictEqual(await db.count("posts"), 1);
   });
 
@@ -359,7 +366,7 @@ describe("PostgresDriver live integration", { skip: !TEST_POSTGRES_URL }, () => 
       await db.insert("authors", { name: "TxCommit", active: true });
     });
     const committed = await db.select("authors", {
-      where: [{ column: "name", op: "eq", value: "TxCommit" }],
+      filters: [{ column: "name", operator: "eq", value: "TxCommit" }],
     });
     assert.equal(committed.length, 1);
 
@@ -373,7 +380,7 @@ describe("PostgresDriver live integration", { skip: !TEST_POSTGRES_URL }, () => 
       /force rollback/
     );
     const rolledBack = await db.select("authors", {
-      where: [{ column: "name", op: "eq", value: "TxRollback" }],
+      filters: [{ column: "name", operator: "eq", value: "TxRollback" }],
     });
     assert.equal(rolledBack.length, 0);
 
@@ -416,17 +423,20 @@ describe("PostgresDriver live integration", { skip: !TEST_POSTGRES_URL }, () => 
     await later;
 
     const staleRows = await db.select("authors", {
-      where: [{ column: "name", op: "in", value: ["StaleAlsWrite", "StaleAlsTx"] }],
+      filters: [
+        { column: "name", operator: "in", value: ["StaleAlsWrite", "StaleAlsTx"] },
+      ],
     });
     assert.equal(staleRows.length, 2);
   });
 
-  it("supports AuthService signup, signin, and atomic concurrent refresh rotation", async () => {
-    await db.enableAuth();
-    const auth = new AuthService(db, {
+  it("supports Auth signup, signin, and atomic concurrent refresh rotation", async () => {
+    const authCfg = {
+      enabled: true,
       jwtSecret: "postgres-test-secret-0123456789abcdef",
-      allowSignUp: true,
-    });
+    };
+    await db.enableAuth(authCfg);
+    const auth = new Auth(db, resolveAuthConfig(authCfg).config);
 
     const signedUp = await auth.signUp("pguser@example.com", "strongpassword123");
     assert.equal(signedUp.user.email, "pguser@example.com");
