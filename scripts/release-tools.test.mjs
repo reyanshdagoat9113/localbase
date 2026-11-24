@@ -74,6 +74,16 @@ function createFixture(version = "0.1.0") {
     path.join(root, "packages/cli/src/index.ts"),
     `program.version("${version}");\n`
   );
+  fs.mkdirSync(path.join(root, "packages/shared/src"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "packages/shared/src/index.ts"),
+    `export const VERSION = "${version}";\n`
+  );
+  fs.mkdirSync(path.join(root, "packages/landing/src/config"), { recursive: true });
+  fs.writeFileSync(
+    path.join(root, "packages/landing/src/config/site.ts"),
+    `export const APP_VERSION = '${version}'\n`
+  );
   return root;
 }
 
@@ -100,6 +110,14 @@ test("version:set synchronizes public versions, every workspace pin, and the loc
     assert.match(
       fs.readFileSync(path.join(root, "packages/cli/src/index.ts"), "utf8"),
       new RegExp(VERSION.replaceAll(".", "\\."))
+    );
+    assert.match(
+      fs.readFileSync(path.join(root, "packages/shared/src/index.ts"), "utf8"),
+      new RegExp(`export const VERSION = "${VERSION.replaceAll(".", "\\.")}";`)
+    );
+    assert.match(
+      fs.readFileSync(path.join(root, "packages/landing/src/config/site.ts"), "utf8"),
+      new RegExp(`export const APP_VERSION = '${VERSION.replaceAll(".", "\\.")}'`)
     );
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

@@ -12,7 +12,7 @@ export const SITE_URL = (
 ).replace(/\/$/, '')
 
 /** Product version the page advertises. Keep in sync with public packages. */
-export const APP_VERSION = '0.1.0-beta.1'
+export const APP_VERSION = '0.1.0-beta.2'
 
 export const NPM_CLI = '@localbase/cli'
 export const NPM_SDK = '@localbase/sdk'
