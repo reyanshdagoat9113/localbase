@@ -368,10 +368,19 @@ describe("Auth class", () => {
     }
   });
 
-  it("setPassword updates the password hash", async () => {
-    await auth.createUser({ email: "alice@test.com", password: "oldpassword" });
+  it("setPassword updates the password hash and revokes existing refresh sessions", async () => {
+    const initial = await auth.signUp({
+      email: "alice@test.com",
+      password: "oldpassword",
+    });
 
     await auth.setPassword("alice@test.com", "newpassword");
+
+    // Existing refresh token must be revoked after password reset.
+    await assert.rejects(
+      auth.refresh(initial.refreshToken),
+      (err: unknown) => err instanceof AuthError && err.status === 401
+    );
 
     // Old password no longer works
     await assert.rejects(
@@ -383,6 +392,28 @@ describe("Auth class", () => {
       password: "newpassword",
     });
     assert.ok(session.accessToken);
+  });
+
+  it("setRole distinguishes self-demotion from demoting another last admin", async () => {
+    await auth.createUser({ email: "onlyadmin@test.com", password: "supersecret1" });
+    auth.setRole("onlyadmin@test.com", "admin");
+
+    assert.throws(
+      () => auth.setRole("onlyadmin@test.com", "user", "onlyadmin@test.com"),
+      (err: unknown) =>
+        err instanceof AuthError &&
+        err.status === 409 &&
+        /yourself/i.test(err.message)
+    );
+
+    assert.throws(
+      () => auth.setRole("onlyadmin@test.com", "user", "other@test.com"),
+      (err: unknown) =>
+        err instanceof AuthError &&
+        err.status === 409 &&
+        !/yourself/i.test(err.message) &&
+        /they are the last admin/i.test(err.message)
+    );
   });
 
   it("setPassword rejects unknown user with 404", async () => {
