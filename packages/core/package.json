@@ -55,13 +55,13 @@
     "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
-    "@hono/node-server": "^2.1.0",
+    "@hono/node-server": "^2.1.11",
     "@localbase/shared": "0.1.0-beta.2",
     "@node-rs/argon2": "^2.0.2",
     "@types/ws": "^8.18.1",
     "better-sqlite3": "^12.10.0",
     "croner": "^10.0.1",
-    "hono": "^4.13.1",
+    "hono": "^4.13.21",
     "jiti": "^2.7.0",
     "jose": "^6.2.3",
     "ws": "^8.21.0"
