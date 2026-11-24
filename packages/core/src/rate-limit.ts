@@ -30,9 +30,11 @@ interface Bucket {
  *
  * Order of preference:
  *   1. When `trustProxy` is true, the FIRST address in `X-Forwarded-For`.
- *   2. The TCP socket's remote address (present under @hono/node-server).
- *   3. The literal `"unknown"`, so requests with no resolvable address share a
- *      single bucket rather than bypassing the limit entirely.
+ *   2. The Node TCP socket's remote address via `c.env.incoming.socket.remoteAddress`
+ *      (populated by `@hono/node-server`), with a fallback to `c.req.raw.socket`.
+ *   3. The literal `"unknown"`, so requests with no resolvable address (e.g.
+ *      in-process `app.request(...)` calls) share a single bucket rather than
+ *      bypassing the limit entirely.
  */
 function clientIp(c: Context, trustProxy: boolean): string {
   if (trustProxy) {
@@ -42,11 +44,17 @@ function clientIp(c: Context, trustProxy: boolean): string {
       if (first) return first;
     }
   }
-  // `c.req.raw` is the underlying Request. Under @hono/node-server it carries
-  // the Node socket; under `app.request(...)` (tests) it has no socket.
+  // Under @hono/node-server, the Node IncomingMessage lives on `c.env.incoming`.
+  const incoming = (
+    c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined
+  )?.incoming;
+  const nodeAddr = incoming?.socket?.remoteAddress;
+  if (nodeAddr) return nodeAddr;
+
   const raw = c.req.raw as Request & { socket?: { remoteAddress?: string } };
-  const addr = raw.socket?.remoteAddress;
-  if (addr) return addr;
+  const rawAddr = raw.socket?.remoteAddress;
+  if (rawAddr) return rawAddr;
+
   return "unknown";
 }
 
@@ -101,10 +109,12 @@ export function rateLimit(opts: RateLimitOptions): MiddlewareHandler {
 
     let bucket = buckets.get(key);
     if (!bucket || bucket.resetAt <= now) {
-      if (!bucket && buckets.size >= maxEntries) {
-        for (const [k, b] of buckets) {
-          if (b.resetAt <= now) buckets.delete(k);
-        }
+      if (bucket) {
+        // Delete before re-inserting so Map insertion order stays aligned
+        // with expiry order (all buckets share the same fixed `windowMs`).
+        buckets.delete(key);
+      } else {
+        // O(1) amortized cap enforcement: evict oldest entries from the head.
         while (buckets.size >= maxEntries) {
           const oldest = buckets.keys().next().value;
           if (oldest === undefined) break;

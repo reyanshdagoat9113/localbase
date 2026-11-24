@@ -325,6 +325,45 @@ describe("rate limiting (trustProxy default false & bucket cap)", () => {
       200
     );
   });
+
+  it("resolves real socket remoteAddress under @hono/node-server instead of collapsing to unknown", async () => {
+    const { Hono } = await import("hono");
+    const { serve } = await import("@hono/node-server");
+    const { rateLimit } = await import("./rate-limit.js");
+
+    const app = new Hono();
+    app.use("/ping", rateLimit({ windowMs: 60_000, max: 1 }));
+    app.get("/ping", (c) => c.json({ ok: true }));
+
+    // Exhaust the "unknown" bucket via in-process app.request (no socket).
+    assert.equal((await app.request("/ping")).status, 200);
+    assert.equal((await app.request("/ping")).status, 429);
+
+    // Start a real @hono/node-server listener on an ephemeral loopback port.
+    let port = 0;
+    const server = await new Promise<ReturnType<typeof serve>>((resolve) => {
+      const s = serve(
+        { fetch: app.fetch, port: 0, hostname: "127.0.0.1" },
+        (info) => {
+          port = info.port;
+          resolve(s);
+        }
+      );
+    });
+
+    try {
+      // Real HTTP request has socket remoteAddress (127.0.0.1), so it must NOT
+      // share the already-exhausted "unknown" bucket.
+      const first = await fetch(`http://127.0.0.1:${port}/ping`);
+      assert.equal(first.status, 200);
+
+      // Second real HTTP request from the same loopback socket hits 429.
+      const second = await fetch(`http://127.0.0.1:${port}/ping`);
+      assert.equal(second.status, 429);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
 });
 
 // ─── Body limit ────────────────────────────────────────────────
