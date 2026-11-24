@@ -312,9 +312,18 @@ export class Database extends EventEmitter<DatabaseEvents> {
       if (!(col in record)) continue;
       const val = record[col];
       if (val === null || val === undefined || typeof val === "boolean") continue;
-      if (val === 0 || val === 1) {
+      if (typeof val === "number") {
         if (!copy) copy = { ...record };
-        copy[col] = val === 1;
+        copy[col] = val !== 0;
+      } else if (typeof val === "string") {
+        const lower = val.trim().toLowerCase();
+        if (lower === "true" || lower === "1") {
+          if (!copy) copy = { ...record };
+          copy[col] = true;
+        } else if (lower === "false" || lower === "0") {
+          if (!copy) copy = { ...record };
+          copy[col] = false;
+        }
       }
     }
     return copy ?? row;

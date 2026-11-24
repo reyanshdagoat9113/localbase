@@ -257,6 +257,7 @@ Once M1–M6 ship, PostgreSQL unlocks multi-instance features that were previous
 - **Multi-instance Realtime:** Publish/subscribe row-change events via Postgres `LISTEN/NOTIFY` (or Redis) so multiple LocalBase nodes fan out WebSocket events.
 - **Distributed Scheduled Jobs:** Use `pg_try_advisory_lock` so only one instance runs a scheduled cron firing.
 - **Pluggable Object Storage:** S3/R2-compatible storage adapter alongside local disk so multiple instances share uploaded files.
+- **Transactional `change`-event buffering:** `Database.insert/update/delete` currently emit `"change"` events immediately, even when called inside a transaction that later rolls back. Buffering events per transaction and flushing them only after `COMMIT` is a planned follow-up.
 
 ---
 

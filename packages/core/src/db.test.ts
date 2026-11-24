@@ -544,5 +544,89 @@ describe("Query Executor", () => {
         await txDb.close();
       }
     });
+
+    it("does not leak stale ALS tx context to async continuations spawned inside a finished tx", async () => {
+      const txDb = await Database.open({ schema: simpleSchema });
+      try {
+        let leakedWrite!: Promise<unknown>;
+        let leakedTx!: Promise<unknown>;
+
+        await txDb.transaction(async () => {
+          // Spawn async continuations that inherit the ALS store and run AFTER tx1 commits.
+          leakedWrite = new Promise((r) => setTimeout(r, 20)).then(() =>
+            txDb.insert("users", {
+              name: "UnrelatedWrite",
+              email: "unrelated@test.com",
+            })
+          );
+          leakedTx = new Promise((r) => setTimeout(r, 25)).then(() =>
+            txDb.transaction(async () => {
+              await txDb.insert("users", {
+                name: "LeakedTx",
+                email: "leakedtx@test.com",
+              });
+            })
+          );
+        });
+
+        // Start tx2 which stays open across the timers and then rolls back.
+        await txDb
+          .transaction(async () => {
+            await new Promise((r) => setTimeout(r, 60));
+            throw new Error("tx2 rollback");
+          })
+          .catch(() => {});
+
+        await leakedWrite;
+        await leakedTx;
+
+        const rows = (await txDb.select("users")) as { email: string }[];
+        const emails = rows.map((r) => r.email).sort();
+        assert.deepEqual(emails, ["leakedtx@test.com", "unrelated@test.com"]);
+      } finally {
+        await txDb.close();
+      }
+    });
+
+    it("rejects calls made directly on a finished tx handle", async () => {
+      const txDb = await Database.open({ schema: simpleSchema });
+      try {
+        let savedTx!: Parameters<Parameters<typeof txDb.transaction>[0]>[0];
+        await txDb.transaction(async (tx) => {
+          savedTx = tx;
+        });
+
+        await assert.rejects(
+          () => savedTx.query("SELECT 1"),
+          /Transaction has already finished/
+        );
+      } finally {
+        await txDb.close();
+      }
+    });
+
+    it("normalizes legacy non-0/1 numbers and string booleans on read", async () => {
+      const boolSchema: DatabaseSchema = {
+        flags: {
+          id: { type: "integer", primaryKey: true, autoIncrement: true },
+          active: { type: "boolean" },
+        },
+      };
+      const boolDb = await Database.open({ schema: boolSchema });
+      try {
+        boolDb.sqliteRaw().exec(`
+          INSERT INTO "flags" ("active") VALUES (2), (-1), (0), ('true'), ('false'), ('1'), ('0'), (NULL);
+        `);
+        const rows = (await boolDb.select("flags", {
+          orderBy: [{ column: "id", direction: "asc" }],
+        })) as { active: unknown }[];
+        assert.deepEqual(
+          rows.map((r) => r.active),
+          [true, true, false, true, false, true, false, null]
+        );
+      } finally {
+        await boolDb.close();
+      }
+    });
   });
 });

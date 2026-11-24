@@ -34,10 +34,15 @@ function wrapSqliteError(err: unknown): never {
  * so they execute inside that transaction without deadlocking. Nested
  * `transaction()` calls inside an active transaction throw immediately.
  */
+interface ActiveTransaction {
+  executor: QueryExecutor;
+  active: boolean;
+}
+
 export class SqliteDriver implements DbDriver {
   readonly dialect = sqliteDialect;
   private readonly rawDb: BetterSqlite3.Database;
-  private readonly txContext = new AsyncLocalStorage<QueryExecutor>();
+  private readonly txContext = new AsyncLocalStorage<ActiveTransaction>();
   private lockChain: Promise<void> = Promise.resolve();
 
   constructor(path: string = ":memory:") {
@@ -56,8 +61,13 @@ export class SqliteDriver implements DbDriver {
     return this.rawDb;
   }
 
+  private getActiveTx(): QueryExecutor | undefined {
+    const store = this.txContext.getStore();
+    return store?.active ? store.executor : undefined;
+  }
+
   private async runLocked<T>(fn: () => T | Promise<T>): Promise<T> {
-    if (this.txContext.getStore()) {
+    if (this.getActiveTx()) {
       return fn();
     }
     const prev = this.lockChain;
@@ -73,13 +83,19 @@ export class SqliteDriver implements DbDriver {
     }
   }
 
-  private createTxExecutor(): QueryExecutor {
+  private createTxExecutor(state: { active: boolean }): QueryExecutor {
+    const assertActive = () => {
+      if (!state.active) {
+        throw new Error("Transaction has already finished.");
+      }
+    };
     return {
       dialect: this.dialect,
       query: async <T = Record<string, unknown>>(
         sql: string,
         params: unknown[] = []
       ): Promise<T[]> => {
+        assertActive();
         try {
           return this.rawDb.prepare(sql).all(...params) as T[];
         } catch (err) {
@@ -90,6 +106,7 @@ export class SqliteDriver implements DbDriver {
         sql: string,
         params: unknown[] = []
       ): Promise<T | undefined> => {
+        assertActive();
         try {
           return this.rawDb.prepare(sql).get(...params) as T | undefined;
         } catch (err) {
@@ -100,6 +117,7 @@ export class SqliteDriver implements DbDriver {
         sql: string,
         params: unknown[] = []
       ): Promise<{ rowCount: number }> => {
+        assertActive();
         try {
           const info = this.rawDb.prepare(sql).run(...params);
           return { rowCount: info.changes };
@@ -108,6 +126,7 @@ export class SqliteDriver implements DbDriver {
         }
       },
       execBatch: async (sql: string): Promise<void> => {
+        assertActive();
         try {
           this.rawDb.exec(sql);
         } catch (err) {
@@ -121,7 +140,7 @@ export class SqliteDriver implements DbDriver {
     sql: string,
     params: unknown[] = []
   ): Promise<T[]> {
-    const activeTx = this.txContext.getStore();
+    const activeTx = this.getActiveTx();
     if (activeTx) return activeTx.query<T>(sql, params);
     return this.runLocked(() => {
       try {
@@ -136,7 +155,7 @@ export class SqliteDriver implements DbDriver {
     sql: string,
     params: unknown[] = []
   ): Promise<T | undefined> {
-    const activeTx = this.txContext.getStore();
+    const activeTx = this.getActiveTx();
     if (activeTx) return activeTx.queryOne<T>(sql, params);
     return this.runLocked(() => {
       try {
@@ -151,7 +170,7 @@ export class SqliteDriver implements DbDriver {
     sql: string,
     params: unknown[] = []
   ): Promise<{ rowCount: number }> {
-    const activeTx = this.txContext.getStore();
+    const activeTx = this.getActiveTx();
     if (activeTx) return activeTx.execute(sql, params);
     return this.runLocked(() => {
       try {
@@ -164,7 +183,7 @@ export class SqliteDriver implements DbDriver {
   }
 
   async execBatch(sql: string): Promise<void> {
-    const activeTx = this.txContext.getStore();
+    const activeTx = this.getActiveTx();
     if (activeTx) return activeTx.execBatch(sql);
     return this.runLocked(() => {
       try {
@@ -176,17 +195,21 @@ export class SqliteDriver implements DbDriver {
   }
 
   async transaction<T>(fn: (tx: QueryExecutor) => Promise<T>): Promise<T> {
-    if (this.txContext.getStore()) {
+    if (this.getActiveTx()) {
       throw new Error(
         "Nested transactions are not supported on SqliteDriver."
       );
     }
 
     return this.runLocked(async () => {
-      const tx = this.createTxExecutor();
+      const state: ActiveTransaction = {
+        executor: null as unknown as QueryExecutor,
+        active: true,
+      };
+      state.executor = this.createTxExecutor(state);
       this.rawDb.exec("BEGIN IMMEDIATE");
       try {
-        const result = await this.txContext.run(tx, () => fn(tx));
+        const result = await this.txContext.run(state, () => fn(state.executor));
         this.rawDb.exec("COMMIT");
         return result;
       } catch (err) {
@@ -198,6 +221,8 @@ export class SqliteDriver implements DbDriver {
           // Best-effort rollback.
         }
         throw err;
+      } finally {
+        state.active = false;
       }
     });
   }
