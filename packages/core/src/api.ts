@@ -9,6 +9,7 @@ import type {
   SecurityConfig,
 } from "@localbase/shared";
 import type { Database } from "./db.js";
+import { DatabaseError, type SqlDialect } from "./db/index.js";
 import type { Filter, FilterOperator, OrderBy, QueryOptions } from "./query.js";
 import {
   Auth,
@@ -41,7 +42,8 @@ const VALID_OPERATORS: FilterOperator[] = [
 function parseFilters(
   url: URL,
   schema: DatabaseSchema,
-  tableName: string
+  tableName: string,
+  dialect: SqlDialect
 ): Filter[] {
   const table = schema[tableName];
   if (!table) return [];
@@ -78,9 +80,9 @@ function parseFilters(
     let value: unknown;
     if (operator === "in") {
       // IN expects comma-separated values
-      value = valueStr.split(",").map((v) => coerceValue(v, table[key].type));
+      value = valueStr.split(",").map((v) => coerceValue(v, table[key].type, dialect));
     } else {
-      value = coerceValue(valueStr, table[key].type);
+      value = coerceValue(valueStr, table[key].type, dialect);
     }
 
     filters.push({ column: key, operator, value });
@@ -151,9 +153,10 @@ function parsePagination(url: URL): { limit?: number; offset?: number } {
 function parseQueryOptions(
   url: URL,
   tableName: string,
-  schema: DatabaseSchema
+  schema: DatabaseSchema,
+  dialect: SqlDialect
 ): QueryOptions {
-  const filters = parseFilters(url, schema, tableName);
+  const filters = parseFilters(url, schema, tableName, dialect);
   const orderBy = parseOrderBy(url, tableName, schema);
   const { limit, offset } = parsePagination(url);
 
@@ -164,7 +167,8 @@ function parseQueryOptions(
 
 function coerceValue(
   raw: string,
-  type: string
+  type: string,
+  dialect: SqlDialect
 ): unknown {
   switch (type) {
     case "integer": {
@@ -176,8 +180,8 @@ function coerceValue(
     }
     case "boolean": {
       const lower = raw.trim().toLowerCase();
-      if (lower === "true") return 1;
-      if (lower === "false") return 0;
+      if (lower === "true") return dialect.encodeBoolean(true);
+      if (lower === "false") return dialect.encodeBoolean(false);
       if (lower === "") {
         throw new HttpError(400, `Expected a boolean, got "${raw}"`);
       }
@@ -185,7 +189,7 @@ function coerceValue(
       if (!Number.isFinite(n)) {
         throw new HttpError(400, `Expected a boolean, got "${raw}"`);
       }
-      return n ? 1 : 0;
+      return dialect.encodeBoolean(n !== 0);
     }
     case "real": {
       const n = Number(raw);
@@ -199,12 +203,43 @@ function coerceValue(
   }
 }
 
+/**
+ * Validate and coerce a `:id` path param against the table's `id` column type
+ * so invalid numeric ids return a clean 400 rather than a Postgres `22P02` 500.
+ */
+function parsePathId(
+  raw: string,
+  schema: DatabaseSchema,
+  tableName: string
+): number | string {
+  const idCol = schema[tableName]?.id;
+  if (!idCol) return raw;
+  if (idCol.type === "integer") {
+    const trimmed = raw.trim();
+    const n = Number(trimmed);
+    if (trimmed === "" || !Number.isInteger(n)) {
+      throw new HttpError(400, `Invalid id "${raw}": expected an integer`);
+    }
+    return n;
+  }
+  if (idCol.type === "real") {
+    const trimmed = raw.trim();
+    const n = Number(trimmed);
+    if (trimmed === "" || !Number.isFinite(n)) {
+      throw new HttpError(400, `Invalid id "${raw}": expected a number`);
+    }
+    return n;
+  }
+  return raw;
+}
+
 // ─── Input validation ──────────────────────────────────────────
 
 function validateBody(
   body: Record<string, unknown>,
   schema: DatabaseSchema,
   tableName: string,
+  dialect: SqlDialect,
   partial = false
 ): Record<string, unknown> {
   const table = schema[tableName];
@@ -224,7 +259,7 @@ function validateBody(
 
     // Type check
     if (value !== null && value !== undefined) {
-      validated[key] = coerceBodyValue(key, value, col.type);
+      validated[key] = coerceBodyValue(key, value, col.type, dialect);
     } else if (col.nullable === false && !partial) {
       throw new HttpError(400, `Column "${key}" cannot be null`);
     } else {
@@ -253,7 +288,8 @@ function validateBody(
 function coerceBodyValue(
   column: string,
   value: unknown,
-  type: string
+  type: string,
+  dialect: SqlDialect
 ): unknown {
   if (value === null || value === undefined) return value;
 
@@ -270,20 +306,20 @@ function coerceBodyValue(
       throw new HttpError(400, `Column "${column}": expected a number`);
     }
     case "boolean": {
-      if (typeof value === "boolean") return value ? 1 : 0;
+      if (typeof value === "boolean") return dialect.encodeBoolean(value);
       if (typeof value === "number") {
         if (!Number.isFinite(value)) {
           throw new HttpError(400, `Column "${column}": expected a boolean`);
         }
-        return value ? 1 : 0;
+        return dialect.encodeBoolean(value !== 0);
       }
       if (typeof value === "string") {
         const lower = value.trim().toLowerCase();
-        if (lower === "true") return 1;
-        if (lower === "false") return 0;
+        if (lower === "true") return dialect.encodeBoolean(true);
+        if (lower === "false") return dialect.encodeBoolean(false);
         if (lower !== "") {
           const n = Number(lower);
-          if (Number.isFinite(n)) return n ? 1 : 0;
+          if (Number.isFinite(n)) return dialect.encodeBoolean(n !== 0);
         }
         throw new HttpError(400, `Column "${column}": expected a boolean, got "${value}"`);
       }
@@ -560,11 +596,19 @@ export function createServer(
   let resolvedSecret: string | undefined;
   let auth: Auth | undefined;
   if (authEnabled) {
-    // Ensure the auth tables exist on this database. This covers the case
-    // where the user passed auth to createServer but not to the Database
-    // constructor (e.g. legacy third-arg form). When both are passed,
-    // this is a no-op.
-    db.enableAuth(effectiveAuth);
+    // Ensure auth tables exist if the caller passed auth only to createServer
+    // (legacy form). Gate requests on the promise so the first request cannot
+    // race with table creation while keeping createServer synchronous.
+    if (!db.getAuthConfig()) {
+      let authReady: Promise<void> | null = db.enableAuth(effectiveAuth);
+      app.use("*", async (_c, next) => {
+        if (authReady) {
+          await authReady;
+          authReady = null;
+        }
+        await next();
+      });
+    }
     const { config, secretWasGenerated } = resolveAuthConfig(effectiveAuth);
     resolvedSecret = config.jwtSecret;
     if (secretWasGenerated) {
@@ -669,7 +713,7 @@ export function createServer(
     if (!policy) return { userId: null, reject: false };
     const user = await authenticate(c, resolvedSecret!);
     if (!user) return { userId: null, reject: true };
-    if (policy.adminBypass && liveAdminRole(db, user.id)) {
+    if (policy.adminBypass && (await liveAdminRole(db, user.id))) {
       return { userId: null, reject: false };
     }
     return { userId: user.id, reject: false };
@@ -690,7 +734,7 @@ export function createServer(
       }
 
       const url = new URL(c.req.url);
-      const options = parseQueryOptions(url, tableName, schema);
+      const options = parseQueryOptions(url, tableName, schema, db.dialect);
       if (scope.userId !== null) {
         const policy = policyMap.get(tableName)!;
         options.filters = [
@@ -698,7 +742,7 @@ export function createServer(
           ownerFilter(policy, scope.userId),
         ];
       }
-      const rows = db.select(tableName, options);
+      const rows = await db.select(tableName, options);
       return c.json({ data: rows });
     } catch (err) {
       return handleError(c, err);
@@ -708,39 +752,44 @@ export function createServer(
   // ── GET /api/:table/:id — get one row ──
   app.get("/api/:table/:id", async (c) => {
     const tableName = c.req.param("table");
-    const id = c.req.param("id");
+    const rawId = c.req.param("id");
 
     if (!(tableName in schema)) {
       return c.json({ error: `Unknown table: "${tableName}"` }, 404);
     }
 
-    const scope = await resolveOwnerScope(c, tableName);
-    if (scope.reject) {
-      return c.json({ error: "Authentication required" }, 401);
-    }
+    try {
+      const id = parsePathId(rawId, schema, tableName);
+      const scope = await resolveOwnerScope(c, tableName);
+      if (scope.reject) {
+        return c.json({ error: "Authentication required" }, 401);
+      }
 
-    // Unscoped (no policy / admin bypass): fetch directly by id.
-    if (scope.userId === null) {
-      const row = db.selectById(tableName, id);
-      if (!row) {
+      // Unscoped (no policy / admin bypass): fetch directly by id.
+      if (scope.userId === null) {
+        const row = await db.selectById(tableName, id);
+        if (!row) {
+          return c.json({ error: "Row not found" }, 404);
+        }
+        return c.json({ data: row });
+      }
+
+      // Scoped: require both the id AND ownership. A row that exists but isn't
+      // owned reads as "not found" (404, not 403) so existence isn't leaked.
+      const policy = policyMap.get(tableName)!;
+      const rows = await db.select(tableName, {
+        filters: [
+          { column: "id", operator: "eq", value: id },
+          ownerFilter(policy, scope.userId),
+        ],
+      });
+      if (rows.length === 0) {
         return c.json({ error: "Row not found" }, 404);
       }
-      return c.json({ data: row });
+      return c.json({ data: rows[0] });
+    } catch (err) {
+      return handleError(c, err);
     }
-
-    // Scoped: require both the id AND ownership. A row that exists but isn't
-    // owned reads as "not found" (404, not 403) so existence isn't leaked.
-    const policy = policyMap.get(tableName)!;
-    const rows = db.select(tableName, {
-      filters: [
-        { column: "id", operator: "eq", value: id },
-        ownerFilter(policy, scope.userId),
-      ],
-    });
-    if (rows.length === 0) {
-      return c.json({ error: "Row not found" }, 404);
-    }
-    return c.json({ data: rows[0] });
   });
 
   // ── POST /api/:table — insert row ──
@@ -758,14 +807,11 @@ export function createServer(
       }
 
       const body = (await c.req.json()) as Record<string, unknown>;
-      // Stamp the owner BEFORE validation so a NOT NULL owner column satisfies
-      // the required-column check, and so a client can never write as another
-      // user (the stamp overrides any supplied value).
       if (scope.userId !== null) {
         stampOwner(policyMap.get(tableName)!, body, scope.userId);
       }
-      const validated = validateBody(body, schema, tableName);
-      const result = db.insert(tableName, validated);
+      const validated = validateBody(body, schema, tableName, db.dialect);
+      const result = await db.insert(tableName, validated);
       return c.json({ data: result.length === 1 ? result[0] : result }, 201);
     } catch (err) {
       return handleError(c, err);
@@ -775,34 +821,29 @@ export function createServer(
   // ── PATCH /api/:table/:id — update row ──
   app.patch("/api/:table/:id", async (c) => {
     const tableName = c.req.param("table");
-    const id = c.req.param("id");
+    const rawId = c.req.param("id");
 
     if (!(tableName in schema)) {
       return c.json({ error: `Unknown table: "${tableName}"` }, 404);
     }
 
     try {
+      const id = parsePathId(rawId, schema, tableName);
       const scope = await resolveOwnerScope(c, tableName);
       if (scope.reject) {
         return c.json({ error: "Authentication required" }, 401);
       }
 
       const body = await c.req.json();
-      const validated = validateBody(body, schema, tableName, true); // partial = true
+      const validated = validateBody(body, schema, tableName, db.dialect, true);
 
       const filters: Filter[] = [{ column: "id", operator: "eq", value: id }];
       if (scope.userId !== null) {
         const policy = policyMap.get(tableName)!;
-        // A scoped user cannot reassign ownership — drop any attempt to change
-        // the owner column, then constrain the update to rows they own.
         delete validated[policy.ownerColumn];
         filters.push(ownerFilter(policy, scope.userId));
         if (Object.keys(validated).length === 0) {
-          // Nothing updatable remains (e.g. only the protected owner column was
-          // supplied, or an empty body). Return the current row unchanged — a
-          // graceful no-op — rather than erroring. Scoped fetch keeps this from
-          // leaking a row the caller doesn't own.
-          const existing = db.select(tableName, { filters });
+          const existing = await db.select(tableName, { filters });
           if (existing.length === 0) {
             return c.json({ error: "Row not found" }, 404);
           }
@@ -810,7 +851,7 @@ export function createServer(
         }
       }
 
-      const result = db.update(tableName, validated, filters);
+      const result = await db.update(tableName, validated, filters);
 
       if (result.length === 0) {
         return c.json({ error: "Row not found" }, 404);
@@ -825,13 +866,14 @@ export function createServer(
   // ── DELETE /api/:table/:id — delete row ──
   app.delete("/api/:table/:id", async (c) => {
     const tableName = c.req.param("table");
-    const id = c.req.param("id");
+    const rawId = c.req.param("id");
 
     if (!(tableName in schema)) {
       return c.json({ error: `Unknown table: "${tableName}"` }, 404);
     }
 
     try {
+      const id = parsePathId(rawId, schema, tableName);
       const scope = await resolveOwnerScope(c, tableName);
       if (scope.reject) {
         return c.json({ error: "Authentication required" }, 401);
@@ -842,7 +884,7 @@ export function createServer(
         filters.push(ownerFilter(policyMap.get(tableName)!, scope.userId));
       }
 
-      const count = db.delete(tableName, filters);
+      const count = await db.delete(tableName, filters);
 
       if (count === 0) {
         return c.json({ error: "Row not found" }, 404);
@@ -884,20 +926,22 @@ function handleError(c: any, err: unknown) {
     return c.json({ error: err.message }, err.status as 400 | 403 | 404 | 409);
   }
 
-  // Catch SQLite constraint violations and return 409 Conflict
-  if (err instanceof Error && "code" in err) {
-    const sqliteErr = err as Error & { code: string };
-    if (sqliteErr.code === "SQLITE_CONSTRAINT_UNIQUE") {
-      return c.json({ error: sqliteErr.message }, 409);
+  if (err instanceof DatabaseError) {
+    if (err.code === "unique") {
+      return c.json({ error: err.message }, 409);
     }
-    if (sqliteErr.code === "SQLITE_CONSTRAINT_FOREIGNKEY") {
+    if (err.code === "foreign_key") {
       return c.json(
         { error: "Foreign key constraint failed — delete or update the referenced rows first." },
         409
       );
     }
-    if (sqliteErr.code.startsWith("SQLITE_CONSTRAINT")) {
-      return c.json({ error: sqliteErr.message }, 400);
+    if (
+      err.code === "not_null" ||
+      err.code === "constraint" ||
+      err.code === "invalid_input"
+    ) {
+      return c.json({ error: err.message }, 400);
     }
   }
 

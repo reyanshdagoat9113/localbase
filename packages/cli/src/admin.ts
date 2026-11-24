@@ -9,31 +9,30 @@ import { log } from "./log.js";
  * to be enabled because the `Auth` class (and the `_users.role` column) only
  * exist when auth is configured.
  */
-function openAuthDb() {
+async function openAuthDb() {
   const cwd = process.cwd();
-  return loadConfig(cwd).then(({ dbPath, dbDir, config }) => {
-    if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+  const { dbPath, dbDir, config } = await loadConfig(cwd);
+  if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
 
-    const authConfig = config.auth;
-    if (!authConfig?.enabled) {
-      throw new Error(
-        "Auth is not enabled. The admin role system requires auth — add " +
-          "`auth: { enabled: true, jwtSecret: '...' }` to localbase.config.ts first."
-      );
-    }
+  const authConfig = config.auth;
+  if (!authConfig?.enabled) {
+    throw new Error(
+      "Auth is not enabled. The admin role system requires auth — add " +
+        "`auth: { enabled: true, jwtSecret: '...' }` to localbase.config.ts first."
+    );
+  }
 
-    const { config: resolved } = resolveAuthConfig(authConfig);
-    const db = new Database({
-      path: dbPath,
-      schema: config.tables,
-      auth: authConfig,
-      dataDir: dbDir,
-      buckets: config.buckets,
-      jobs: config.jobs,
-    });
-    const auth = new Auth(db, resolved);
-    return { db, auth };
+  const { config: resolved } = resolveAuthConfig(authConfig);
+  const db = await Database.open({
+    path: dbPath,
+    schema: config.tables,
+    auth: authConfig,
+    dataDir: dbDir,
+    buckets: config.buckets,
+    jobs: config.jobs,
   });
+  const auth = new Auth(db, resolved);
+  return { db, auth };
 }
 
 function handleAuthError(err: unknown): never {
@@ -65,16 +64,16 @@ export async function promoteCommand(
   try {
     const { db, auth } = await openAuthDb();
     try {
-      const before = auth.countAdmins();
-      const user = auth.setRole(email, "admin");
-      const after = auth.countAdmins();
+      const before = await auth.countAdmins();
+      const user = await auth.setRole(email, "admin");
+      const after = await auth.countAdmins();
       if (before === after) {
         log.info(`${email} was already an admin.`);
       } else {
         log.success(`Promoted ${email} (#${user.id}) to admin. (${after} admin${after === 1 ? "" : "s"} total)`);
       }
     } finally {
-      db.close();
+      await db.close();
     }
   } catch (err) {
     handleAuthError(err);
@@ -87,7 +86,7 @@ export async function listAdminsCommand(): Promise<void> {
   try {
     const { db, auth } = await openAuthDb();
     try {
-      const admins = auth.listAdmins();
+      const admins = await auth.listAdmins();
       if (admins.length === 0) {
         log.info("No admins found.");
         return;
@@ -98,7 +97,7 @@ export async function listAdminsCommand(): Promise<void> {
         console.log(`  #${a.id}  ${a.email}  (created ${created})`);
       }
     } finally {
-      db.close();
+      await db.close();
     }
   } catch (err) {
     handleAuthError(err);
@@ -125,7 +124,7 @@ export async function demoteCommand(
   try {
     const { db, auth } = await openAuthDb();
     try {
-      const adminCount = auth.countAdmins();
+      const adminCount = await auth.countAdmins();
       // The last-admin lockout is enforced inside setRole too, but we check
       // up front so we can give a clearer message before any prompting.
       if (adminCount <= 1) {
@@ -148,10 +147,10 @@ export async function demoteCommand(
         }
       }
 
-      const user = auth.setRole(email, "user");
+      const user = await auth.setRole(email, "user");
       log.success(`Demoted ${email} (#${user.id}) to user.`);
     } finally {
-      db.close();
+      await db.close();
     }
   } catch (err) {
     handleAuthError(err);

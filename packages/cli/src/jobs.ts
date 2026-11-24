@@ -18,23 +18,22 @@ import { log } from "./log.js";
  * {@link previewNextRun}) so the value matches what `dev` would compute
  * without arming a live timer.
  */
-function openJobsDb(): Promise<{ db: Database; scheduler: Scheduler }> {
+async function openJobsDb(): Promise<{ db: Database; scheduler: Scheduler }> {
   const cwd = process.cwd();
-  return loadConfig(cwd).then(({ dbPath, dbDir, config }) => {
-    if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+  const { dbPath, dbDir, config } = await loadConfig(cwd);
+  if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
 
-    const jobs = config.jobs ?? {};
-    const db = new Database({
-      path: dbPath,
-      schema: config.tables,
-      auth: config.auth,
-      dataDir: dbDir,
-      buckets: config.buckets,
-      jobs: config.jobs,
-    });
-    const scheduler = new Scheduler({ db, cwd, jobs });
-    return { db, scheduler };
+  const jobs = config.jobs ?? {};
+  const db = await Database.open({
+    path: dbPath,
+    schema: config.tables,
+    auth: config.auth,
+    dataDir: dbDir,
+    buckets: config.buckets,
+    jobs: config.jobs,
   });
+  const scheduler = new Scheduler({ db, cwd, jobs });
+  return { db, scheduler };
 }
 
 /**
@@ -101,11 +100,11 @@ interface RunRow {
 }
 
 /** Read a single `_job_runs` row by id (the manual-run result). */
-function readRunById(db: Database, runId: number | null): RunRow | null {
+async function readRunById(db: Database, runId: number | null): Promise<RunRow | null> {
   if (runId === null) return null;
-  const rows = db.select("_job_runs", {
+  const rows = (await db.select("_job_runs", {
     filters: [{ column: "id", operator: "eq", value: runId }],
-  }) as RunRow[];
+  })) as RunRow[];
   return rows[0] ?? null;
 }
 
@@ -117,10 +116,7 @@ export async function listJobsCommand(): Promise<void> {
     const opened = await openJobsDb();
     db = opened.db;
 
-    // listJobs() returns lastRun/lastStatus from `_job_runs` without needing
-    // the scheduler to be started; only `nextRun` is null until armed, so we
-    // overlay a croner preview to keep the read side-effect-free.
-    const summaries = opened.scheduler.listJobs().map((s) => ({
+    const summaries = (await opened.scheduler.listJobs()).map((s) => ({
       ...s,
       nextRun: s.enabled ? previewNextRun(s.schedule, s.timezone) : null,
     }));
@@ -150,7 +146,7 @@ export async function listJobsCommand(): Promise<void> {
   } catch (err) {
     handleJobsError(err);
   } finally {
-    if (db) db.close();
+    if (db) await db.close();
   }
 }
 
@@ -172,7 +168,7 @@ export async function runJobCommand(opts: RunJobOptions): Promise<void> {
     db = opened.db;
 
     const result = await opened.scheduler.runNow(opts.name);
-    const row = readRunById(opened.db, result.runId);
+    const row = await readRunById(opened.db, result.runId);
 
     if (result.status === "skipped") {
       log.warn(
@@ -200,7 +196,7 @@ export async function runJobCommand(opts: RunJobOptions): Promise<void> {
   } catch (err) {
     handleJobsError(err);
   } finally {
-    if (db) db.close();
+    if (db) await db.close();
   }
 }
 
@@ -224,7 +220,7 @@ export async function jobLogsCommand(opts: JobLogsOptions): Promise<void> {
     db = opened.db;
 
     const limit = opts.limit ?? 10;
-    const { runs, total } = opened.scheduler.getRuns(opts.name, { limit });
+    const { runs, total } = await opened.scheduler.getRuns(opts.name, { limit });
 
     log.heading(`Runs for "${opts.name}" (${total} total, showing ${runs.length}):`);
     if (runs.length === 0) {
@@ -247,7 +243,7 @@ export async function jobLogsCommand(opts: JobLogsOptions): Promise<void> {
   } catch (err) {
     handleJobsError(err);
   } finally {
-    if (db) db.close();
+    if (db) await db.close();
   }
 }
 

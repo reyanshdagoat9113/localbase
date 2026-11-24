@@ -19,7 +19,7 @@ export async function migrateCommand(): Promise<void> {
     fs.mkdirSync(dbDir, { recursive: true });
   }
 
-  const db = new Database({
+  const db = await Database.open({
     path: dbPath,
     schema: config.tables,
     auth: config.auth,
@@ -29,7 +29,7 @@ export async function migrateCommand(): Promise<void> {
   });
 
   try {
-    const applied = db.getAppliedMigrations();
+    const applied = await db.getAppliedMigrations();
     const tableNames = Object.keys(config.tables);
     if (config.auth?.enabled) {
       tableNames.push("_users", "_sessions", "_admin_requests");
@@ -42,14 +42,14 @@ export async function migrateCommand(): Promise<void> {
     }
 
     // Run any pending migrations
-    const newMigrations = db.migrate();
+    const newMigrations = await db.migrate();
     if (newMigrations.length > 0) {
       log.success(`Applied ${newMigrations.length} new migration(s): ${newMigrations.join(", ")}`);
     } else {
       log.info("All migrations are up to date.");
     }
   } finally {
-    db.close();
+    await db.close();
   }
 }
 
@@ -62,7 +62,7 @@ export async function resetCommand(): Promise<void> {
     fs.mkdirSync(dbDir, { recursive: true });
   }
 
-  const db = new Database({
+  const db = await Database.open({
     path: dbPath,
     schema: config.tables,
     auth: config.auth,
@@ -73,10 +73,10 @@ export async function resetCommand(): Promise<void> {
 
   try {
     log.warn("Dropping all user tables and re-running migrations...");
-    const applied = db.reset();
+    const applied = await db.reset();
     log.success(`Reset complete. Re-applied ${applied.length} migration(s): ${applied.join(", ")}`);
   } finally {
-    db.close();
+    await db.close();
   }
 }
 
@@ -102,7 +102,7 @@ export async function backupCommand(opts: {
     fs.mkdirSync(dbDir, { recursive: true });
   }
 
-  const db = new Database({
+  const db = await Database.open({
     path: dbPath,
     schema: config.tables,
     auth: config.auth,
@@ -128,7 +128,7 @@ export async function backupCommand(opts: {
     );
     log.hint("Restore with: localbase db restore " + path.relative(cwd, result.dir));
   } finally {
-    db.close();
+    await db.close();
   }
 }
 

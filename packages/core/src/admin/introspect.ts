@@ -82,10 +82,37 @@ export function introspect(db: Database.Database): IntrospectedSchema {
   const virtualNames = virtualAndShadowNames(db, rows);
 
   const introspected: IntrospectedTable[] = rows.map((r) =>
-    introspectTable(db, r.name, virtualNames.has(r.name))
+    introspectTableInternal(db, r.name, virtualNames.has(r.name), true)
   );
 
   return { tables: introspected };
+}
+
+/**
+ * Introspect a single table by name without scanning or counting every other
+ * table in the database. Returns `null` if the table does not exist (or is a
+ * `sqlite_%` internal table).
+ */
+export function introspectTable(
+  db: Database.Database,
+  name: string,
+  options: { includeRowCount?: boolean } = {}
+): IntrospectedTable | null {
+  if (name.startsWith("sqlite_")) return null;
+  const row = db
+    .prepare(
+      `SELECT "name", "sql" FROM sqlite_master WHERE type = 'table' AND name = ?`
+    )
+    .get(name) as { name: string; sql: string | null } | undefined;
+  if (!row) return null;
+
+  const virtualNames = virtualAndShadowNames(db, [row]);
+  return introspectTableInternal(
+    db,
+    row.name,
+    virtualNames.has(row.name),
+    options.includeRowCount === true
+  );
 }
 
 /**
@@ -139,10 +166,11 @@ function virtualAndShadowNames(
  */
 const VIRTUAL_TABLE_RE = /^\s*CREATE\s+VIRTUAL\s+/i;
 
-function introspectTable(
+function introspectTableInternal(
   db: Database.Database,
   name: string,
-  virtual: boolean
+  virtual: boolean,
+  includeRowCount: boolean
 ): IntrospectedTable {
   const cols = db
     .prepare(`PRAGMA table_info("${name}")`)
@@ -212,14 +240,16 @@ function introspectTable(
     });
   }
 
-  // `SELECT COUNT(*)` is O(n) on SQLite. For a dev/admin tool this is
-  // fine — the tables it operates on are small. If we ever need to handle
-  // million-row tables, switch to reading `sqlite_stat1` or a cached
-  // count updated by triggers.
-  const countRow = db
-    .prepare(`SELECT COUNT(*) AS name FROM "${name}"`)
-    .get() as PragmaTableCountRow;
-  const rowCount = Number(countRow.name) || 0;
+  let rowCount = 0;
+  if (includeRowCount) {
+    // `SELECT COUNT(*)` is O(n) on SQLite. For a dev/admin tool this is
+    // fine — the tables it operates on are small. Single-table lookups
+    // (`introspectTable`) skip this scan by default.
+    const countRow = db
+      .prepare(`SELECT COUNT(*) AS name FROM "${name}"`)
+      .get() as PragmaTableCountRow;
+    rowCount = Number(countRow.name) || 0;
+  }
 
   return {
     name,

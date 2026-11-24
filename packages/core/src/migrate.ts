@@ -1,7 +1,6 @@
-import type Database from "better-sqlite3";
 import type { DatabaseSchema } from "@localbase/shared";
+import type { DbDriver } from "./db/index.js";
 import {
-  schemaToDDL,
   tableToDDL,
   topologicalSort,
   columnToAddDDL,
@@ -20,39 +19,18 @@ const COLUMN_MIGRATION_SEPARATOR = "::";
 /**
  * Ensures the _migrations tracking table exists.
  */
-function ensureMigrationsTable(db: Database.Database): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS "${MIGRATIONS_TABLE}" (
-      "id" INTEGER PRIMARY KEY AUTOINCREMENT,
-      "name" TEXT NOT NULL UNIQUE,
-      "applied_at" TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `);
+async function ensureMigrationsTable(driver: DbDriver): Promise<void> {
+  await driver.execBatch(driver.dialect.migrationsTableDDL(MIGRATIONS_TABLE));
 }
 
 /**
  * Returns the set of migration names that have already been applied.
  */
-export function getAppliedMigrations(db: Database.Database): Set<string> {
-  ensureMigrationsTable(db);
-  const rows = db
-    .prepare(`SELECT "name" FROM "${MIGRATIONS_TABLE}"`)
-    .all() as { name: string }[];
-  return new Set(rows.map((r) => r.name));
-}
-
-/**
- * Returns the names of columns currently present on a table, by introspecting
- * `sqlite_master` metadata (via PRAGMA table_info). Used by the additive
- * migration pass to decide which declared columns still need ADD COLUMN.
- */
-function existingColumns(
-  db: Database.Database,
-  table: string
-): Set<string> {
-  const rows = db.prepare(`PRAGMA table_info("${table}")`).all() as {
-    name: string;
-  }[];
+export async function getAppliedMigrations(driver: DbDriver): Promise<Set<string>> {
+  await ensureMigrationsTable(driver);
+  const rows = await driver.query<{ name: string }>(
+    `SELECT "name" FROM "${MIGRATIONS_TABLE}"`
+  );
   return new Set(rows.map((r) => r.name));
 }
 
@@ -68,77 +46,62 @@ function existingColumns(
  *            compare declared columns against the columns the DB actually
  *            has. For every declared column missing from the DB, run
  *            `ALTER TABLE ... ADD COLUMN` and record `<table>::<column>`.
- *            This is how a new column on an existing table (e.g. `role` on
- *            `_users`) lands without dropping or recreating the table.
- *
- * Non-additive changes (dropping a column, changing a type, adding a
- * PRIMARY KEY / UNIQUE / FK to an existing table) are NOT supported and
- * will throw — they require table recreation, which is intentionally out
- * of scope. Config-first philosophy: change the schema, then reset in dev.
  *
  * Returns the list of newly applied migration names.
  */
-export function runMigrations(
-  db: Database.Database,
+export async function runMigrations(
+  driver: DbDriver,
   schema: DatabaseSchema
-): string[] {
-  ensureMigrationsTable(db);
-  const applied = getAppliedMigrations(db);
-
-  // Sort once so that the CREATE order (referenced tables first) is the same
-  // order we iterate in both phases. Iterating the sorted entries directly
-  // (rather than indexing Object.keys against schemaToDDL's output) keeps
-  // each migration name aligned with the DDL that was actually run.
+): Promise<string[]> {
+  await ensureMigrationsTable(driver);
+  const applied = await getAppliedMigrations(driver);
   const sortedEntries = topologicalSort(schema);
   const appliedNames: string[] = [];
 
-  const migrate = db.transaction(() => {
-    // ── Phase 1: create new tables (referenced tables first) ──
-    for (const [name, tableSchema] of sortedEntries) {
-      if (applied.has(name)) continue;
-
-      db.exec(tableToDDL(name, tableSchema));
-
-      db.prepare(
-        `INSERT INTO "${MIGRATIONS_TABLE}" ("name") VALUES (?)`
-      ).run(name);
-
-      applied.add(name);
-      appliedNames.push(name);
-    }
-
-    // ── Phase 2: add missing columns to existing tables (additive) ──
-    for (const [tableName, tableSchema] of sortedEntries) {
-      if (!applied.has(tableName)) continue; // created in phase 1 — already current
-
-      const present = existingColumns(db, tableName);
-      for (const [colName, colDef] of Object.entries(tableSchema)) {
-        if (present.has(colName)) continue;
-
-        const migrationKey = `${tableName}${COLUMN_MIGRATION_SEPARATOR}${colName}`;
-        if (applied.has(migrationKey)) continue; // defensive — shouldn't happen
-
-        const ddl = columnToAddDDL(tableName, colName, colDef);
-        db.exec(ddl);
-
-        db.prepare(
-          `INSERT INTO "${MIGRATIONS_TABLE}" ("name") VALUES (?)`
-        ).run(migrationKey);
-
-        applied.add(migrationKey);
-        appliedNames.push(migrationKey);
-      }
-    }
-  });
-
   try {
-    migrate();
+    await driver.transaction(async (tx) => {
+      // ── Phase 1: create new tables (referenced tables first) ──
+      for (const [name, tableSchema] of sortedEntries) {
+        if (applied.has(name)) continue;
+
+        await tx.execBatch(tableToDDL(name, tableSchema, driver.dialect));
+        await tx.execute(
+          `INSERT INTO "${MIGRATIONS_TABLE}" ("name") VALUES (${driver.dialect.placeholder(1)})`,
+          [name]
+        );
+
+        applied.add(name);
+        appliedNames.push(name);
+      }
+
+      // ── Phase 2: add missing columns to existing tables (additive) ──
+      for (const [tableName, tableSchema] of sortedEntries) {
+        if (!applied.has(tableName)) continue;
+
+        const present = await driver.existingColumns(tableName);
+        for (const [colName, colDef] of Object.entries(tableSchema)) {
+          if (present.has(colName)) continue;
+
+          const migrationKey = `${tableName}${COLUMN_MIGRATION_SEPARATOR}${colName}`;
+          if (applied.has(migrationKey)) continue;
+
+          const ddl = columnToAddDDL(tableName, colName, colDef, driver.dialect);
+          await tx.execBatch(ddl);
+          await tx.execute(
+            `INSERT INTO "${MIGRATIONS_TABLE}" ("name") VALUES (${driver.dialect.placeholder(1)})`,
+            [migrationKey]
+          );
+
+          applied.add(migrationKey);
+          appliedNames.push(migrationKey);
+        }
+      }
+    });
   } catch (err) {
-    // Surface additive-migration programmer errors with their clear message
-    // rather than wrapping them in a generic transaction failure.
     if (err instanceof AdditiveMigrationError) throw err;
     throw err;
   }
+
   return appliedNames;
 }
 
@@ -146,40 +109,22 @@ export function runMigrations(
  * Drops all user tables and re-runs migrations.
  * Useful for `localbase db reset`.
  */
-export function resetDatabase(
-  db: Database.Database,
+export async function resetDatabase(
+  driver: DbDriver,
   schema: DatabaseSchema
-): string[] {
-  // Disable foreign keys temporarily so we can drop in any order
-  db.exec("PRAGMA foreign_keys = OFF");
-
-  // Drop all user tables (not system/internal tables)
-  const rows = db
-    .prepare(
-      `SELECT "name" FROM sqlite_master WHERE type = 'table' AND name != 'sqlite_sequence'`
-    )
-    .all() as { name: string }[];
-
-  // Filter out internal tables (starting with _) in JS to avoid LIKE wildcard issues
-  const userTables = rows.filter((r) => !r.name.startsWith("_"));
-
-  for (const { name } of userTables) {
-    db.exec(`DROP TABLE IF EXISTS "${name}"`);
-  }
+): Promise<string[]> {
+  const userTables = await driver.listUserTables();
+  await driver.dropTablesForReset(userTables);
 
   // Clear migration history only for the user tables we actually dropped.
-  // System tables (auth/storage/etc., prefixed with `_`) are intentionally
-  // preserved above, so their migration records must be preserved too;
-  // otherwise the next migrate would try to CREATE already-existing tables.
-  for (const { name } of userTables) {
-    db.prepare(
-      `DELETE FROM "${MIGRATIONS_TABLE}" WHERE "name" = ? OR "name" LIKE ?`
-    ).run(name, `${name}${COLUMN_MIGRATION_SEPARATOR}%`);
+  // System tables (prefixed with `_`) are preserved.
+  await ensureMigrationsTable(driver);
+  for (const name of userTables) {
+    await driver.execute(
+      `DELETE FROM "${MIGRATIONS_TABLE}" WHERE "name" = ${driver.dialect.placeholder(1)} OR "name" LIKE ${driver.dialect.placeholder(2)}`,
+      [name, `${name}${COLUMN_MIGRATION_SEPARATOR}%`]
+    );
   }
 
-  // Re-enable foreign keys
-  db.exec("PRAGMA foreign_keys = ON");
-
-  // Re-run all migrations
-  return runMigrations(db, schema);
+  return runMigrations(driver, schema);
 }

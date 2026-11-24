@@ -1,6 +1,19 @@
-// Database class
+// Database class & driver layer
 export { Database } from "./db.js";
 export type { DatabaseOptions } from "./db.js";
+export {
+  DatabaseError,
+  normalizeDatabaseError,
+  SqliteDriver,
+  sqliteDialect,
+} from "./db/index.js";
+export type {
+  DatabaseEngine,
+  DatabaseErrorCode,
+  DbDriver,
+  QueryExecutor,
+  SqlDialect,
+} from "./db/index.js";
 
 // API server
 export { createServer } from "./api.js";
@@ -72,7 +85,7 @@ export type {
 // Admin subsystem
 export { createAdminRouter } from "./admin/router.js";
 export { mountAdminStatic, findAdminDistPath } from "./admin/static.js";
-export { introspect } from "./admin/introspect.js";
+export { introspect, introspectTable } from "./admin/introspect.js";
 export { SYSTEM_TABLES, isSystemTable, assertNotSystemTable } from "./admin/system-tables.js";
 
 // Storage subsystem

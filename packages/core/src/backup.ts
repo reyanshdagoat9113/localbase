@@ -124,7 +124,7 @@ export async function createBackup(opts: {
   destDir: string;
 }): Promise<BackupResult> {
   const { database, destDir } = opts;
-  const db = database.raw();
+  const db = database.sqliteRaw();
 
   // Force a WAL checkpoint (TRUNCATE) before the snapshot so every committed
   // page is folded back into the main file and the `-wal` is reset to zero
