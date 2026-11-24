@@ -12,6 +12,7 @@ Versions follow [Semantic Versioning](https://semver.org/) with a beta prereleas
 
 - `localbase status`: a read-only setup check (Node version, database, pending migrations, schema drift, auth, tables without policies, running server). `--json` for scripts.
 - `security.trustProxy` option (default `false`): ignores `X-Forwarded-For` in rate limiting and `X-Forwarded-Host`/`X-Forwarded-Proto` in signed storage URLs unless explicitly opted in behind a reverse proxy; rate-limit bucket map is now size-capped.
+- `@localbase/core`: engine-agnostic `DbDriver` / `SqlDialect` / `DatabaseError` abstraction (`SqliteDriver`, `sqliteDialect`) and targeted `Database.introspectTable(name)`.
 
 ### Fixed
 
@@ -25,6 +26,9 @@ Versions follow [Semantic Versioning](https://semver.org/) with a beta prereleas
 
 ### Changed
 
+- **Breaking (`@localbase/core`):** `Database` is now async-first (`await Database.open(options)`; CRUD, migration, introspection, auth, storage, and scheduler DB methods return `Promise<T>`). Direct SQLite access is explicitly `database.sqliteRaw()`.
+- **Boolean read normalization:** declared `boolean` columns now return JS `true`/`false` on read (SQLite `0`/`1` is normalized at the read boundary) for cross-engine parity.
+- **Timestamp defaults:** `default: "CURRENT_TIMESTAMP"` on `text` columns now produces canonical ISO-8601 UTC millisecond strings (`YYYY-MM-DDTHH:MM:SS.mmmZ`, matching `Date.prototype.toISOString()`). Existing SQLite tables created before this change keep their previous `CURRENT_TIMESTAMP` default because additive migrations do not alter existing column defaults.
 - **Proxy headers ignored by default (`security.trustProxy: false`):** rate limiting ignores `X-Forwarded-For` and signed storage URLs ignore `X-Forwarded-Host` / `X-Forwarded-Proto` unless explicitly enabled. Behind a reverse proxy, set `security.trustProxy: true`.
 - `localbase init` creates a `.gitignore` (`.localbase/`, `backups/`) when none exists, and appends missing entries to an existing one.
 - CLI hints print `npx @localbase/cli …` when the CLI was launched through npx, instead of a `localbase` command that isn't on PATH.
