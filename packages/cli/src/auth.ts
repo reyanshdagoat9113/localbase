@@ -9,31 +9,30 @@ import { log } from "./log.js";
  * `jwtSecret` (the Auth class needs it for hashing salts, etc., even
  * though admin commands don't issue tokens).
  */
-function openAuthDb() {
+async function openAuthDb() {
   const cwd = process.cwd();
-  return loadConfig(cwd).then(({ dbPath, dbDir, config }) => {
-    if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+  const { dbPath, dbDir, config } = await loadConfig(cwd);
+  if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
 
-    const authConfig = config.auth;
-    if (!authConfig?.enabled) {
-      throw new Error(
-        "Auth is not enabled. Add `auth: { enabled: true, jwtSecret: '...' }` " +
-          "to localbase.config.ts first."
-      );
-    }
+  const authConfig = config.auth;
+  if (!authConfig?.enabled) {
+    throw new Error(
+      "Auth is not enabled. Add `auth: { enabled: true, jwtSecret: '...' }` " +
+        "to localbase.config.ts first."
+    );
+  }
 
-    const { config: resolved } = resolveAuthConfig(authConfig);
-    const db = new Database({
-      path: dbPath,
-      schema: config.tables,
-      auth: authConfig,
-      dataDir: dbDir,
-      buckets: config.buckets,
-      jobs: config.jobs,
-    });
-    const auth = new Auth(db, resolved);
-    return { db, auth };
+  const { config: resolved } = resolveAuthConfig(authConfig);
+  const db = await Database.open({
+    path: dbPath,
+    schema: config.tables,
+    auth: authConfig,
+    dataDir: dbDir,
+    buckets: config.buckets,
+    jobs: config.jobs,
   });
+  const auth = new Auth(db, resolved);
+  return { db, auth };
 }
 
 function handleAuthError(err: unknown): never {
@@ -71,7 +70,7 @@ export async function createUserCommand(
       const user = await auth.createUser({ email, password });
       log.success(`Created user #${user.id}: ${user.email}`);
     } finally {
-      db.close();
+      await db.close();
     }
   } catch (err) {
     handleAuthError(err);
@@ -84,7 +83,7 @@ export async function listUsersCommand(): Promise<void> {
   try {
     const { db, auth } = await openAuthDb();
     try {
-      const users = auth.listUsers();
+      const users = await auth.listUsers();
       if (users.length === 0) {
         log.info("No users found.");
         return;
@@ -95,7 +94,7 @@ export async function listUsersCommand(): Promise<void> {
         console.log(`  #${u.id}  ${u.email}  (created ${created})`);
       }
     } finally {
-      db.close();
+      await db.close();
     }
   } catch (err) {
     handleAuthError(err);
@@ -126,7 +125,7 @@ export async function resetPasswordCommand(
       await auth.setPassword(email, password);
       log.success(`Reset password for ${email}.`);
     } finally {
-      db.close();
+      await db.close();
     }
   } catch (err) {
     handleAuthError(err);

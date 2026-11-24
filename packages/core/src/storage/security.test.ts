@@ -292,9 +292,9 @@ describe("signed-urls primitives", () => {
  * to the JWT secret), one pre-declared PUBLIC bucket, a private bucket, and
  * an authenticated user whose token is used for write operations.
  */
-function setup() {
+async function setup() {
   const tmp = tempDir();
-  const db = new Database({
+  const db = await Database.open({
     schema: testSchema,
     auth: authConfig,
     dataDir: tmp,
@@ -313,7 +313,7 @@ function setup() {
   return { tmp, db, app, auth, cleanup: () => fs.rmSync(tmp, { recursive: true, force: true }) };
 }
 
-type Harness = ReturnType<typeof setup>;
+type Harness = Awaited<ReturnType<typeof setup>>;
 
 async function upload(
   app: Hono,
@@ -347,15 +347,15 @@ describe("storage read gate (GET /api/storage/:bucket/:filename)", () => {
   let token: string;
 
   before(async () => {
-    h = setup();
+    h = await setup();
     const session = await h.auth.signUp({
       email: "reyansh@test.com",
       password: "supersecret",
     });
     token = session.accessToken;
   });
-  after(() => {
-    h.db.close();
+  after(async () => {
+    await h.db.close();
     h.cleanup();
   });
 
@@ -481,7 +481,7 @@ describe("storage read gate (GET /api/storage/:bucket/:filename)", () => {
   it("supports a dedicated storage secret without breaking Bearer auth", async () => {
     const tmp = tempDir();
     const storageSecret = "dedicated-storage-secret";
-    const db = new Database({
+    const db = await Database.open({
       schema: testSchema,
       auth: authConfig,
       dataDir: tmp,
@@ -528,7 +528,7 @@ describe("storage read gate (GET /api/storage/:bucket/:filename)", () => {
       const wrongSecretRead = await app.request(signedWithJwtSecret);
       assert.equal(wrongSecretRead.status, 401);
     } finally {
-      db.close();
+      await db.close();
       fs.rmSync(tmp, { recursive: true, force: true });
     }
   });
@@ -549,15 +549,15 @@ describe("storage write gate (POST / DELETE / GET list)", () => {
   let token: string;
 
   before(async () => {
-    h = setup();
+    h = await setup();
     const session = await h.auth.signUp({
       email: "reyansh@test.com",
       password: "supersecret",
     });
     token = session.accessToken;
   });
-  after(() => {
-    h.db.close();
+  after(async () => {
+    await h.db.close();
     h.cleanup();
   });
 
@@ -677,15 +677,15 @@ describe("storage sign endpoint (POST /api/storage/:bucket/:filename/sign)", () 
   let token: string;
 
   before(async () => {
-    h = setup();
+    h = await setup();
     const session = await h.auth.signUp({
       email: "reyansh@test.com",
       password: "supersecret",
     });
     token = session.accessToken;
   });
-  after(() => {
-    h.db.close();
+  after(async () => {
+    await h.db.close();
     h.cleanup();
   });
 
@@ -774,17 +774,17 @@ describe("storage without auth fails closed", () => {
   let db: Database;
   let app: Hono;
 
-  before(() => {
+  before(async () => {
     tmp = tempDir();
-    db = new Database({
+    db = await Database.open({
       schema: testSchema,
       dataDir: tmp,
       buckets: [{ name: "public-assets", public: true }],
     });
     app = createServer(db, testSchema, { auth: { enabled: false } });
   });
-  after(() => {
-    db.close();
+  after(async () => {
+    await db.close();
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -819,7 +819,7 @@ describe("storage.secret without auth verifies signed reads", () => {
   it("keeps writes closed but accepts a valid signed URL", async () => {
     const tmp = tempDir();
     const secret = "storage-only-secret";
-    const db = new Database({ schema: testSchema, dataDir: tmp });
+    const db = await Database.open({ schema: testSchema, dataDir: tmp });
     const app = createServer(db, testSchema, { storage: { secret } });
 
     try {
@@ -844,7 +844,7 @@ describe("storage.secret without auth verifies signed reads", () => {
       const post = await upload(app, "private-docs", makeFile("x.txt", "x"));
       assert.equal(post.status, 401);
     } finally {
-      db.close();
+      await db.close();
       fs.rmSync(tmp, { recursive: true, force: true });
     }
   });

@@ -198,7 +198,7 @@ export function createStorageRouter(
       if (!(await passesReadGate(c, bucket, filename))) {
         return c.json({ error: "Authentication required" }, 401);
       }
-      const found = db.storage.get(bucket, filename);
+      const found = await db.storage.get(bucket, filename);
       if (!found) {
         return c.json({ error: "File not found" }, 404);
       }
@@ -226,7 +226,7 @@ export function createStorageRouter(
       if (!(await passesWriteAuth(c))) {
         return c.json({ error: "Authentication required" }, 401);
       }
-      const deleted = db.storage.delete(bucket, filename);
+      const deleted = await db.storage.delete(bucket, filename);
       if (!deleted) {
         return c.json({ error: "File not found" }, 404);
       }
@@ -247,7 +247,7 @@ export function createStorageRouter(
       const url = new URL(c.req.url);
       const { limit, offset } = parsePagination(url);
 
-      const allFiles = db.storage.list(bucket);
+      const allFiles = await db.storage.list(bucket);
       const total = allFiles.length;
       const files = paginate(allFiles, limit, offset);
 
@@ -296,7 +296,7 @@ export function createStorageRouter(
 
       // Confirm the file exists before handing out a URL to it without opening
       // a file descriptor / read stream.
-      if (!db.storage.exists(bucket, filename)) {
+      if (!(await db.storage.exists(bucket, filename))) {
         return c.json({ error: "File not found" }, 404);
       }
 

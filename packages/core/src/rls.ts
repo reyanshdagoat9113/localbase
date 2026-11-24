@@ -97,8 +97,8 @@ export function stampOwner(
  * resolver so the two surfaces cannot drift on what "is this user an admin
  * right now?" means.
  */
-export function liveAdminRole(db: Database, userId: number): boolean {
-  const row = db.selectById("_users", userId) as
+export async function liveAdminRole(db: Database, userId: number): Promise<boolean> {
+  const row = (await db.selectById("_users", userId)) as
     | { role?: unknown }
     | undefined;
   return row?.role === "admin" || row?.role === "owner";

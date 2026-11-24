@@ -50,8 +50,8 @@ async function parseResponse(res: Response) {
   return { status: res.status, body: json };
 }
 
-function seedUsers(db: Database) {
-  db.insert("users", [
+async function seedUsers(db: Database) {
+  await db.insert("users", [
     { name: "Alice", email: "alice@test.com", age: 30, active: 1 },
     { name: "Bob", email: "bob@test.com", age: 25, active: 1 },
     { name: "Charlie", email: "charlie@test.com", age: 35, active: 0 },
@@ -86,8 +86,8 @@ describe("GET /_api/admin/schema", () => {
   let db: Database;
   let app: Hono;
 
-  before(() => {
-    db = new Database({ schema: testSchema });
+  before(async () => {
+    db = await Database.open({ schema: testSchema });
     app = createServer(db, testSchema, {
       admin: { enabled: true },
       // Pin the explicit no-auth posture these tests exercise.
@@ -96,7 +96,7 @@ describe("GET /_api/admin/schema", () => {
     seedUsers(db);
   });
 
-  after(() => db.close());
+  after(async () => await db.close());
 
   it("returns introspected schema for every table", async () => {
     const res = await app.request("/_api/admin/schema");
@@ -129,7 +129,7 @@ describe("GET /_api/admin/schema", () => {
     // Spin up a fresh app with auth enabled so `_users` exists, but query
     // via an UNGATED admin server so this test isolates the system-table
     // classification. The gated flow is covered by the M2 admin-auth tests.
-    const db2 = new Database({
+    const db2 = await Database.open({
       schema: { messages: testSchema.users }, // a user table
       auth: { enabled: true, jwtSecret: "test-secret" },
     });
@@ -146,7 +146,7 @@ describe("GET /_api/admin/schema", () => {
       assert.ok(usersRow, "_users should appear in schema");
       assert.equal(usersRow.system, true);
     } finally {
-      db2.close();
+      await db2.close();
     }
   });
 });
@@ -157,8 +157,8 @@ describe("GET /_api/admin/tables", () => {
   let db: Database;
   let app: Hono;
 
-  before(() => {
-    db = new Database({ schema: testSchema });
+  before(async () => {
+    db = await Database.open({ schema: testSchema });
     app = createServer(db, testSchema, {
       admin: { enabled: true },
       // Pin the explicit no-auth posture these tests exercise.
@@ -167,7 +167,7 @@ describe("GET /_api/admin/tables", () => {
     seedUsers(db);
   });
 
-  after(() => db.close());
+  after(async () => await db.close());
 
   it("returns table names, row counts, and system flag", async () => {
     const res = await app.request("/_api/admin/tables");
@@ -187,8 +187,8 @@ describe("Rows CRUD (/_api/admin/tables/:table/rows)", () => {
   let db: Database;
   let app: Hono;
 
-  beforeEach(() => {
-    db = new Database({ schema: testSchema });
+  beforeEach(async () => {
+    db = await Database.open({ schema: testSchema });
     app = createServer(db, testSchema, {
       admin: { enabled: true },
       // Pin the explicit no-auth posture these tests exercise.
@@ -197,7 +197,7 @@ describe("Rows CRUD (/_api/admin/tables/:table/rows)", () => {
     seedUsers(db);
   });
 
-  afterEach(() => db.close());
+  afterEach(async () => await db.close());
 
   it("GET returns paginated rows with total", async () => {
     const res = await app.request("/_api/admin/tables/users/rows?limit=2");
@@ -344,7 +344,7 @@ describe("Rows CRUD (/_api/admin/tables/:table/rows)", () => {
   });
 
   it("PATCH returns 400 for tables without a single-column primary key", async () => {
-    db.raw()
+    db.sqliteRaw()
       .prepare('INSERT INTO "audit_logs" ("message") VALUES (?)')
       .run("no pk");
     const res = await app.request("/_api/admin/tables/audit_logs/rows/1", {
@@ -390,7 +390,7 @@ describe("System-table write protection (defense-in-depth gate)", () => {
   // token reaches it — the M2 admin-auth tests cover the auth layer.
 
   it("POST to _users returns 403 with a helpful error", async () => {
-    const db = new Database({
+    const db = await Database.open({
       schema: authSchema,
       auth: { enabled: true, jwtSecret: "test-secret" },
     });
@@ -412,17 +412,17 @@ describe("System-table write protection (defense-in-depth gate)", () => {
       assert.match(body.error, /_users/);
       assert.match(body.error, /admin/);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("PATCH on _users returns 403", async () => {
-    const db = new Database({
+    const db = await Database.open({
       schema: authSchema,
       auth: { enabled: true, jwtSecret: "test-secret" },
     });
     try {
-      db.insert("_users", {
+      await db.insert("_users", {
         email: "u@x.com",
         password_hash: "h",
         role: "user",
@@ -439,12 +439,12 @@ describe("System-table write protection (defense-in-depth gate)", () => {
       const { status } = await parseResponse(res);
       assert.equal(status, 403);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("DELETE on _sessions returns 403", async () => {
-    const db = new Database({
+    const db = await Database.open({
       schema: authSchema,
       auth: { enabled: true, jwtSecret: "test-secret" },
     });
@@ -459,17 +459,17 @@ describe("System-table write protection (defense-in-depth gate)", () => {
       const { status } = await parseResponse(res);
       assert.equal(status, 403);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("GET on _users still works (reads are allowed)", async () => {
-    const db = new Database({
+    const db = await Database.open({
       schema: authSchema,
       auth: { enabled: true, jwtSecret: "test-secret" },
     });
     try {
-      db.insert("_users", {
+      await db.insert("_users", {
         email: "u@x.com",
         password_hash: "h",
         role: "user",
@@ -483,7 +483,7 @@ describe("System-table write protection (defense-in-depth gate)", () => {
       assert.equal(status, 200);
       assert.equal(body.data.total, 1);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });
@@ -510,7 +510,7 @@ describe("Admin static mount (M1 deliverable)", () => {
   });
 
   it("serves placeholder HTML at /admin when no bundle is present", async () => {
-    const db = new Database({ schema: testSchema });
+    const db = await Database.open({ schema: testSchema });
     try {
       const app = createServer(db, testSchema, {
         admin: { enabled: true },
@@ -523,12 +523,12 @@ describe("Admin static mount (M1 deliverable)", () => {
       assert.match(text, /LocalBase Admin/);
       assert.match(text, /placeholder/);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("serves placeholder HTML at /admin/some-path (SPA fallback)", async () => {
-    const db = new Database({ schema: testSchema });
+    const db = await Database.open({ schema: testSchema });
     try {
       const app = createServer(db, testSchema, {
         admin: { enabled: true },
@@ -540,12 +540,12 @@ describe("Admin static mount (M1 deliverable)", () => {
       assert.equal(res.status, 200);
       assert.match(text, /LocalBase Admin/);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("is not mounted when admin is disabled", async () => {
-    const db = new Database({ schema: testSchema });
+    const db = await Database.open({ schema: testSchema });
     try {
       const app = createServer(db, testSchema, {
         admin: { enabled: false },
@@ -555,7 +555,7 @@ describe("Admin static mount (M1 deliverable)", () => {
       // status directly without parsing JSON.
       assert.equal(res.status, 404);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });
@@ -564,14 +564,14 @@ describe("Admin static mount (M1 deliverable)", () => {
 
 describe("Introspection accuracy", () => {
   let db: Database;
-  before(() => {
-    db = new Database({ schema: testSchema });
+  before(async () => {
+    db = await Database.open({ schema: testSchema });
     seedUsers(db);
   });
-  after(() => db.close());
+  after(async () => await db.close());
 
-  it("surfaces column metadata (type, notNull, primaryKey, autoIncrement)", () => {
-    const schema = db.introspect();
+  it("surfaces column metadata (type, notNull, primaryKey, autoIncrement)", async () => {
+    const schema = await db.introspect();
     const users = schema.tables.find((t) => t.name === "users")!;
     const id = users.columns.find((c) => c.name === "id")!;
     assert.equal(id.type, "INTEGER");
@@ -584,8 +584,8 @@ describe("Introspection accuracy", () => {
     assert.equal(name.primaryKey, false);
   });
 
-  it("surfaces foreign keys for posts → users", () => {
-    const schema = db.introspect();
+  it("surfaces foreign keys for posts → users", async () => {
+    const schema = await db.introspect();
     const posts = schema.tables.find((t) => t.name === "posts")!;
     assert.equal(posts.foreignKeys.length, 1);
     assert.equal(posts.foreignKeys[0].fromColumn, "user_id");
@@ -593,8 +593,8 @@ describe("Introspection accuracy", () => {
     assert.equal(posts.foreignKeys[0].toColumn, "id");
   });
 
-  it("surfaces UNIQUE indexes (not internal PK indexes)", () => {
-    const schema = db.introspect();
+  it("surfaces UNIQUE indexes (not internal PK indexes)", async () => {
+    const schema = await db.introspect();
     const users = schema.tables.find((t) => t.name === "users")!;
     const emailIndex = users.indexes.find((i) =>
       i.columns.includes("email")
@@ -607,9 +607,9 @@ describe("Introspection accuracy", () => {
     }
   });
 
-  it("rowCount reflects current data", () => {
-    db.insert("users", { name: "Eve", email: "eve@test.com" });
-    const schema = db.introspect();
+  it("rowCount reflects current data", async () => {
+    await db.insert("users", { name: "Eve", email: "eve@test.com" });
+    const schema = await db.introspect();
     const users = schema.tables.find((t) => t.name === "users")!;
     assert.equal(users.rowCount, 4);
   });

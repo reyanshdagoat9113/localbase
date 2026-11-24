@@ -172,7 +172,7 @@ export function requireAdmin(
 
     // Re-read the live role. A deleted user has no row → treat as invalid
     // (generic 401) so the existence of an account isn't leaked.
-    const row = db.selectById("_users", id) as
+    const row = (await db.selectById("_users", id)) as
       | { role?: string; email?: string }
       | undefined;
     if (!row) {

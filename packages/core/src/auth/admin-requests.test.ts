@@ -15,8 +15,8 @@ const schema: DatabaseSchema = {
 
 const databases: Database[] = [];
 
-function app(): Hono {
-  const db = new Database({
+async function app(): Promise<Hono> {
+  const db = await Database.open({
     schema,
     auth: { enabled: true, jwtSecret: SECRET },
   });
@@ -64,7 +64,7 @@ async function requestAdmin(
 
 describe("admin account approval workflow", () => {
   it("reports whether the owner has been created", async () => {
-    const server = app();
+    const server = await app();
     let res = await server.request("/api/auth/admin-registration");
     assert.deepEqual(await res.json(), { data: { ownerExists: false } });
 
@@ -74,7 +74,7 @@ describe("admin account approval workflow", () => {
   });
 
   it("refuses a second owner bootstrap without creating a regular user", async () => {
-    const server = app();
+    const server = await app();
     await owner(server);
     const res = await server.request(
       "/api/auth/owner",
@@ -90,7 +90,7 @@ describe("admin account approval workflow", () => {
   });
 
   it("stores a pending request without exposing its password hash", async () => {
-    const server = app();
+    const server = await app();
     const ownerSession = await owner(server);
     const created = await requestAdmin(server);
     assert.equal(created.status, 202);
@@ -127,7 +127,7 @@ describe("admin account approval workflow", () => {
   });
 
   it("owner approval creates an admin who can sign in", async () => {
-    const server = app();
+    const server = await app();
     const ownerSession = await owner(server);
     const request = await requestAdmin(server);
     const requestId = (await request.json()).data.id;
@@ -151,7 +151,7 @@ describe("admin account approval workflow", () => {
   });
 
   it("promotes an existing user after verifying their password", async () => {
-    const server = app();
+    const server = await app();
     const ownerSession = await owner(server);
     const signup = await server.request(
       "/api/auth/signup",
@@ -197,7 +197,7 @@ describe("admin account approval workflow", () => {
   });
 
   it("regular admins cannot list, approve, or reject requests", async () => {
-    const server = app();
+    const server = await app();
     const ownerSession = await owner(server);
     const first = await requestAdmin(server, "existing-admin@test.com");
     const firstId = (await first.json()).data.id;
@@ -238,7 +238,7 @@ describe("admin account approval workflow", () => {
   });
 
   it("owner rejection removes the request without creating an account", async () => {
-    const server = app();
+    const server = await app();
     const ownerSession = await owner(server);
     const pending = await requestAdmin(server);
     const pendingId = (await pending.json()).data.id;
@@ -259,7 +259,7 @@ describe("admin account approval workflow", () => {
   });
 
   it("rejects requests before owner setup and duplicate pending emails", async () => {
-    const server = app();
+    const server = await app();
     assert.equal((await requestAdmin(server)).status, 409);
     await owner(server);
     assert.equal((await requestAdmin(server)).status, 202);

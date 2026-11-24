@@ -113,20 +113,20 @@ export async function collectStatus(
 
   if (exists) {
     // Open without auto-migrating: status must never change the database.
-    const db = new Database({
+    const db = await Database.open({
       path: dbPath,
       schema: config.tables,
       dataDir: dbDir,
       autoMigrate: false,
     });
     try {
-      const actual = db.introspect();
+      const actual = await db.introspect();
       const rows = new Map(actual.tables.map((t) => [t.name, t.rowCount]));
       tables = tables.map((t) => ({ ...t, rows: rows.get(t.name) ?? null }));
       schema = diffSchema(config.tables, actual);
       users = rows.get("_users") ?? null;
     } finally {
-      db.close();
+      await db.close();
     }
   }
 

@@ -114,15 +114,27 @@ export class JobRunner {
    * @returns the run id and final status (or `skipped` with no row).
    */
   async run(name: string): Promise<JobRunResult> {
+    const started = await this.startRun(name);
+    return started.completion;
+  }
+
+  /**
+   * Start a registered job and resolve as soon as its `running` row has been
+   * inserted into `_job_runs`, returning `{ runId, completion }`.
+   */
+  async startRun(
+    name: string
+  ): Promise<{ runId: number | null; completion: Promise<JobRunResult> }> {
     const job = this.jobs[name];
     if (!job) {
       throw new JobError(`Unknown job: "${name}"`);
     }
 
-    // Concurrency guard (Decision #8): skip an overlapping firing rather
-    // than queueing it. No row is written — the next interval gets a turn.
     if (this.running.has(name)) {
-      return { runId: null, status: "skipped" };
+      return {
+        runId: null,
+        completion: Promise.resolve({ runId: null, status: "skipped" }),
+      };
     }
 
     this.running.add(name);
@@ -132,24 +144,27 @@ export class JobRunner {
       if (typeof line === "string") logLines.push(line);
     };
 
+    let runId: number;
     try {
-      // Insert the `running` row up-front so observers see the run immediately.
-      // `started_at` defaults to CURRENT_TIMESTAMP; we overwrite it with an ISO
-      // string so the value is stable across SQLite builds and matches `ended_at`.
       const startedAtIso = new Date(startedAtMs).toISOString();
-      const inserted = this.db.insert("_job_runs", {
+      const inserted = (await this.db.insert("_job_runs", {
         job_name: name,
         status: "running",
         started_at: startedAtIso,
-      }) as Array<{ id: number }>;
-      const runId = inserted[0].id;
+      })) as Array<{ id: number }>;
+      runId = inserted[0].id;
+    } catch (err) {
+      this.running.delete(name);
+      throw err;
+    }
 
+    const completion = (async (): Promise<JobRunResult> => {
       try {
         const handler = await this.loadHandler(job.handler);
         const returnValue = await handler({ db: this.db, log, name });
         const output = buildOutput(logLines, returnValue);
 
-        this.db.update(
+        await this.db.update(
           "_job_runs",
           {
             status: "success",
@@ -161,15 +176,13 @@ export class JobRunner {
         );
         return { runId, status: "success" };
       } catch (err) {
-        // A handler-load failure is recorded as a normal failed run so the
-        // scheduler survives a broken handler file instead of crashing.
         const message = errorMessage(err);
         const output =
           isLoadError(err) && logLines.length === 0
             ? LOAD_ERROR_SENTINEL
             : buildOutput(logLines, undefined);
 
-        this.db.update(
+        await this.db.update(
           "_job_runs",
           {
             status: "failed",
@@ -181,10 +194,12 @@ export class JobRunner {
           [{ column: "id", operator: "eq", value: runId }]
         );
         return { runId, status: "failed" };
+      } finally {
+        this.running.delete(name);
       }
-    } finally {
-      this.running.delete(name);
-    }
+    })();
+
+    return { runId, completion };
   }
 
   /**

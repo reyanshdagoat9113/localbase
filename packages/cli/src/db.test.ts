@@ -18,20 +18,20 @@ function withTempProject(fn: (dir: string) => Promise<void> | void) {
     });
 }
 
-function tableExists(dbPath: string, name: string): boolean {
-  const db = new Database({
+async function tableExists(dbPath: string, name: string): Promise<boolean> {
+  const db = await Database.open({
     path: dbPath,
     schema: {},
     autoMigrate: false,
   });
   try {
     const row = db
-      .raw()
+      .sqliteRaw()
       .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
       .get(name);
     return row !== undefined;
   } finally {
-    db.close();
+    await db.close();
   }
 }
 
@@ -56,7 +56,7 @@ describe("database CLI commands", () => {
       await migrateCommand();
 
       assert.equal(
-        tableExists(path.join(dir, ".localbase", "data.db"), "_job_runs"),
+        await tableExists(path.join(dir, ".localbase", "data.db"), "_job_runs"),
         true,
         "migrateCommand should create the jobs system table when config.jobs is present"
       );

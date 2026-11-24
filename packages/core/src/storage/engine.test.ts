@@ -52,16 +52,16 @@ describe("StorageEngine", () => {
   let db: Database;
   let tmp: string;
 
-  before(() => {
+  before(async () => {
     tmp = tempDir();
-    db = new Database({
+    db = await Database.open({
       schema: testSchema,
       dataDir: tmp,
     });
   });
 
-  after(() => {
-    db.close();
+  after(async () => {
+    await db.close();
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -78,7 +78,7 @@ describe("StorageEngine", () => {
     assert.ok(saved.storedName.length > 0);
     assert.ok(saved.path.startsWith("documents/"));
 
-    const found = db.storage.get("documents", saved.storedName);
+    const found = await db.storage.get("documents", saved.storedName);
     assert.ok(found);
     assert.equal(found.metadata.original_name, "report.pdf");
     assert.equal(found.metadata.size, 11);
@@ -99,7 +99,7 @@ describe("StorageEngine", () => {
       stream: makeStream("b"),
     });
 
-    const files = db.storage.list("avatars");
+    const files = await db.storage.list("avatars");
     assert.equal(files.length, 2);
     assert.ok(files.every((f) => f.bucket === "avatars"));
     assert.ok(
@@ -118,21 +118,21 @@ describe("StorageEngine", () => {
       stream: makeStream("delete me"),
     });
 
-    const before = db.storage.get("documents", saved.storedName);
+    const before = await db.storage.get("documents", saved.storedName);
     assert.ok(before);
 
-    const deleted = db.storage.delete("documents", saved.storedName);
+    const deleted = await db.storage.delete("documents", saved.storedName);
     assert.equal(deleted, true);
 
-    const after = db.storage.get("documents", saved.storedName);
+    const after = await db.storage.get("documents", saved.storedName);
     assert.equal(after, null);
 
     const diskPath = path.join(tmp, "storage", "documents", saved.storedName);
     assert.equal(fs.existsSync(diskPath), false);
   });
 
-  it("should return false when deleting a non-existent file", () => {
-    const deleted = db.storage.delete("documents", "00000000-0000-0000-0000-000000000000");
+  it("should return false when deleting a non-existent file", async () => {
+    const deleted = await db.storage.delete("documents", "00000000-0000-0000-0000-000000000000");
     assert.equal(deleted, false);
   });
 
@@ -142,7 +142,7 @@ describe("StorageEngine", () => {
       stream: makeStream("content"),
     });
 
-    const found = db.storage.findByOriginalName("documents", "find-me.txt");
+    const found = await db.storage.findByOriginalName("documents", "find-me.txt");
     assert.ok(found);
     assert.equal(found.original_name, "find-me.txt");
   });
@@ -163,41 +163,41 @@ describe("StorageEngine", () => {
     );
   });
 
-  it("should reject path traversal in bucket names", () => {
-    assert.throws(
-      () => db.storage.list("../escape"),
+  it("should reject path traversal in bucket names", async () => {
+    await assert.rejects(
+      async () => await db.storage.list("../escape"),
       (err) => err instanceof StorageError && /Invalid bucket name/.test(err.message)
     );
   });
 
-  it("should reject absolute bucket names", () => {
-    assert.throws(
-      () => db.storage.list("/etc/passwd"),
+  it("should reject absolute bucket names", async () => {
+    await assert.rejects(
+      async () => await db.storage.list("/etc/passwd"),
       (err) => err instanceof StorageError && /Invalid bucket name/.test(err.message)
     );
   });
 
-  it("should reject bucket names with null bytes", () => {
-    assert.throws(
-      () => db.storage.list("bucket\x00name"),
+  it("should reject bucket names with null bytes", async () => {
+    await assert.rejects(
+      async () => await db.storage.list("bucket\x00name"),
       (err) => err instanceof StorageError && /Invalid bucket name/.test(err.message)
     );
   });
 
-  it("should reject overly long bucket names", () => {
-    assert.throws(
-      () => db.storage.list("a".repeat(64)),
+  it("should reject overly long bucket names", async () => {
+    await assert.rejects(
+      async () => await db.storage.list("a".repeat(64)),
       (err) => err instanceof StorageError && /Invalid bucket name/.test(err.message)
     );
   });
 
-  it("should reject bucket names starting or ending with hyphen", () => {
-    assert.throws(
-      () => db.storage.list("-bucket"),
+  it("should reject bucket names starting or ending with hyphen", async () => {
+    await assert.rejects(
+      async () => await db.storage.list("-bucket"),
       (err) => err instanceof StorageError && /Invalid bucket name/.test(err.message)
     );
-    assert.throws(
-      () => db.storage.list("bucket-"),
+    await assert.rejects(
+      async () => await db.storage.list("bucket-"),
       (err) => err instanceof StorageError && /Invalid bucket name/.test(err.message)
     );
   });
@@ -238,12 +238,12 @@ describe("StorageEngine", () => {
       stream: makeStream("a"),
     });
 
-    const cross = db.storage.get("bucket-b", saved.storedName);
+    const cross = await db.storage.get("bucket-b", saved.storedName);
     assert.equal(cross, null);
   });
 
-  it("should report public buckets from config", () => {
-    const publicDb = new Database({
+  it("should report public buckets from config", async () => {
+    const publicDb = await Database.open({
       schema: testSchema,
       dataDir: tmp,
       buckets: [{ name: "public-bucket", public: true }],
@@ -251,13 +251,13 @@ describe("StorageEngine", () => {
     });
     assert.equal(publicDb.storage.isPublic("public-bucket"), true);
     assert.equal(publicDb.storage.isPublic("private-bucket"), false);
-    publicDb.close();
+    await publicDb.close();
   });
 
-  it("should reject invalid bucket names in config", () => {
-    assert.throws(
-      () =>
-        new Database({
+  it("should reject invalid bucket names in config", async () => {
+    await assert.rejects(
+      async () =>
+        await Database.open({
           schema: testSchema,
           dataDir: tmp,
           buckets: [{ name: "BadName" }],
@@ -269,7 +269,7 @@ describe("StorageEngine", () => {
 
   it("should remain usable after resetting user tables", async () => {
     const resetTmp = tempDir();
-    const resetDb = new Database({
+    const resetDb = await Database.open({
       schema: testSchema,
       dataDir: resetTmp,
     });
@@ -280,18 +280,18 @@ describe("StorageEngine", () => {
         stream: makeStream("before"),
       });
 
-      const applied = resetDb.reset();
+      const applied = await resetDb.reset();
       assert.ok(applied.includes("users"));
-      assert.ok(resetDb.storage.get("documents", first.storedName));
+      assert.ok(await resetDb.storage.get("documents", first.storedName));
 
       const second = await resetDb.storage.save("documents", {
         originalName: "after-reset.txt",
         stream: makeStream("after"),
       });
-      assert.ok(resetDb.storage.get("documents", second.storedName));
-      assert.equal(resetDb.migrate().length, 0);
+      assert.ok(await resetDb.storage.get("documents", second.storedName));
+      assert.equal((await resetDb.migrate()).length, 0);
     } finally {
-      resetDb.close();
+      await resetDb.close();
       fs.rmSync(resetTmp, { recursive: true, force: true });
     }
   });

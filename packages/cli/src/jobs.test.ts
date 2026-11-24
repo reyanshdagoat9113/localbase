@@ -108,9 +108,9 @@ function run(args: string[], dir: string): RunResult {
 }
 
 /** Open the project's DB directly to inspect `_job_runs` rows. */
-function openDb(dir: string): Database {
+async function openDb(dir: string): Promise<Database> {
   const dbPath = path.join(dir, ".localbase", "data.db");
-  return new Database({
+  return await Database.open({
     path: dbPath,
     schema: {
       items: {
@@ -132,11 +132,11 @@ interface JobRunRow {
   error: string | null;
 }
 
-function runsFor(db: Database, name: string): JobRunRow[] {
-  return db.select("_job_runs", {
+async function runsFor(db: Database, name: string): Promise<JobRunRow[]> {
+  return (await db.select("_job_runs", {
     filters: [{ column: "job_name", operator: "eq", value: name }],
     orderBy: [{ column: "id", direction: "desc" }],
-  }) as JobRunRow[];
+  })) as JobRunRow[];
 }
 
 describe("localbase jobs command registration", () => {
@@ -195,7 +195,7 @@ describe("localbase jobs list", () => {
 });
 
 describe("localbase jobs run <name>", () => {
-  it("triggers the job immediately and writes a success row in _job_runs", () => {
+  it("triggers the job immediately and writes a success row in _job_runs", async () => {
     const dir = path.join(tmpRoot, `run-ok-${Date.now()}`);
     fs.mkdirSync(dir, { recursive: true });
     writeProject(dir, {
@@ -208,18 +208,18 @@ describe("localbase jobs run <name>", () => {
     assert.match(result.stdout, /run #1/);
 
     // Verify against the DB: exactly one success row for this job.
-    const db = openDb(dir);
+    const db = await openDb(dir);
     try {
-      const rows = runsFor(db, "cleanup");
+      const rows = await runsFor(db, "cleanup");
       assert.equal(rows.length, 1);
       assert.equal(rows[0].status, "success");
       assert.match(rows[0].output as string, /ran now/);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
-  it("records a failed run and exits non-zero", () => {
+  it("records a failed run and exits non-zero", async () => {
     const dir = path.join(tmpRoot, `run-fail-${Date.now()}`);
     fs.mkdirSync(dir, { recursive: true });
     writeProject(dir, {
@@ -231,18 +231,18 @@ describe("localbase jobs run <name>", () => {
     assert.match(result.stdout + result.stderr, /failed/i);
     assert.match(result.stdout + result.stderr, /boom/);
 
-    const db = openDb(dir);
+    const db = await openDb(dir);
     try {
-      const rows = runsFor(db, "cleanup");
+      const rows = await runsFor(db, "cleanup");
       assert.equal(rows.length, 1);
       assert.equal(rows[0].status, "failed");
       assert.equal(rows[0].error, "boom");
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
-  it("fails for an unknown job name (no row written)", () => {
+  it("fails for an unknown job name (no row written)", async () => {
     const dir = path.join(tmpRoot, `run-unknown-${Date.now()}`);
     fs.mkdirSync(dir, { recursive: true });
     writeProject(dir);
@@ -251,12 +251,12 @@ describe("localbase jobs run <name>", () => {
     assert.equal(result.status, 1);
     assert.match(result.stderr + result.stdout, /Unknown job/i);
 
-    const db = openDb(dir);
+    const db = await openDb(dir);
     try {
-      assert.equal(runsFor(db, "ghost").length, 0);
-      assert.equal(runsFor(db, "cleanup").length, 0);
+      assert.equal((await runsFor(db, "ghost")).length, 0);
+      assert.equal((await runsFor(db, "cleanup")).length, 0);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });

@@ -37,9 +37,9 @@ export function createAuthRouter(
     if (options.rateLimit) router.use(path, options.rateLimit);
   };
 
-  router.get("/api/auth/admin-registration", (c) => {
+  router.get("/api/auth/admin-registration", async (c) => {
     c.header("Cache-Control", "no-store");
-    return c.json({ data: { ownerExists: auth.hasOwner() } });
+    return c.json({ data: { ownerExists: await auth.hasOwner() } });
   });
 
   // `admin-requests` is abuse-sensitive (unauthenticated write that persists a
@@ -114,9 +114,9 @@ export function createAuthRouter(
   );
 
   // GET /api/auth/user
-  router.get("/api/auth/user", requireAuth(jwtSecret), (c) => {
+  router.get("/api/auth/user", requireAuth(jwtSecret), async (c) => {
     const { id } = c.get("user");
-    const user = auth.getUser(id);
+    const user = await auth.getUser(id);
     if (!user) {
       return c.json({ error: "User not found" }, 404);
     }

@@ -38,7 +38,7 @@ describe("End-to-end: init → dev → SDK CRUD", () => {
   let server: ReturnType<typeof serve>;
   let baseUrl: string;
 
-  before(() => {
+  before(async () => {
     // Simulates what `localbase init` does: create .localbase/ dir + config file
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "localbase-e2e-"));
     const localbaseDir = path.join(tmpDir, ".localbase");
@@ -49,7 +49,7 @@ describe("End-to-end: init → dev → SDK CRUD", () => {
     );
 
     // Boot a real database + API server on a random port
-    db = new Database({
+    db = await Database.open({
       path: path.join(localbaseDir, "data.db"),
       schema,
     });
@@ -60,9 +60,9 @@ describe("End-to-end: init → dev → SDK CRUD", () => {
     baseUrl = `http://localhost:${port}`;
   });
 
-  after(() => {
+  after(async () => {
     server.close();
-    db.close();
+    await db.close();
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 

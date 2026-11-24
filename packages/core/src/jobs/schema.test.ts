@@ -14,7 +14,7 @@ const baseSchema: DatabaseSchema = {
 /** Queries sqlite_master for a table name. */
 function tableExists(db: Database, name: string): boolean {
   const row = db
-    .raw()
+    .sqliteRaw()
     .prepare(
       `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`
     )
@@ -25,7 +25,7 @@ function tableExists(db: Database, name: string): boolean {
 /** Returns the column names of a table, in declaration order. */
 function columnsOf(db: Database, name: string): string[] {
   const rows = db
-    .raw()
+    .sqliteRaw()
     .prepare(`PRAGMA table_info(${JSON.stringify(name)})`)
     .all() as Array<{ name: string }>;
   return rows.map((c) => c.name);
@@ -66,8 +66,8 @@ describe("JOBS_SCHEMA", () => {
 });
 
 describe("Database jobs provisioning (M1)", () => {
-  it("creates _job_runs after migrate when a jobs map is configured", () => {
-    const db = new Database({
+  it("creates _job_runs after migrate when a jobs map is configured", async () => {
+    const db = await Database.open({
       schema: baseSchema,
       jobs: {
         cleanup: { schedule: "0 3 * * *", handler: "./jobs/cleanup.ts" },
@@ -77,7 +77,7 @@ describe("Database jobs provisioning (M1)", () => {
       assert.equal(db.getJobsEnabled(), true);
       assert.ok(tableExists(db, "_job_runs"), "_job_runs should exist");
       assert.ok(
-        db.getAppliedMigrations().has("_job_runs"),
+        (await db.getAppliedMigrations()).has("_job_runs"),
         "_job_runs migration should be recorded"
       );
       assert.deepEqual(columnsOf(db, "_job_runs"), [
@@ -91,12 +91,12 @@ describe("Database jobs provisioning (M1)", () => {
         "error",
       ]);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
-  it("does NOT create _job_runs when no jobs map is configured", () => {
-    const db = new Database({ schema: baseSchema });
+  it("does NOT create _job_runs when no jobs map is configured", async () => {
+    const db = await Database.open({ schema: baseSchema });
     try {
       assert.equal(db.getJobsEnabled(), false);
       assert.equal(
@@ -105,26 +105,26 @@ describe("Database jobs provisioning (M1)", () => {
         "_job_runs must not exist without a jobs config"
       );
       assert.equal(
-        db.getAppliedMigrations().has("_job_runs"),
+        (await db.getAppliedMigrations()).has("_job_runs"),
         false
       );
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
-  it("an empty jobs map still provisions _job_runs (config opted in)", () => {
-    const db = new Database({ schema: baseSchema, jobs: {} });
+  it("an empty jobs map still provisions _job_runs (config opted in)", async () => {
+    const db = await Database.open({ schema: baseSchema, jobs: {} });
     try {
       assert.equal(db.getJobsEnabled(), true);
       assert.ok(tableExists(db, "_job_runs"));
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
-  it("provisions _job_runs alongside auth and storage system tables", () => {
-    const db = new Database({
+  it("provisions _job_runs alongside auth and storage system tables", async () => {
+    const db = await Database.open({
       schema: baseSchema,
       auth: { enabled: true, jwtSecret: "test-secret-do-not-use-in-prod" },
       jobs: { nightly: { schedule: "0 0 * * *", handler: "./jobs/n.ts" } },
@@ -136,35 +136,35 @@ describe("Database jobs provisioning (M1)", () => {
       assert.ok(tableExists(db, "_sessions"));
       assert.ok(tableExists(db, "widgets"));
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
-  it("preserves _job_runs across reset() (it is a _-prefixed system table)", () => {
-    const db = new Database({
+  it("preserves _job_runs across reset() (it is a _-prefixed system table)", async () => {
+    const db = await Database.open({
       schema: baseSchema,
       jobs: { cleanup: { schedule: "0 3 * * *", handler: "./jobs/cleanup.ts" } },
     });
     try {
-      db.insert("_job_runs", {
+      await db.insert("_job_runs", {
         job_name: "cleanup",
         status: "success",
       });
-      assert.equal(db.select("_job_runs").length, 1);
+      assert.equal((await db.select("_job_runs")).length, 1);
 
-      db.reset();
+      await db.reset();
 
       // User table was wiped...
-      assert.equal(db.select("widgets").length, 0);
+      assert.equal((await db.select("widgets")).length, 0);
       // ...but the system job-run table survives reset.
       assert.ok(tableExists(db, "_job_runs"));
       assert.equal(
-        db.select("_job_runs").length,
+        (await db.select("_job_runs")).length,
         1,
         "_job_runs rows must survive reset()"
       );
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });

@@ -44,7 +44,7 @@ describe("SDK storage", () => {
     // Use an isolated temp data dir so the storage engine never writes
     // artifacts into the package directory.
     tmp = fs.mkdtempSync(path.join(os.tmpdir(), "localbase-sdk-storage-"));
-    db = new Database({
+    db = await Database.open({
       schema: testSchema,
       auth: {
         enabled: true,
@@ -74,8 +74,8 @@ describe("SDK storage", () => {
     if (error) throw new Error(`signup failed: ${error}`);
   });
 
-  after(() => {
-    db.close();
+  after(async () => {
+    await db.close();
     server.close();
     fs.rmSync(tmp, { recursive: true, force: true });
   });

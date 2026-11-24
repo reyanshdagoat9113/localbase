@@ -5,11 +5,11 @@ import type {
   IntrospectedTable,
 } from "@localbase/shared";
 import type { Database } from "../db.js";
-import {
-  select,
-  type Filter,
-  type FilterOperator,
-  type OrderBy,
+import { DatabaseError, type SqlDialect } from "../db/index.js";
+import type {
+  Filter,
+  FilterOperator,
+  OrderBy,
 } from "../query.js";
 import { requireAdmin, type AdminVariables } from "../auth/middleware.js";
 import type { Auth } from "../auth/index.js";
@@ -139,8 +139,8 @@ export function createAdminRouter(
   // walks the catalog each call. The admin SPA caches the result in
   // TanStack Query; we don't add server-side memoization because the
   // admin is a dev/management tool, not a hot path.
-  router.get("/_api/admin/schema", (c) => {
-    const schema = db.introspect();
+  router.get("/_api/admin/schema", async (c) => {
+    const schema = await db.introspect();
     return c.json({
       data: {
         ...schema,
@@ -150,11 +150,8 @@ export function createAdminRouter(
   });
 
   // ── GET /_api/admin/tables ─────────────────────────────────
-  // Lightweight table list — names + row counts + system flag. The
-  // table browser calls this to populate the sidebar; only the active
-  // table pays the cost of full schema introspection.
-  router.get("/_api/admin/tables", (c) => {
-    const schema = db.introspect();
+  router.get("/_api/admin/tables", async (c) => {
+    const schema = await db.introspect();
     const data = schema.tables
       .filter((table) => table.name !== "_admin_requests")
       .map((t) => ({
@@ -166,9 +163,7 @@ export function createAdminRouter(
   });
 
   // ── GET /_api/admin/tables/:table/rows ─────────────────────
-  // Paginated, sorted, filtered rows. Returns `{ rows, total }` so the
-  // grid can show "showing 1–25 of 137" without an extra request.
-  router.get("/_api/admin/tables/:table/rows", (c) => {
+  router.get("/_api/admin/tables/:table/rows", async (c) => {
     const tableName = c.req.param("table");
     if (tableName === "_admin_requests") {
       return c.json(
@@ -176,29 +171,16 @@ export function createAdminRouter(
         403
       );
     }
-    if (!tableExists(db, tableName)) {
-      return c.json({ error: `Unknown table: "${tableName}"` }, 404);
-    }
 
     try {
-      const table = findTable(db, tableName);
+      const table = await findTable(db, tableName);
       const url = new URL(c.req.url);
       const { limit, offset } = parsePagination(url);
       const orderBy = parseOrderBy(url, table);
       const filters = parseFilters(url, table);
 
-      // Total count is computed with the same WHERE clause (no LIMIT)
-      // so the grid's "X of Y" indicator is correct under filters. Routed
-      // through Database.count (not a hand-rolled `FROM "${table}"`) so the
-      // table name and every filter column are validated and values stay
-      // bound — never interpolate an unchecked identifier.
-      const total = db.count(tableName, filters);
-
-      const rows = select(
-        db.raw(),
-        tableName,
-        { filters, orderBy, limit, offset }
-      );
+      const total = await db.count(tableName, filters);
+      const rows = await db.select(tableName, { filters, orderBy, limit, offset });
 
       return c.json({ data: { rows, total } });
     } catch (err) {
@@ -209,17 +191,14 @@ export function createAdminRouter(
   // ── POST /_api/admin/tables/:table/rows ────────────────────
   router.post("/_api/admin/tables/:table/rows", async (c) => {
     const tableName = c.req.param("table");
-    if (!tableExists(db, tableName)) {
-      return c.json({ error: `Unknown table: "${tableName}"` }, 404);
-    }
 
     try {
+      const table = await findTable(db, tableName);
       assertNotSystemTable(tableName); // security gate
-      const body = await readJson(c);
-      const table = findTable(db, tableName);
       assertNotVirtualTable(table); // virtual tables are read-only
-      const validated = validateBody(body, table, false);
-      const inserted = db.insert(tableName, validated);
+      const body = await readJson(c);
+      const validated = validateBody(body, table, db.dialect, false);
+      const inserted = await db.insert(tableName, validated);
       return c.json({ data: inserted[0] ?? null }, 201);
     } catch (err) {
       return adminErrorResponse(c, err);
@@ -229,19 +208,17 @@ export function createAdminRouter(
   // ── PATCH /_api/admin/tables/:table/rows/:id ───────────────
   router.patch("/_api/admin/tables/:table/rows/:id", async (c) => {
     const tableName = c.req.param("table");
-    const id = c.req.param("id");
-    if (!tableExists(db, tableName)) {
-      return c.json({ error: `Unknown table: "${tableName}"` }, 404);
-    }
+    const rawId = c.req.param("id");
 
     try {
+      const table = await findTable(db, tableName);
       assertNotSystemTable(tableName); // security gate
-      const body = await readJson(c);
-      const table = findTable(db, tableName);
       assertNotVirtualTable(table); // virtual tables are read-only
-      const validated = validateBody(body, table, true);
+      const body = await readJson(c);
+      const validated = validateBody(body, table, db.dialect, true);
       const pkCol = getSinglePrimaryKey(table);
-      const result = db.update(
+      const id = parseAdminPathId(rawId, table, pkCol);
+      const result = await db.update(
         tableName,
         validated,
         [{ column: pkCol, operator: "eq", value: id }]
@@ -256,19 +233,17 @@ export function createAdminRouter(
   });
 
   // ── DELETE /_api/admin/tables/:table/rows/:id ──────────────
-  router.delete("/_api/admin/tables/:table/rows/:id", (c) => {
+  router.delete("/_api/admin/tables/:table/rows/:id", async (c) => {
     const tableName = c.req.param("table");
-    const id = c.req.param("id");
-    if (!tableExists(db, tableName)) {
-      return c.json({ error: `Unknown table: "${tableName}"` }, 404);
-    }
+    const rawId = c.req.param("id");
 
     try {
+      const table = await findTable(db, tableName);
       assertNotSystemTable(tableName); // security gate
-      const table = findTable(db, tableName);
       assertNotVirtualTable(table); // virtual tables are read-only
       const pkCol = getSinglePrimaryKey(table);
-      const count = db.delete(tableName, [
+      const id = parseAdminPathId(rawId, table, pkCol);
+      const count = await db.delete(tableName, [
         { column: pkCol, operator: "eq", value: id },
       ]);
       if (count === 0) {
@@ -295,14 +270,10 @@ export function createAdminRouter(
   if (options.auth) {
     const auth = options.auth;
 
-    // GET /_api/admin/users — list users, oldest first. Hashes are never
-    // returned (Auth.publicUser strips them).
-    router.get("/_api/admin/users", (c) => {
-      return c.json({ data: auth.listUsers() });
+    router.get("/_api/admin/users", async (c) => {
+      return c.json({ data: await auth.listUsers() });
     });
 
-    // POST /_api/admin/users — create a user. New users are role=user; promote
-    // via the role endpoint below. Matches the CLI (`createUser`) default.
     router.post("/_api/admin/users", async (c) => {
       try {
         const body = await readJson(c);
@@ -313,10 +284,6 @@ export function createAdminRouter(
       }
     });
 
-    // POST /_api/admin/users/:id/reset-password — set a new password.
-    // Rate-limited as a "password operation": it runs argon2 hashing and an
-    // authenticated admin could otherwise be abused to burn server CPU. The
-    // limiter is registered as path-scoped middleware ahead of the handler.
     if (rl) router.use("/_api/admin/users/:id/reset-password", rl);
     router.post("/_api/admin/users/:id/reset-password", async (c) => {
       try {
@@ -332,15 +299,11 @@ export function createAdminRouter(
       }
     });
 
-    // PATCH /_api/admin/users/:id/role — promote/demote. The actor email comes
-    // from the admin principal so `setRole` can phrase the last-admin lockout
-    // error for self-demotion specifically. Enforcement of the lockout is in
-    // `Auth.setRole`; the UI adds a confirmation prompt for self-demotion.
     router.patch("/_api/admin/users/:id/role", async (c) => {
       try {
         const body = await readJson(c);
         const actorEmail = c.get("adminUser")?.email;
-        const user = auth.setRoleById(
+        const user = await auth.setRoleById(
           c.req.param("id"),
           body.role,
           actorEmail
@@ -351,12 +314,12 @@ export function createAdminRouter(
       }
     });
 
-    router.get("/_api/admin/admin-requests", (c) => {
+    router.get("/_api/admin/admin-requests", async (c) => {
       try {
         const url = new URL(c.req.url);
         const limit = parseBoundedInteger(url.searchParams.get("limit"), 100, 1, 100);
         const offset = parseBoundedInteger(url.searchParams.get("offset"), 0, 0, Number.MAX_SAFE_INTEGER);
-        const data = auth.listAdminRequests(
+        const data = await auth.listAdminRequests(
           c.get("adminUser")?.role,
           limit,
           offset
@@ -367,9 +330,9 @@ export function createAdminRouter(
       }
     });
 
-    router.post("/_api/admin/admin-requests/:id/approve", (c) => {
+    router.post("/_api/admin/admin-requests/:id/approve", async (c) => {
       try {
-        const user = auth.approveAdminRequest(
+        const user = await auth.approveAdminRequest(
           c.req.param("id"),
           c.get("adminUser")?.role
         );
@@ -379,9 +342,9 @@ export function createAdminRouter(
       }
     });
 
-    router.delete("/_api/admin/admin-requests/:id", (c) => {
+    router.delete("/_api/admin/admin-requests/:id", async (c) => {
       try {
-        auth.rejectAdminRequest(c.req.param("id"), c.get("adminUser")?.role);
+        await auth.rejectAdminRequest(c.req.param("id"), c.get("adminUser")?.role);
         return c.json({ data: { deleted: true } });
       } catch (err) {
         return adminErrorResponse(c, err);
@@ -390,16 +353,14 @@ export function createAdminRouter(
   }
 
   // ── Scheduled Jobs: /_api/admin/jobs/* ─────────────────────
-  // Only registered config names are accepted. A request parameter is never
-  // interpreted as a handler path, preserving the code-execution boundary.
   if (options.scheduler) {
     const scheduler = options.scheduler;
 
-    router.get("/_api/admin/jobs", (c) => {
-      return c.json({ data: scheduler.listJobs() });
+    router.get("/_api/admin/jobs", async (c) => {
+      return c.json({ data: await scheduler.listJobs() });
     });
 
-    router.get("/_api/admin/jobs/:name/runs", (c) => {
+    router.get("/_api/admin/jobs/:name/runs", async (c) => {
       const name = c.req.param("name");
       if (!scheduler.getJob(name)) {
         return c.json({ error: `Unknown job: "${name}"` }, 404);
@@ -413,18 +374,16 @@ export function createAdminRouter(
         0,
         Number.MAX_SAFE_INTEGER
       );
-      return c.json({ data: scheduler.getRuns(name, { limit, offset }) });
+      return c.json({ data: await scheduler.getRuns(name, { limit, offset }) });
     });
 
-    router.post("/_api/admin/jobs/:name/run", (c) => {
+    router.post("/_api/admin/jobs/:name/run", async (c) => {
       const name = c.req.param("name");
       if (!scheduler.getJob(name)) {
         return c.json({ error: `Unknown job: "${name}"` }, 404);
       }
 
-      const triggered = scheduler.triggerNow(name);
-      // Observe completion so a future unexpected runner rejection cannot
-      // become unhandled after this request has returned.
+      const triggered = await scheduler.triggerNow(name);
       void triggered.completion.catch(() => {});
       if (triggered.runId === null) {
         return c.json({ error: `Job "${name}" is already running` }, 409);
@@ -569,6 +528,7 @@ function parsePagination(url: URL): { limit?: number; offset?: number } {
 function validateBody(
   body: Record<string, unknown>,
   table: IntrospectedTable,
+  dialect: SqlDialect,
   partial: boolean
 ): Record<string, unknown> {
   const colMap = new Map(table.columns.map((c) => [c.name, c]));
@@ -586,7 +546,7 @@ function validateBody(
       validated[key] = null;
       continue;
     }
-    validated[key] = coerceBodyValue(key, value, col);
+    validated[key] = coerceBodyValue(key, value, col, dialect);
   }
 
   if (partial && Object.keys(validated).length === 0) {
@@ -613,9 +573,26 @@ function validateBody(
 function coerceBodyValue(
   column: string,
   value: unknown,
-  col: IntrospectedColumn
+  col: IntrospectedColumn,
+  dialect: SqlDialect
 ): unknown {
   switch (col.type) {
+    case "BOOLEAN": {
+      if (typeof value === "boolean") return dialect.encodeBoolean(value);
+      if (typeof value === "number" && Number.isFinite(value)) {
+        return dialect.encodeBoolean(value !== 0);
+      }
+      if (typeof value === "string") {
+        const lower = value.trim().toLowerCase();
+        if (lower === "true") return dialect.encodeBoolean(true);
+        if (lower === "false") return dialect.encodeBoolean(false);
+        if (lower !== "") {
+          const n = Number(lower);
+          if (Number.isFinite(n)) return dialect.encodeBoolean(n !== 0);
+        }
+      }
+      throw new AdminError(400, `Column "${column}": expected a boolean`);
+    }
     case "INTEGER":
     case "BIGINT": {
       if (typeof value === "number") return Math.trunc(value);
@@ -632,10 +609,11 @@ function coerceBodyValue(
         }
         return Math.trunc(n);
       }
-      if (typeof value === "boolean") return value ? 1 : 0;
+      if (typeof value === "boolean") return dialect.encodeBoolean(value);
       throw new AdminError(400, `Column "${column}": expected a number`);
     }
-    case "REAL": {
+    case "REAL":
+    case "DOUBLE PRECISION": {
       if (typeof value === "number") return value;
       if (typeof value === "string") {
         if (value.trim() === "") {
@@ -659,22 +637,38 @@ function coerceBodyValue(
 
 // ─── Helpers ──────────────────────────────────────────────────
 
-function tableExists(db: Database, name: string): boolean {
-  return db
-    .raw()
-    .prepare(
-      `SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = ?`
-    )
-    .get(name) !== undefined;
-}
-
-function findTable(db: Database, name: string): IntrospectedTable {
-  const schema = db.introspect();
-  const t = schema.tables.find((t) => t.name === name);
+async function findTable(db: Database, name: string): Promise<IntrospectedTable> {
+  const t = await db.introspectTable(name);
   if (!t) {
     throw new AdminError(404, `Unknown table: "${name}"`);
   }
   return t;
+}
+
+function parseAdminPathId(
+  raw: string,
+  table: IntrospectedTable,
+  pkCol: string
+): number | string {
+  const col = table.columns.find((c) => c.name === pkCol);
+  if (!col) return raw;
+  if (col.type === "INTEGER" || col.type === "BIGINT") {
+    const trimmed = raw.trim();
+    const n = Number(trimmed);
+    if (trimmed === "" || !Number.isInteger(n)) {
+      throw new AdminError(400, `Invalid id "${raw}": expected an integer`);
+    }
+    return n;
+  }
+  if (col.type === "REAL" || col.type === "DOUBLE PRECISION") {
+    const trimmed = raw.trim();
+    const n = Number(trimmed);
+    if (trimmed === "" || !Number.isFinite(n)) {
+      throw new AdminError(400, `Invalid id "${raw}": expected a number`);
+    }
+    return n;
+  }
+  return raw;
 }
 
 function getSinglePrimaryKey(table: IntrospectedTable): string {
@@ -717,19 +711,22 @@ function adminErrorResponse(
       return c.json({ error: err.message }, status as 400 | 401 | 403 | 404 | 409);
     }
   }
-  if (err instanceof Error && "code" in err) {
-    const sqliteErr = err as Error & { code: string };
-    if (sqliteErr.code === "SQLITE_CONSTRAINT_UNIQUE") {
-      return c.json({ error: sqliteErr.message }, 409);
+  if (err instanceof DatabaseError) {
+    if (err.code === "unique") {
+      return c.json({ error: err.message }, 409);
     }
-    if (sqliteErr.code === "SQLITE_CONSTRAINT_FOREIGNKEY") {
+    if (err.code === "foreign_key") {
       return c.json(
         { error: "Foreign key constraint failed." },
         409
       );
     }
-    if (sqliteErr.code.startsWith("SQLITE_CONSTRAINT")) {
-      return c.json({ error: sqliteErr.message }, 400);
+    if (
+      err.code === "not_null" ||
+      err.code === "constraint" ||
+      err.code === "invalid_input"
+    ) {
+      return c.json({ error: err.message }, 400);
     }
   }
   console.error("Admin error:", err);

@@ -38,8 +38,8 @@ const authOptions = {
   minPasswordLength: 8,
 };
 
-function makeDb(auth = true) {
-  return new Database({
+async function makeDb(auth = true) {
+  return await Database.open({
     schema: testSchema,
     auth: auth ? { enabled: true, ...authOptions } : undefined,
   });
@@ -78,12 +78,12 @@ describe("Auth class", () => {
   let db: Database;
   let auth: Auth;
 
-  beforeEach(() => {
-    db = makeDb();
+  beforeEach(async () => {
+    db = await makeDb();
     auth = makeAuth(db);
   });
 
-  after(() => db.close());
+  after(async () => await db.close());
 
   it("signUp creates a user and returns a session", async () => {
     const session = await auth.signUp({
@@ -98,16 +98,16 @@ describe("Auth class", () => {
     assert.ok(session.expiresAt > Math.floor(Date.now() / 1000));
 
     // Verify the user is in _users with a hashed password (not plaintext)
-    const rows = db.select("_users", {
+    const rows = (await db.select("_users", {
       filters: [{ column: "email", operator: "eq", value: "alice@test.com" }],
-    }) as Array<{ email: string; password_hash: string }>;
+    })) as Array<{ email: string; password_hash: string }>;
     assert.equal(rows.length, 1);
     assert.equal(rows[0].email, "alice@test.com");
     assert.notEqual(rows[0].password_hash, "supersecret");
     assert.match(rows[0].password_hash, /^\$argon2/);
 
     // Verify the session row landed
-    const sessions = db.select("_sessions") as Array<{
+    const sessions = (await db.select("_sessions")) as Array<{
       user_id: number;
       token: string;
     }>;
@@ -219,13 +219,13 @@ describe("Auth class", () => {
       email: "alice@test.com",
       password: "supersecret",
     });
-    const fetched = auth.getUser(session.user.id);
+    const fetched = await auth.getUser(session.user.id);
     assert.ok(fetched);
     assert.equal(fetched.email, "alice@test.com");
   });
 
-  it("getUser returns null for unknown id", () => {
-    assert.equal(auth.getUser(9999), null);
+  it("getUser returns null for unknown id", async () => {
+    assert.equal(await auth.getUser(9999), null);
   });
 
   it("signOut deletes the session by refresh token", async () => {
@@ -235,7 +235,7 @@ describe("Auth class", () => {
     });
     await auth.signOut(session.refreshToken);
 
-    const remaining = db.select("_sessions", {
+    const remaining = await db.select("_sessions", {
       filters: [{ column: "token", operator: "eq", value: session.refreshToken }],
     });
     assert.equal(remaining.length, 0);
@@ -278,7 +278,7 @@ describe("Auth class", () => {
       email: "alice@test.com",
       password: "supersecret",
     });
-    db.insert("_sessions", {
+    await db.insert("_sessions", {
       user_id: user.id,
       token: "expired-token",
       expires_at: new Date(Date.now() - 1000).toISOString(),
@@ -293,7 +293,7 @@ describe("Auth class", () => {
     );
 
     // The expired session should be cleaned up
-    const rows = db.select("_sessions", {
+    const rows = await db.select("_sessions", {
       filters: [{ column: "token", operator: "eq", value: "expired-token" }],
     });
     assert.equal(rows.length, 0);
@@ -318,21 +318,21 @@ describe("Auth class", () => {
       email: "alice@test.com",
       password: "supersecret",
     });
-    db.insert("_sessions", {
+    await db.insert("_sessions", {
       user_id: user.id,
       token: "orphan-token",
       expires_at: new Date(Date.now() + 100000).toISOString(),
     });
-    db.raw().pragma("foreign_keys = OFF");
+    db.sqliteRaw().pragma("foreign_keys = OFF");
     try {
-      db.raw().prepare("DELETE FROM _users WHERE id = ?").run(user.id);
+      db.sqliteRaw().prepare("DELETE FROM _users WHERE id = ?").run(user.id);
     } finally {
-      db.raw().pragma("foreign_keys = ON");
+      db.sqliteRaw().pragma("foreign_keys = ON");
     }
 
     await captureError(() => auth.refresh("orphan-token"));
     // Verify the orphan session was cleaned up
-    const remaining = db.select("_sessions", {
+    const remaining = await db.select("_sessions", {
       filters: [{ column: "token", operator: "eq", value: "orphan-token" }],
     });
     assert.equal(remaining.length, 0);
@@ -346,7 +346,7 @@ describe("Auth class", () => {
     assert.equal(user.email, "alice@test.com");
     assert.ok(user.id);
     // No session was created
-    const sessions = db.select("_sessions");
+    const sessions = await db.select("_sessions");
     assert.equal(sessions.length, 0);
   });
 
@@ -354,7 +354,7 @@ describe("Auth class", () => {
     await auth.createUser({ email: "alice@test.com", password: "supersecret1" });
     await auth.createUser({ email: "bob@test.com", password: "supersecret2" });
 
-    const users = auth.listUsers();
+    const users = await auth.listUsers();
     assert.equal(users.length, 2);
     // Order is by created_at asc
     assert.equal(users[0].email, "alice@test.com");
@@ -396,23 +396,43 @@ describe("Auth class", () => {
 
   it("setRole distinguishes self-demotion from demoting another last admin", async () => {
     await auth.createUser({ email: "onlyadmin@test.com", password: "supersecret1" });
-    auth.setRole("onlyadmin@test.com", "admin");
+    await auth.setRole("onlyadmin@test.com", "admin");
 
-    assert.throws(
-      () => auth.setRole("onlyadmin@test.com", "user", "onlyadmin@test.com"),
+    await assert.rejects(
+      async () => await auth.setRole("onlyadmin@test.com", "user", "onlyadmin@test.com"),
       (err: unknown) =>
         err instanceof AuthError &&
         err.status === 409 &&
         /yourself/i.test(err.message)
     );
 
-    assert.throws(
-      () => auth.setRole("onlyadmin@test.com", "user", "other@test.com"),
+    await assert.rejects(
+      async () => await auth.setRole("onlyadmin@test.com", "user", "other@test.com"),
       (err: unknown) =>
         err instanceof AuthError &&
         err.status === 409 &&
         !/yourself/i.test(err.message) &&
         /they are the last admin/i.test(err.message)
+    );
+  });
+
+  it("refresh() is atomic under concurrent requests with the same token", async () => {
+    const initial = await auth.signUp({
+      email: "race@test.com",
+      password: "supersecret1",
+    });
+
+    const results = await Promise.allSettled([
+      auth.refresh(initial.refreshToken),
+      auth.refresh(initial.refreshToken),
+    ]);
+
+    const fulfilled = results.filter((r) => r.status === "fulfilled");
+    const rejected = results.filter((r) => r.status === "rejected");
+    assert.equal(fulfilled.length, 1, "exactly one concurrent refresh must succeed");
+    assert.equal(rejected.length, 1, "the second concurrent refresh must be rejected");
+    assert.ok(
+      rejected[0].reason instanceof AuthError && rejected[0].reason.status === 401
     );
   });
 
@@ -430,66 +450,66 @@ describe("Auth class", () => {
 // ─── Database integration ──────────────────────────────────────
 
 describe("Database + auth", () => {
-  it("provisions _users and _sessions tables when auth.enabled", () => {
-    const db = makeDb();
-    const applied = db.getAppliedMigrations();
+  it("provisions _users and _sessions tables when auth.enabled", async () => {
+    const db = await makeDb();
+    const applied = await db.getAppliedMigrations();
     assert.ok(applied.has("_users"));
     assert.ok(applied.has("_sessions"));
-    db.close();
+    await db.close();
   });
 
-  it("does NOT provision auth tables when auth is disabled", () => {
-    const db = makeDb(false);
-    const applied = db.getAppliedMigrations();
+  it("does NOT provision auth tables when auth is disabled", async () => {
+    const db = await makeDb(false);
+    const applied = await db.getAppliedMigrations();
     assert.ok(applied.has("posts"));
     assert.ok(!applied.has("_users"));
     assert.ok(!applied.has("_sessions"));
-    db.close();
+    await db.close();
   });
 
-  it("provisions auth tables when the auth object omits enabled", () => {
-    const db = new Database({
+  it("provisions auth tables when the auth object omits enabled", async () => {
+    const db = await Database.open({
       schema: testSchema,
       auth: { jwtSecret: TEST_SECRET },
     });
-    const applied = db.getAppliedMigrations();
+    const applied = await db.getAppliedMigrations();
     assert.ok(applied.has("_users"));
     assert.ok(applied.has("_sessions"));
     assert.equal(db.getAuthConfig()?.enabled, true);
-    db.close();
+    await db.close();
   });
 
-  it("preserves _users across db.reset()", () => {
-    const db = makeDb();
+  it("preserves _users across db.reset()", async () => {
+    const db = await makeDb();
     // Insert a user
-    db.insert("_users", {
+    await db.insert("_users", {
       email: "alice@test.com",
       password_hash: "fake-hash",
     });
-    const userId = (db.selectById("_users", 1) as { id: number }).id;
+    const userId = ((await db.selectById("_users", 1)) as { id: number }).id;
 
     // Reset — user tables go, system tables stay
-    db.reset();
+    await db.reset();
 
-    const survived = db.selectById("_users", userId) as
+    const survived = (await db.selectById("_users", userId)) as
       | { id: number; email: string }
       | undefined;
     assert.ok(survived, "_users row should survive reset");
     assert.equal(survived.email, "alice@test.com");
-    db.close();
+    await db.close();
   });
 
-  it("getAuthConfig() returns the auth config when enabled", () => {
-    const db = makeDb();
+  it("getAuthConfig() returns the auth config when enabled", async () => {
+    const db = await makeDb();
     const cfg = db.getAuthConfig();
     assert.ok(cfg?.enabled);
-    db.close();
+    await db.close();
   });
 
-  it("getAuthConfig() returns undefined when auth is disabled", () => {
-    const db = makeDb(false);
+  it("getAuthConfig() returns undefined when auth is disabled", async () => {
+    const db = await makeDb(false);
     assert.equal(db.getAuthConfig(), undefined);
-    db.close();
+    await db.close();
   });
 });
 
@@ -629,7 +649,7 @@ describe("requireAuth middleware", () => {
   let userId: number;
 
   before(async () => {
-    db = makeDb();
+    db = await makeDb();
     auth = makeAuth(db);
     const session = await auth.signUp({
       email: "alice@test.com",
@@ -648,7 +668,7 @@ describe("requireAuth middleware", () => {
     });
   });
 
-  after(() => db.close());
+  after(async () => await db.close());
 
   it("401s when Authorization header is missing", async () => {
     const res = await app.request("/protected");
@@ -701,14 +721,14 @@ describe("auth router (HTTP)", () => {
   let app: Hono;
   let db: Database;
 
-  before(() => {
-    db = makeDb();
+  before(async () => {
+    db = await makeDb();
     app = createServer(db, testSchema, {
       auth: { enabled: true, ...authOptions },
     });
   });
 
-  after(() => db.close());
+  after(async () => await db.close());
 
   describe("POST /api/auth/signup", () => {
     it("201s and returns a session on success", async () => {
@@ -986,7 +1006,7 @@ describe("auth router (HTTP)", () => {
 
 describe("auth disabled", () => {
   it("does not mount auth routes when auth.enabled is false", async () => {
-    const db = new Database({ schema: testSchema });
+    const db = await Database.open({ schema: testSchema });
     const app = createServer(db, testSchema, {
       auth: { enabled: false },
     });
@@ -1000,11 +1020,11 @@ describe("auth disabled", () => {
     // generic table API's `Unknown table: "auth"`.
     const body = (await res.json()) as { error?: string };
     assert.match(body.error ?? "", /auth is disabled/i);
-    db.close();
+    await db.close();
   });
 
   it("auth is ENABLED when no auth config is given (safe default)", async () => {
-    const db = new Database({ schema: testSchema });
+    const db = await Database.open({ schema: testSchema });
     const app = createServer(db, testSchema);
     // The auth router is mounted...
     const signup = await app.request("/api/auth/signup", {
@@ -1014,12 +1034,12 @@ describe("auth disabled", () => {
     });
     assert.equal(signup.status, 201);
     // ...and the auth tables are provisioned on the database.
-    assert.ok(db.introspect().tables.some((t) => t.name === "_users"));
-    db.close();
+    assert.ok((await db.introspect()).tables.some((t) => t.name === "_users"));
+    await db.close();
   });
 
   it("accepts the legacy authConfig-as-third-arg shape", async () => {
-    const db = new Database({ schema: testSchema });
+    const db = await Database.open({ schema: testSchema });
     // Passing AuthConfig directly (no `{ auth: ... }` wrapper) should work.
     const app = createServer(db, testSchema, {
       enabled: true,
@@ -1031,6 +1051,6 @@ describe("auth disabled", () => {
       body: JSON.stringify({ email: "x@y.com", password: "supersecret" }),
     });
     assert.equal(res.status, 201);
-    db.close();
+    await db.close();
   });
 });

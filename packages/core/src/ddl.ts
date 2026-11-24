@@ -1,33 +1,24 @@
 import type { ColumnSchema, DatabaseSchema, TableSchema } from "@localbase/shared";
-
-/**
- * Maps our column types to SQLite column types.
- * SQLite stores booleans as INTEGER (0/1).
- */
-function sqliteType(col: ColumnSchema): string {
-  switch (col.type) {
-    case "boolean":
-      return "INTEGER";
-    default:
-      return col.type.toUpperCase();
-  }
-}
+import { sqliteDialect, type SqlDialect } from "./db/index.js";
 
 /**
  * Generates a single column definition for a CREATE TABLE statement.
  * Example output: `"email" TEXT UNIQUE NOT NULL`
  */
-export function columnToDDL(name: string, col: ColumnSchema): string {
+export function columnToDDL(
+  name: string,
+  col: ColumnSchema,
+  dialect: SqlDialect = sqliteDialect
+): string {
   const parts: string[] = [`"${name}"`];
 
-  // Column type
-  parts.push(sqliteType(col));
-
   // Primary key + autoincrement
-  if (col.primaryKey) {
-    parts.push("PRIMARY KEY");
-    if (col.autoIncrement) {
-      parts.push("AUTOINCREMENT");
+  if (col.primaryKey && col.autoIncrement) {
+    parts.push(dialect.autoIncrementPrimaryKey(col));
+  } else {
+    parts.push(dialect.columnType(col));
+    if (col.primaryKey) {
+      parts.push("PRIMARY KEY");
     }
   }
 
@@ -42,8 +33,9 @@ export function columnToDDL(name: string, col: ColumnSchema): string {
   }
 
   // DEFAULT
-  if (col.default !== undefined) {
-    parts.push(`DEFAULT ${col.default}`);
+  const normalizedDefault = dialect.normalizeDefault(col);
+  if (normalizedDefault !== undefined) {
+    parts.push(`DEFAULT ${normalizedDefault}`);
   }
 
   return parts.join(" ");
@@ -100,11 +92,12 @@ export class AdditiveMigrationError extends Error {
 export function columnToAddDDL(
   tableName: string,
   colName: string,
-  col: ColumnSchema
+  col: ColumnSchema,
+  dialect: SqlDialect = sqliteDialect
 ): string {
   if (col.primaryKey) {
     throw new AdditiveMigrationError(
-      `Cannot add column "${colName}" to "${tableName}": SQLite does not ` +
+      `Cannot add column "${colName}" to "${tableName}": additive migrations do not ` +
         `allow ADD COLUMN with a PRIMARY KEY constraint. Recreate the table instead.`
     );
   }
@@ -116,13 +109,13 @@ export function columnToAddDDL(
   }
   if (col.unique) {
     throw new AdditiveMigrationError(
-      `Cannot add column "${colName}" to "${tableName}": SQLite does not ` +
+      `Cannot add column "${colName}" to "${tableName}": additive migrations do not ` +
         `allow ADD COLUMN with a UNIQUE constraint.`
     );
   }
   if (col.references) {
     throw new AdditiveMigrationError(
-      `Cannot add column "${colName}" to "${tableName}": SQLite does not ` +
+      `Cannot add column "${colName}" to "${tableName}": additive migrations do not ` +
         `allow ADD COLUMN with a FOREIGN KEY constraint.`
     );
   }
@@ -138,10 +131,11 @@ export function columnToAddDDL(
 
   const parts: string[] = [
     `ALTER TABLE "${tableName}" ADD COLUMN "${colName}"`,
-    sqliteType(col),
+    dialect.columnType(col),
   ];
   if (notNull) parts.push("NOT NULL");
-  if (col.default !== undefined) parts.push(`DEFAULT ${col.default}`);
+  const normalizedDefault = dialect.normalizeDefault(col);
+  if (normalizedDefault !== undefined) parts.push(`DEFAULT ${normalizedDefault}`);
 
   return parts.join(" ");
 }
@@ -149,12 +143,16 @@ export function columnToAddDDL(
 /**
  * Generates a CREATE TABLE statement for a single table.
  */
-export function tableToDDL(tableName: string, schema: TableSchema): string {
+export function tableToDDL(
+  tableName: string,
+  schema: TableSchema,
+  dialect: SqlDialect = sqliteDialect
+): string {
   const columnDefs: string[] = [];
   const foreignKeys: string[] = [];
 
   for (const [name, col] of Object.entries(schema)) {
-    columnDefs.push(columnToDDL(name, col));
+    columnDefs.push(columnToDDL(name, col, dialect));
 
     const fk = foreignKeyClause(name, col);
     if (fk) foreignKeys.push(fk);
@@ -169,9 +167,12 @@ export function tableToDDL(tableName: string, schema: TableSchema): string {
  * Tables are sorted so that referenced tables come before referencing tables
  * (topological order for foreign keys).
  */
-export function schemaToDDL(schema: DatabaseSchema): string[] {
+export function schemaToDDL(
+  schema: DatabaseSchema,
+  dialect: SqlDialect = sqliteDialect
+): string[] {
   const sorted = topologicalSort(schema);
-  return sorted.map(([name, table]) => tableToDDL(name, table));
+  return sorted.map(([name, table]) => tableToDDL(name, table, dialect));
 }
 
 /**

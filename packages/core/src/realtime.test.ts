@@ -95,19 +95,19 @@ describe("Realtime", () => {
   describe("Database events", () => {
     let db: Database;
 
-    before(() => {
-      db = new Database({ schema: testSchema });
+    before(async () => {
+      db = await Database.open({ schema: testSchema });
     });
 
-    after(() => {
-      db.close();
+    after(async () => {
+      await db.close();
     });
 
     it("emits insert events", async () => {
       const events: unknown[] = [];
       db.on("change", (event) => events.push(event));
 
-      db.insert("messages", { room_id: 1, body: "hello" });
+      await db.insert("messages", { room_id: 1, body: "hello" });
 
       assert.equal(events.length, 1);
       const e = events[0] as { type: string; table: string; row: Record<string, unknown> };
@@ -118,13 +118,13 @@ describe("Realtime", () => {
     });
 
     it("emits update events", async () => {
-      const inserted = db.insert("messages", { room_id: 1, body: "original" });
+      const inserted = await db.insert("messages", { room_id: 1, body: "original" });
       const id = (inserted[0] as Record<string, unknown>).id;
 
       const events: unknown[] = [];
       db.on("change", (event) => events.push(event));
 
-      db.update("messages", { body: "updated" }, [{ column: "id", operator: "eq", value: id }]);
+      await db.update("messages", { body: "updated" }, [{ column: "id", operator: "eq", value: id }]);
 
       assert.equal(events.length, 1);
       const e = events[0] as { type: string; row: Record<string, unknown> };
@@ -133,13 +133,13 @@ describe("Realtime", () => {
     });
 
     it("emits delete events", async () => {
-      const inserted = db.insert("messages", { room_id: 1, body: "to delete" });
+      const inserted = await db.insert("messages", { room_id: 1, body: "to delete" });
       const id = (inserted[0] as Record<string, unknown>).id;
 
       const events: unknown[] = [];
       db.on("change", (event) => events.push(event));
 
-      db.delete("messages", [{ column: "id", operator: "eq", value: id }]);
+      await db.delete("messages", [{ column: "id", operator: "eq", value: id }]);
 
       assert.equal(events.length, 1);
       const e = events[0] as { type: string; row: Record<string, unknown> };
@@ -156,7 +156,7 @@ describe("Realtime", () => {
     let port: number;
 
     before(async () => {
-      db = new Database({ schema: testSchema });
+      db = await Database.open({ schema: testSchema });
       app = createServer(db, testSchema, { auth: { enabled: false } });
       server = serve({ fetch: app.fetch, port: 0 });
       port = (server.address() as { port: number }).port;
@@ -168,7 +168,7 @@ describe("Realtime", () => {
       await new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()));
       });
-      db.close();
+      await db.close();
     });
 
     it("broadcasts insert events to subscribed clients", async () => {
@@ -186,7 +186,7 @@ describe("Realtime", () => {
       const ack = await nextMessage(socket);
       assert.equal((ack as { type: string }).type, "subscribed");
 
-      db.insert("messages", { room_id: 1, body: "broadcast" });
+      await db.insert("messages", { room_id: 1, body: "broadcast" });
 
       const msg = await nextMessage(socket);
       const event = (msg as { event: { type: string; table: string; row: Record<string, unknown> } }).event;
@@ -233,8 +233,8 @@ describe("Realtime", () => {
 
       await nextMessage(socket); // subscribed ack
 
-      db.insert("messages", { room_id: 1, body: "room one" });
-      db.insert("messages", { room_id: 2, body: "room two" });
+      await db.insert("messages", { room_id: 1, body: "room one" });
+      await db.insert("messages", { room_id: 2, body: "room two" });
 
       const msg = await nextMessage(socket);
       const event = (msg as { event: { row: Record<string, unknown> } }).event;
@@ -257,7 +257,7 @@ describe("Realtime", () => {
 
       await nextMessage(socket); // subscribed ack
 
-      db.insert("messages", { room_id: 1, body: "not for me" });
+      await db.insert("messages", { room_id: 1, body: "not for me" });
 
       // Give it a moment, then assert no message arrived.
       const race = await Promise.race([
@@ -300,12 +300,12 @@ describe("Realtime", () => {
       await nextMessage(firstSocket);
 
       const firstMessagePromise = nextMessage(firstSocket);
-      db.insert("messages", { room_id: 1, body: "before disconnect" });
+      await db.insert("messages", { room_id: 1, body: "before disconnect" });
       const firstMessage = await firstMessagePromise;
       const firstEvent = (firstMessage as { event: { id: number } }).event;
       firstSocket.close();
 
-      db.insert("messages", { room_id: 1, body: "while disconnected" });
+      await db.insert("messages", { room_id: 1, body: "while disconnected" });
 
       const secondSocket = new WebSocket(`ws://localhost:${port}/realtime`);
       await waitForSocket(secondSocket, WebSocket.OPEN);
@@ -384,6 +384,63 @@ describe("Realtime", () => {
       assert.equal((leave as { event: { key: string } }).event.key, "bob");
 
       alice.close();
+    });
+  });
+
+  describe("SubscriptionManager per-client async delivery ordering", () => {
+    it("delivers events in order even when an earlier event awaits a slow role-cache refresh", async () => {
+      const { SubscriptionManager } = await import("./realtime/subscription-manager.js");
+      const policyMap = new Map([
+        ["notes", { table: "notes", ownerColumn: "user_id", adminBypass: true }],
+      ]);
+
+      let lookupCount = 0;
+      const fakeDb = {
+        async selectById(_table: string, _id: number) {
+          lookupCount++;
+          // First lookup (subscribe) is fast; second lookup (event #1 refresh) is slow;
+          // third lookup (event #2) would overtake #1 if delivery weren't serialized.
+          if (lookupCount === 2) {
+            await new Promise((r) => setTimeout(r, 40));
+          }
+          return { id: 1, role: "admin" };
+        },
+      } as unknown as Database;
+
+      const sent: number[] = [];
+      const fakeSocket = {
+        readyState: 1,
+        bufferedAmount: 0,
+        send(payload: string) {
+          const parsed = JSON.parse(payload) as { event?: { id?: number } };
+          if (parsed.event?.id !== undefined) sent.push(parsed.event.id);
+        },
+      } as unknown as WebSocket;
+
+      const mgr = new SubscriptionManager({
+        database: fakeDb,
+        policyMap,
+        roleTtlMs: 0, // force a role lookup on every event
+      });
+      mgr.addClient(fakeSocket, { id: 1, email: "admin@test.com", role: "admin" });
+      const sub = await mgr.subscribe(fakeSocket, "s1", "notes", []);
+      assert.equal(sub.ok, true);
+
+      const p1 = mgr.broadcast({
+        type: "insert",
+        table: "notes",
+        row: { id: 1, user_id: 99, title: "first" },
+        id: 1,
+      });
+      const p2 = mgr.broadcast({
+        type: "insert",
+        table: "notes",
+        row: { id: 2, user_id: 99, title: "second" },
+        id: 2,
+      });
+
+      await Promise.all([p1, p2]);
+      assert.deepEqual(sent, [1, 2]);
     });
   });
 });

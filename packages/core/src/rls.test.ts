@@ -74,7 +74,7 @@ async function setup(policies?: PoliciesConfig): Promise<{
   aliceToken: string;
   bobToken: string;
 }> {
-  const db = new Database({ schema, auth: authConfig });
+  const db = await Database.open({ schema, auth: authConfig });
   seedAuthUsers(db);
   const app = createServer(db, schema, { auth: authConfig, policies });
   const aliceToken = await signAccessToken(
@@ -91,7 +91,7 @@ async function setup(policies?: PoliciesConfig): Promise<{
 }
 
 function seedAuthUsers(db: Database): void {
-  const insert = db.raw().prepare(
+  const insert = db.sqliteRaw().prepare(
     `INSERT INTO "_users" ("id", "email", "password_hash", "role") VALUES (?, ?, ?, ?)`
   );
   insert.run(1, "alice@x.com", "unused", "admin");
@@ -110,7 +110,7 @@ describe("RLS insert", () => {
   before(async () => {
     ({ db, app, aliceToken } = await setup(POLICY));
   });
-  after(() => db.close());
+  after(async () => await db.close());
 
   it("stamps the authenticated user's id as owner", async () => {
     const res = await app.request(
@@ -153,7 +153,7 @@ describe("RLS read scoping", () => {
     await app.request("/api/posts", jsonReq("POST", { title: "a2" }, bearer(aliceToken)));
     await app.request("/api/posts", jsonReq("POST", { title: "b1" }, bearer(bobToken)));
   });
-  after(() => db.close());
+  after(async () => await db.close());
 
   it("lists only the caller's rows (admins are scoped too)", async () => {
     const aliceRes = await app.request("/api/posts", { headers: bearer(aliceToken) });
@@ -199,7 +199,7 @@ describe("RLS write scoping", () => {
     await app.request("/api/posts", jsonReq("POST", { title: "a1" }, bearer(aliceToken)));
     await app.request("/api/posts", jsonReq("POST", { title: "b1" }, bearer(bobToken)));
   });
-  after(() => db.close());
+  after(async () => await db.close());
 
   it("forbids updating another user's row (404)", async () => {
     // bob tries to patch alice's post (id 1).
@@ -250,7 +250,7 @@ describe("RLS does not affect non-policy tables", () => {
   before(async () => {
     ({ db, app } = await setup(POLICY)); // only `posts` has a policy
   });
-  after(() => db.close());
+  after(async () => await db.close());
 
   it("allows anonymous list on a table without a policy", async () => {
     const res = await app.request("/api/tags");
@@ -284,7 +284,7 @@ describe("RLS adminBypass", () => {
     );
     await app.request("/api/posts", jsonReq("POST", { title: "b1" }, bearer(bobToken)));
   });
-  after(() => db.close());
+  after(async () => await db.close());
 
   it("lets an admin read rows they don't own", async () => {
     // bob's post is id 2. With adminBypass, alice can fetch it directly.
@@ -323,10 +323,10 @@ describe("RLS adminBypass uses live roles", () => {
     );
     await app.request("/api/posts", jsonReq("POST", { title: "b1" }, bearer(bobToken)));
   });
-  after(() => db.close());
+  after(async () => await db.close());
 
   it("does not bypass with a stale admin token after demotion", async () => {
-    db.raw().prepare(`UPDATE "_users" SET "role" = 'user' WHERE "id" = 1`).run();
+    db.sqliteRaw().prepare(`UPDATE "_users" SET "role" = 'user' WHERE "id" = 1`).run();
 
     const list = await readJson(
       await app.request("/api/posts", { headers: bearer(aliceToken) })
@@ -384,8 +384,8 @@ describe("resolvePolicies", () => {
 // ─── policies require auth ─────────────────────────────────────
 
 describe("policies require auth", () => {
-  it("createServer throws when policies are set but auth is explicitly disabled", () => {
-    const db = new Database({ schema });
+  it("createServer throws when policies are set but auth is explicitly disabled", async () => {
+    const db = await Database.open({ schema });
     assert.throws(
       () =>
         createServer(db, schema, {
@@ -394,15 +394,15 @@ describe("policies require auth", () => {
         }),
       /auth/i
     );
-    db.close();
+    await db.close();
   });
 
   it("policies alone are fine — auth is on by default", async () => {
-    const db = new Database({ schema });
+    const db = await Database.open({ schema });
     const app = createServer(db, schema, { policies: POLICY });
     // The policy'd table demands a token even though no auth config was given.
     const res = await app.request("/api/posts");
     assert.equal(res.status, 401);
-    db.close();
+    await db.close();
   });
 });

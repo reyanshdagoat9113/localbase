@@ -104,8 +104,8 @@ describeIfWorkspace("M6 — static mount serves the bundled SPA", () => {
   let db: Database;
   let app: Hono;
 
-  before(() => {
-    db = new Database({ schema: testSchema });
+  before(async () => {
+    db = await Database.open({ schema: testSchema });
     // Force the static mount to use the workspace bundle, regardless of
     // whether the embedded bundle is in place. This lets the test be
     // diagnostic even when the postbuild copy hasn't run yet.
@@ -117,8 +117,8 @@ describeIfWorkspace("M6 — static mount serves the bundled SPA", () => {
     });
   });
 
-  after(() => {
-    db.close();
+  after(async () => {
+    await db.close();
     delete process.env.LOCALBASE_ADMIN_DIST;
   });
 
@@ -193,15 +193,15 @@ describeIfBundle("M6 — end-to-end admin flow (load → list → edit → delet
   let db: Database;
   let app: Hono;
 
-  before(() => {
+  before(async () => {
     // Same harness as the static-mount tests: point the static mount
     // at the workspace bundle so the SPA shell is served even when the
     // postbuild copy hasn't run yet. The flow tests below are about
     // the API, not the static serving — the static-bundle test above
     // is the one that locks the mount behavior down.
     process.env.LOCALBASE_ADMIN_DIST = ADMIN_DIST;
-    db = new Database({ schema: testSchema });
-    db.insert("tasks", [
+    db = await Database.open({ schema: testSchema });
+    await db.insert("tasks", [
       { title: "First task", done: 0 },
       { title: "Second task", done: 0 },
       { title: "Done task", done: 1 },
@@ -213,8 +213,8 @@ describeIfBundle("M6 — end-to-end admin flow (load → list → edit → delet
     });
   });
 
-  after(() => {
-    db.close();
+  after(async () => {
+    await db.close();
     delete process.env.LOCALBASE_ADMIN_DIST;
   });
 

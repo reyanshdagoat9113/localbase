@@ -226,7 +226,7 @@ export function createRealtimeServer(
     if (eventLog.length > eventLogSize) {
       eventLog.splice(0, eventLog.length - eventLogSize);
     }
-    subscriptions.broadcast(loggedEvent);
+    void subscriptions.broadcast(loggedEvent);
   }
 
   database.on("change", onDatabaseChange);
@@ -422,7 +422,7 @@ export function createRealtimeServer(
 
   function handleMessage(socket: WebSocket, message: ClientMessage): void {
     if (message.type === "subscribe") {
-      handleSubscribe(socket, message);
+      void handleSubscribe(socket, message);
     } else if (message.type === "unsubscribe") {
       subscriptions.unsubscribe(socket, message.id);
       safeSend(socket, { type: "unsubscribed", id: message.id });
@@ -433,10 +433,10 @@ export function createRealtimeServer(
     }
   }
 
-  function handleSubscribe(socket: WebSocket, message: SubscribeMessage): void {
-    // Realtime sockets bypass the typed admin/auth/storage surfaces, so
-    // allowing system tables here would expose password hashes, sessions,
-    // and job output regardless of auth.
+  async function handleSubscribe(
+    socket: WebSocket,
+    message: SubscribeMessage
+  ): Promise<void> {
     if (isSystemTable(message.table)) {
       safeSend(socket, {
         type: "error",
@@ -455,7 +455,12 @@ export function createRealtimeServer(
       return;
     }
 
-    const outcome = subscriptions.subscribe(socket, id, message.table, filters);
+    const outcome = await subscriptions.subscribe(
+      socket,
+      id,
+      message.table,
+      filters
+    );
     if (!outcome.ok) {
       safeSend(socket, {
         type: "error",
@@ -468,10 +473,13 @@ export function createRealtimeServer(
     }
 
     safeSend(socket, { type: "subscribed", id, table: message.table });
-    requestReplay(socket, message);
+    await requestReplay(socket, message);
   }
 
-  function requestReplay(socket: WebSocket, message: SubscribeMessage): void {
+  async function requestReplay(
+    socket: WebSocket,
+    message: SubscribeMessage
+  ): Promise<void> {
     // Resolve the requested (epoch, seq). Prefer the opaque cursor; fall back
     // to the legacy numeric lastEventId (treated as the current epoch).
     let reqEpoch = epoch;
@@ -506,7 +514,7 @@ export function createRealtimeServer(
       }
     }
 
-    subscriptions.replay(
+    await subscriptions.replay(
       socket,
       eventLog.filter((event) => (event.id ?? 0) > reqSeq!)
     );

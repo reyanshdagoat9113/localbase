@@ -56,22 +56,22 @@ function writeHandler(source: string): string {
   return dir;
 }
 
-function makeRunner(
+async function makeRunner(
   cwd: string,
   jobs: Record<string, JobConfig>,
   db?: Database
-): { runner: JobRunner; db: Database } {
+): Promise<{ runner: JobRunner; db: Database }> {
   const database =
     db ??
-    new Database({ schema: baseSchema, jobs, dataDir: cwd });
+    await Database.open({ schema: baseSchema, jobs, dataDir: cwd });
   return { runner: new JobRunner({ db: database, cwd, jobs }), db: database };
 }
 
 /** Read all `_job_runs` rows (newest-first by id), cast to the row shape. */
-function runs(db: Database): JobRunRow[] {
-  return db.select("_job_runs", {
+async function runs(db: Database): Promise<JobRunRow[]> {
+  return (await db.select("_job_runs", {
     orderBy: [{ column: "id", direction: "desc" }],
-  }) as JobRunRow[];
+  })) as JobRunRow[];
 }
 
 describe("JobRunner.run — happy path", () => {
@@ -85,14 +85,14 @@ describe("JobRunner.run — happy path", () => {
       }`
     );
     const jobs = { cleanup: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { runner, db } = makeRunner(cwd, jobs);
+    const { runner, db } = await makeRunner(cwd, jobs);
 
     try {
       const result = await runner.run("cleanup");
       assert.equal(result.status, "success");
       assert.ok(typeof result.runId, "number");
 
-      const row = runs(db)[0];
+      const row = (await runs(db))[0];
       assert.equal(row.job_name, "cleanup");
       assert.equal(row.status, "success");
       assert.ok(row.ended_at, "ended_at must be set on success");
@@ -108,24 +108,24 @@ describe("JobRunner.run — happy path", () => {
       assert.match(row.output as string, /"name":"cleanup"/);
 
       // The handler really did get the live Database — its insert landed.
-      assert.equal(db.select("sessions").length, 1);
+      assert.equal((await db.select("sessions")).length, 1);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("records a success run with no output when the handler returns undefined", async () => {
     const cwd = writeHandler(`export default async () => { /* noop */ }`);
     const jobs = { noop: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { runner, db } = makeRunner(cwd, jobs);
+    const { runner, db } = await makeRunner(cwd, jobs);
 
     try {
       const result = await runner.run("noop");
       assert.equal(result.status, "success");
-      const row = runs(db)[0];
+      const row = (await runs(db))[0];
       assert.equal(row.output, "");
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
@@ -139,15 +139,15 @@ describe("JobRunner.run — happy path", () => {
       }`
     );
     const jobs = { logger: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { runner, db } = makeRunner(cwd, jobs);
+    const { runner, db } = await makeRunner(cwd, jobs);
 
     try {
       const result = await runner.run("logger");
       assert.equal(result.status, "success");
-      const row = runs(db)[0];
+      const row = (await runs(db))[0];
       assert.equal(row.output, "valid line");
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
@@ -160,23 +160,23 @@ describe("JobRunner.run — happy path", () => {
       }`
     );
     const jobs = { circular: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { runner, db } = makeRunner(cwd, jobs);
+    const { runner, db } = await makeRunner(cwd, jobs);
 
     try {
       const result = await runner.run("circular");
       assert.equal(result.status, "success");
-      const row = runs(db)[0];
+      const row = (await runs(db))[0];
       assert.ok(row.output);
       assert.equal(row.output?.includes("[object Object]"), true);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("inserts a running row before updating it (lifecycle is two writes)", async () => {
     const cwd = writeHandler(`export default async () => {}`);
     const jobs = { probe: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { runner, db } = makeRunner(cwd, jobs);
+    const { runner, db } = await makeRunner(cwd, jobs);
 
     let sawRunning = false;
     db.on("change", (evt) => {
@@ -190,9 +190,9 @@ describe("JobRunner.run — happy path", () => {
       await runner.run("probe");
       assert.ok(sawRunning, "a running row should have been inserted first");
       // And it ended as success — the only persisted row.
-      assert.equal(runs(db)[0].status, "success");
+      assert.equal((await runs(db))[0].status, "success");
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });
@@ -206,32 +206,32 @@ describe("JobRunner.run — failure handling", () => {
       }`
     );
     const jobs = { cleanup: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { runner, db } = makeRunner(cwd, jobs);
+    const { runner, db } = await makeRunner(cwd, jobs);
 
     try {
       const result = await runner.run("cleanup");
       assert.equal(result.status, "failed");
 
-      const row = runs(db)[0];
+      const row = (await runs(db))[0];
       assert.equal(row.status, "failed");
       assert.equal(row.error, "sessions table missing");
       assert.ok(row.ended_at);
       // log() lines before the throw are preserved.
       assert.match(row.output as string, /before failure/);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("records a non-function default export as a failed run (no crash)", async () => {
     const cwd = writeHandler(`export default { not: "a function" }`);
     const jobs = { bad: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { runner, db } = makeRunner(cwd, jobs);
+    const { runner, db } = await makeRunner(cwd, jobs);
 
     try {
       const result = await runner.run("bad");
       assert.equal(result.status, "failed");
-      const row = runs(db)[0];
+      const row = (await runs(db))[0];
       assert.equal(row.status, "failed");
       assert.match(
         row.error as string,
@@ -239,7 +239,7 @@ describe("JobRunner.run — failure handling", () => {
         "error should explain the export shape"
       );
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
@@ -248,15 +248,15 @@ describe("JobRunner.run — failure handling", () => {
     const jobs = {
       ghost: { schedule: "0 3 * * *", handler: "./jobs/does-not-exist.ts" },
     };
-    const { runner, db } = makeRunner(cwd, jobs);
+    const { runner, db } = await makeRunner(cwd, jobs);
 
     try {
       const result = await runner.run("ghost");
       assert.equal(result.status, "failed");
-      const row = runs(db)[0];
+      const row = (await runs(db))[0];
       assert.match(row.error as string, /Could not load job handler/);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
@@ -265,14 +265,14 @@ describe("JobRunner.run — failure handling", () => {
       `export default () => { throw new Error("sync boom"); }`
     );
     const jobs = { sync: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { runner, db } = makeRunner(cwd, jobs);
+    const { runner, db } = await makeRunner(cwd, jobs);
 
     try {
       const result = await runner.run("sync");
       assert.equal(result.status, "failed");
-      assert.equal(runs(db)[0].error, "sync boom");
+      assert.equal((await runs(db))[0].error, "sync boom");
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });
@@ -289,7 +289,7 @@ describe("JobRunner.run — concurrency guard", () => {
       };`
     );
     const jobs = { slow: { schedule: "* * * * *", handler: "./jobs/handler.ts" } };
-    const { runner, db } = makeRunner(cwd, jobs);
+    const { runner, db } = await makeRunner(cwd, jobs);
 
     try {
       // Fire the first run but do NOT await it yet.
@@ -306,10 +306,10 @@ describe("JobRunner.run — concurrency guard", () => {
       assert.equal(runner.isRunning("slow"), false, "released after finish");
 
       // Exactly one run row — the overlapping firing was dropped, not queued.
-      assert.equal(runs(db).length, 1);
-      assert.equal(runs(db)[0].status, "success");
+      assert.equal((await runs(db)).length, 1);
+      assert.equal((await runs(db))[0].status, "success");
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
@@ -325,15 +325,15 @@ describe("JobRunner.run — concurrency guard", () => {
       a: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" },
       b: { schedule: "0 4 * * *", handler: "./jobs/handler.ts" },
     };
-    const { runner, db } = makeRunner(cwd, jobs);
+    const { runner, db } = await makeRunner(cwd, jobs);
 
     try {
       const [a, b] = await Promise.all([runner.run("a"), runner.run("b")]);
       assert.equal(a.status, "success");
       assert.equal(b.status, "success");
-      assert.equal(runs(db).length, 2);
+      assert.equal((await runs(db)).length, 2);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });
@@ -347,19 +347,19 @@ describe("JobRunner.run — output capping", () => {
       };`
     );
     const jobs = { chatty: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { runner, db } = makeRunner(cwd, jobs);
+    const { runner, db } = await makeRunner(cwd, jobs);
 
     try {
       const result = await runner.run("chatty");
       assert.equal(result.status, "success");
-      const row = runs(db)[0];
+      const row = (await runs(db))[0];
       assert.ok(
         Buffer.byteLength(row.output as string, "utf8") <= 64 * 1024,
         "stored output must not exceed the cap"
       );
       assert.match(row.output as string, /\[output truncated\]/);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });
@@ -369,8 +369,8 @@ describe("JobRunner.run — registry guards", () => {
     const cwd = writeHandler(`export default async () => {}`);
     const jobs = { missingTable: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
     // Deliberately omit `jobs` from DatabaseOptions so `_job_runs` is absent.
-    const db = new Database({ schema: baseSchema, dataDir: cwd });
-    const { runner } = makeRunner(cwd, jobs, db);
+    const db = await Database.open({ schema: baseSchema, dataDir: cwd });
+    const { runner } = await makeRunner(cwd, jobs, db);
 
     try {
       await assert.rejects(() => runner.run("missingTable"), /_job_runs|no such table/i);
@@ -380,14 +380,14 @@ describe("JobRunner.run — registry guards", () => {
         "failed insert must not leave the job permanently marked running"
       );
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("throws JobError for an unknown job name", async () => {
     const cwd = writeHandler(`export default async () => {}`);
     const jobs = { known: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { runner, db } = makeRunner(cwd, jobs);
+    const { runner, db } = await makeRunner(cwd, jobs);
 
     try {
       await assert.rejects(() => runner.run("unknown"), (err: unknown) => {
@@ -396,28 +396,28 @@ describe("JobRunner.run — registry guards", () => {
         return true;
       });
       // No row should have been written for the unknown name.
-      assert.equal(runs(db).length, 0);
+      assert.equal((await runs(db)).length, 0);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });
 
 describe("JobRunner — readers", () => {
-  it("getJob / getJobNames / isRunning reflect the registry and state", () => {
+  it("getJob / getJobNames / isRunning reflect the registry and state", async () => {
     const cwd = writeHandler(`export default async () => {}`);
     const jobs = {
       alpha: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" },
       beta: { schedule: "0 4 * * *", handler: "./jobs/handler.ts" },
     };
-    const { runner, db } = makeRunner(cwd, jobs);
+    const { runner, db } = await makeRunner(cwd, jobs);
     try {
       assert.deepEqual(runner.getJobNames().sort(), ["alpha", "beta"]);
       assert.equal(runner.getJob("alpha")?.schedule, "0 3 * * *");
       assert.equal(runner.getJob("missing"), undefined);
       assert.equal(runner.isRunning("alpha"), false);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });

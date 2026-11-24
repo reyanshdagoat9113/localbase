@@ -24,8 +24,8 @@ const testSchema: DatabaseSchema = {
   },
 };
 
-function newApp(): { db: Database; app: Hono } {
-  const db = new Database({
+async function newApp(): Promise<{ db: Database; app: Hono }> {
+  const db = await Database.open({
     schema: testSchema,
     auth: { enabled: true, jwtSecret: SECRET },
   });
@@ -72,9 +72,9 @@ async function parse(res: Response) {
 
 // ─── GET /_api/admin/users ──────────────────────────────────────
 
-describe("GET /_api/admin/users", () => {
-  const { db, app } = newApp();
-  after(() => db.close());
+describe("GET /_api/admin/users", async () => {
+  const { db, app } = await newApp();
+  after(async () => await db.close());
 
   it("lists users for an admin token (no password hashes)", async () => {
     const admin = await signup(app, "admin@test.com"); // first → admin
@@ -119,10 +119,10 @@ describe("GET /_api/admin/users", () => {
 
 // ─── POST /_api/admin/users ────────────────────────────────────
 
-describe("POST /_api/admin/users", () => {
-  const { db, app } = newApp();
+describe("POST /_api/admin/users", async () => {
+  const { db, app } = await newApp();
   let admin: { accessToken: string };
-  after(() => db.close());
+  after(async () => await db.close());
 
   it("creates a user as role=user and surfaces them in the list", async () => {
     admin = (await signup(app, "admin@test.com")) as { accessToken: string };
@@ -193,11 +193,11 @@ describe("POST /_api/admin/users", () => {
 
 // ─── POST /_api/admin/users/:id/reset-password ─────────────────
 
-describe("POST /_api/admin/users/:id/reset-password", () => {
-  const { db, app } = newApp();
+describe("POST /_api/admin/users/:id/reset-password", async () => {
+  const { db, app } = await newApp();
   let admin: { accessToken: string };
   let target: AuthUser;
-  after(() => db.close());
+  after(async () => await db.close());
 
   it("resets the password (old fails, new works)", async () => {
     admin = (await signup(app, "admin@test.com")) as { accessToken: string };
@@ -311,10 +311,10 @@ describe("POST /_api/admin/users/:id/reset-password", () => {
 
 // ─── PATCH /_api/admin/users/:id/role ──────────────────────────
 
-describe("PATCH /_api/admin/users/:id/role", () => {
-  const { db, app } = newApp();
+describe("PATCH /_api/admin/users/:id/role", async () => {
+  const { db, app } = await newApp();
   let admin: { accessToken: string };
-  after(() => db.close());
+  after(async () => await db.close());
 
   it("promotes a user to admin", async () => {
     admin = (await signup(app, "admin@test.com")) as { accessToken: string };
@@ -356,7 +356,7 @@ describe("PATCH /_api/admin/users/:id/role", () => {
 
   it("refuses to change the owner's role (409)", async () => {
     // Fresh DB with a single owner.
-    const { app: app2, db: db2 } = newApp();
+    const { app: app2, db: db2 } = await newApp();
     try {
       const only = await signup(app2, "solo@test.com"); // first → owner
       const list = await app2.request("/_api/admin/users", {
@@ -372,7 +372,7 @@ describe("PATCH /_api/admin/users/:id/role", () => {
       assert.equal(status, 409);
       assert.match(body.error, /owner role cannot be changed/i);
     } finally {
-      db2.close();
+      await db2.close();
     }
   });
 
@@ -409,8 +409,8 @@ describe("PATCH /_api/admin/users/:id/role", () => {
 // ─── Not mounted when auth is disabled ─────────────────────────
 
 describe("user endpoints are gated on auth being enabled", () => {
-  it("refuses to construct Auth Manager routes without requireAdmin", () => {
-    const db = new Database({
+  it("refuses to construct Auth Manager routes without requireAdmin", async () => {
+    const db = await Database.open({
       schema: testSchema,
       auth: { enabled: true, jwtSecret: SECRET },
     });
@@ -422,12 +422,12 @@ describe("user endpoints are gated on auth being enabled", () => {
         /require admin auth/i
       );
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("GET /_api/admin/users returns 404 when auth is disabled", async () => {
-    const db = new Database({ schema: testSchema });
+    const db = await Database.open({ schema: testSchema });
     try {
       // admin enabled but no auth → no Auth instance → user routes not mounted.
       const app = createServer(db, testSchema, {
@@ -438,7 +438,7 @@ describe("user endpoints are gated on auth being enabled", () => {
       const res = await app.request("/_api/admin/users");
       assert.equal(res.status, 404);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });

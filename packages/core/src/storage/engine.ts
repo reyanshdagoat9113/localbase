@@ -91,8 +91,6 @@ export class StorageEngine {
       assertValidBucketName(bucket.name);
       this.buckets.set(bucket.name, { public: bucket.public ?? false });
     }
-
-    this.ensureIndexes();
   }
 
   /**
@@ -140,19 +138,14 @@ export class StorageEngine {
 
     let row: StoredFile;
     try {
-      row = this.db.raw()
-        .prepare(
-          `INSERT INTO "_files" ("bucket", "stored_name", "original_name", "size", "mime")
-           VALUES (?, ?, ?, ?, ?)
-           RETURNING *`
-        )
-        .get(
-          bucket,
-          storedName,
-          payload.originalName,
-          size,
-          payload.mime ?? null
-        ) as StoredFile;
+      const inserted = (await this.db.insert("_files", {
+        bucket,
+        stored_name: storedName,
+        original_name: payload.originalName,
+        size,
+        mime: payload.mime ?? null,
+      })) as StoredFile[];
+      row = inserted[0];
     } catch (err) {
       // Roll back the on-disk write if metadata could not be recorded.
       try {
@@ -177,11 +170,11 @@ export class StorageEngine {
    * Check whether a stored object exists (both metadata row and on-disk file)
    * without opening a read stream.
    */
-  exists(bucket: string, storedName: string): boolean {
+  async exists(bucket: string, storedName: string): Promise<boolean> {
     assertValidBucketName(bucket);
     assertNoPathSeparators(storedName);
 
-    const metadata = this.findByStoredName(bucket, storedName);
+    const metadata = await this.findByStoredName(bucket, storedName);
     if (!metadata) return false;
 
     const filePath = this.safeFilePath(bucket, storedName);
@@ -193,11 +186,14 @@ export class StorageEngine {
    * Returns the readable byte stream plus metadata, or `null` if no such
    * file exists.
    */
-  get(bucket: string, storedName: string): { stream: ReadableStream<Uint8Array>; metadata: StoredFile } | null {
+  async get(
+    bucket: string,
+    storedName: string
+  ): Promise<{ stream: ReadableStream<Uint8Array>; metadata: StoredFile } | null> {
     assertValidBucketName(bucket);
     assertNoPathSeparators(storedName);
 
-    const metadata = this.findByStoredName(bucket, storedName);
+    const metadata = await this.findByStoredName(bucket, storedName);
     if (!metadata) return null;
 
     const filePath = this.safeFilePath(bucket, storedName);
@@ -214,19 +210,18 @@ export class StorageEngine {
    * Removes both the on-disk object and the metadata row. Returns `true` if
    * a row was deleted. Cleanup of the on-disk file is best-effort.
    */
-  delete(bucket: string, storedName: string): boolean {
+  async delete(bucket: string, storedName: string): Promise<boolean> {
     assertValidBucketName(bucket);
     assertNoPathSeparators(storedName);
 
     const filePath = this.safeFilePath(bucket, storedName);
 
-    const result = this.db.raw()
-      .prepare(
-        `DELETE FROM "_files" WHERE "bucket" = ? AND "stored_name" = ? RETURNING *`
-      )
-      .all(bucket, storedName) as StoredFile[];
+    const deletedCount = await this.db.delete("_files", [
+      { column: "bucket", operator: "eq", value: bucket },
+      { column: "stored_name", operator: "eq", value: storedName },
+    ]);
 
-    if (result.length === 0) return false;
+    if (deletedCount === 0) return false;
 
     try {
       fs.unlinkSync(filePath);
@@ -240,14 +235,13 @@ export class StorageEngine {
   /**
    * List all files in a bucket, ordered by most recently uploaded first.
    */
-  list(bucket: string): StoredFile[] {
+  async list(bucket: string): Promise<StoredFile[]> {
     assertValidBucketName(bucket);
 
-    return this.db.raw()
-      .prepare(
-        `SELECT * FROM "_files" WHERE "bucket" = ? ORDER BY "uploaded_at" DESC`
-      )
-      .all(bucket) as StoredFile[];
+    return (await this.db.select("_files", {
+      filters: [{ column: "bucket", operator: "eq", value: bucket }],
+      orderBy: [{ column: "uploaded_at", direction: "desc" }],
+    })) as StoredFile[];
   }
 
   /**
@@ -255,20 +249,22 @@ export class StorageEngine {
    * Returns the first match. If multiple files share the same original name,
    * callers should prefer listing by stored name.
    */
-  findByOriginalName(
+  async findByOriginalName(
     bucket: string,
     originalName: string
-  ): StoredFile | null {
+  ): Promise<StoredFile | null> {
     assertValidBucketName(bucket);
     assertValidOriginalName(originalName);
 
-    const row = this.db.raw()
-      .prepare(
-        `SELECT * FROM "_files" WHERE "bucket" = ? AND "original_name" = ? LIMIT 1`
-      )
-      .get(bucket, originalName) as StoredFile | undefined;
+    const rows = (await this.db.select("_files", {
+      filters: [
+        { column: "bucket", operator: "eq", value: bucket },
+        { column: "original_name", operator: "eq", value: originalName },
+      ],
+      limit: 1,
+    })) as StoredFile[];
 
-    return row ?? null;
+    return rows[0] ?? null;
   }
 
   /**
@@ -280,17 +276,19 @@ export class StorageEngine {
     return path.resolve(this.root, "storage", bucket);
   }
 
-  private findByStoredName(
+  private async findByStoredName(
     bucket: string,
     storedName: string
-  ): StoredFile | null {
-    const row = this.db.raw()
-      .prepare(
-        `SELECT * FROM "_files" WHERE "bucket" = ? AND "stored_name" = ? LIMIT 1`
-      )
-      .get(bucket, storedName) as StoredFile | undefined;
+  ): Promise<StoredFile | null> {
+    const rows = (await this.db.select("_files", {
+      filters: [
+        { column: "bucket", operator: "eq", value: bucket },
+        { column: "stored_name", operator: "eq", value: storedName },
+      ],
+      limit: 1,
+    })) as StoredFile[];
 
-    return row ?? null;
+    return rows[0] ?? null;
   }
 
   /**
@@ -325,15 +323,10 @@ export class StorageEngine {
    * `autoMigrate: false`), we skip index creation. Operations that need the
    * table will fail later with a clear SQLite error.
    */
-  ensureIndexes(): void {
-    const exists = this.db.raw()
-      .prepare(
-        `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_files'`
-      )
-      .get();
-    if (!exists) return;
+  async ensureIndexes(): Promise<void> {
+    if (!(await this.db.tableExists("_files"))) return;
 
-    this.db.raw().exec(`
+    await this.db.execBatch(`
       CREATE INDEX IF NOT EXISTS "_files_bucket_idx" ON "_files" ("bucket");
       CREATE INDEX IF NOT EXISTS "_files_bucket_original_name_idx" ON "_files" ("bucket", "original_name");
     `);

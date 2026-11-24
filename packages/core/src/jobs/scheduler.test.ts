@@ -62,13 +62,13 @@ function writeHandler(source: string): string {
   return dir;
 }
 
-function makeScheduler(
+async function makeScheduler(
   cwd: string,
   jobs: Record<string, JobConfig>,
   db?: Database
-): { scheduler: Scheduler; db: Database } {
+): Promise<{ scheduler: Scheduler; db: Database }> {
   const database =
-    db ?? new Database({ schema: baseSchema, jobs, dataDir: cwd });
+    db ?? await Database.open({ schema: baseSchema, jobs, dataDir: cwd });
   return {
     scheduler: new Scheduler({ db: database, cwd, jobs }),
     db: database,
@@ -76,15 +76,15 @@ function makeScheduler(
 }
 
 /** Read all `_job_runs` rows (newest-first by started_at), cast to the row shape. */
-function runs(db: Database): JobRunRow[] {
-  return db.select("_job_runs", {
+async function runs(db: Database): Promise<JobRunRow[]> {
+  return (await db.select("_job_runs", {
     orderBy: [{ column: "started_at", direction: "desc" }],
-  }) as JobRunRow[];
+  })) as JobRunRow[];
 }
 
 /** Count `_job_runs` rows. */
-function runCount(db: Database): number {
-  return db.count("_job_runs");
+async function runCount(db: Database): Promise<number> {
+  return await db.count("_job_runs");
 }
 
 /**
@@ -99,63 +99,63 @@ async function waitForRuns(
 ): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (runCount(db) >= expected) return;
+    if (await runCount(db) >= expected) return;
     await new Promise((r) => setTimeout(r, 50));
   }
   throw new Error(
-    `timed out waiting for ${expected} run row(s); got ${runCount(db)}`
+    `timed out waiting for ${expected} run row(s); got ${await runCount(db)}`
   );
 }
 
 describe("Scheduler.start/stop — lifecycle", () => {
-  it("start() is idempotent (does not double-arm timers)", () => {
+  it("start() is idempotent (does not double-arm timers)", async () => {
     const cwd = writeHandler(`export default async () => {}`);
     const jobs = { a: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { scheduler, db } = makeScheduler(cwd, jobs);
+    const { scheduler, db } = await makeScheduler(cwd, jobs);
 
     try {
-      scheduler.start();
+      await scheduler.start();
       assert.equal(scheduler.isStarted(), true);
       const firstNext = scheduler.getNextRun("a")?.getTime();
 
       // A second start() must not replace/re-arm the cron.
-      scheduler.start();
+      await scheduler.start();
       assert.equal(scheduler.isStarted(), true);
       const secondNext = scheduler.getNextRun("a")?.getTime();
       assert.equal(firstNext, secondNext);
     } finally {
       scheduler.stop();
-      db.close();
+      await db.close();
     }
   });
 
-  it("stop() is safe when never started and clears the started flag", () => {
+  it("stop() is safe when never started and clears the started flag", async () => {
     const cwd = writeHandler(`export default async () => {}`);
     const jobs = { a: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { scheduler, db } = makeScheduler(cwd, jobs);
+    const { scheduler, db } = await makeScheduler(cwd, jobs);
 
     try {
       assert.equal(scheduler.isStarted(), false);
       scheduler.stop(); // no-op, must not throw
       assert.equal(scheduler.isStarted(), false);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
-  it("start() can re-arm after stop() (hot-reload path)", () => {
+  it("start() can re-arm after stop() (hot-reload path)", async () => {
     const cwd = writeHandler(`export default async () => {}`);
     const jobs = { a: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { scheduler, db } = makeScheduler(cwd, jobs);
+    const { scheduler, db } = await makeScheduler(cwd, jobs);
 
     try {
-      scheduler.start();
+      await scheduler.start();
       assert.equal(scheduler.isStarted(), true);
       scheduler.stop();
       assert.equal(scheduler.isStarted(), false);
       assert.equal(scheduler.getNextRun("a"), null, "no next run after stop");
 
-      scheduler.start();
+      await scheduler.start();
       assert.equal(scheduler.isStarted(), true);
       assert.ok(
         scheduler.getNextRun("a") instanceof Date,
@@ -163,13 +163,13 @@ describe("Scheduler.start/stop — lifecycle", () => {
       );
     } finally {
       scheduler.stop();
-      db.close();
+      await db.close();
     }
   });
 });
 
 describe("Scheduler — disabled jobs are registered-but-paused", () => {
-  it("does not arm a cron for enabled: false and reports nextRun null", () => {
+  it("does not arm a cron for enabled: false and reports nextRun null", async () => {
     const cwd = writeHandler(`export default async () => {}`);
     const jobs = {
       active: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" },
@@ -179,12 +179,12 @@ describe("Scheduler — disabled jobs are registered-but-paused", () => {
         enabled: false,
       },
     };
-    const { scheduler, db } = makeScheduler(cwd, jobs);
+    const { scheduler, db } = await makeScheduler(cwd, jobs);
 
     try {
-      scheduler.start();
+      await scheduler.start();
 
-      const summary = new Map(scheduler.listJobs().map((j) => [j.name, j]));
+      const summary = new Map((await scheduler.listJobs()).map((j) => [j.name, j]));
       assert.equal(summary.get("active")?.enabled, true);
       assert.ok(summary.get("active")?.nextRun instanceof Date);
       assert.equal(summary.get("paused")?.enabled, false);
@@ -195,7 +195,7 @@ describe("Scheduler — disabled jobs are registered-but-paused", () => {
       assert.equal(scheduler.getNextRun("paused"), null);
     } finally {
       scheduler.stop();
-      db.close();
+      await db.close();
     }
   });
 
@@ -208,17 +208,17 @@ describe("Scheduler — disabled jobs are registered-but-paused", () => {
         enabled: false,
       },
     };
-    const { scheduler, db } = makeScheduler(cwd, jobs);
+    const { scheduler, db } = await makeScheduler(cwd, jobs);
 
     try {
-      scheduler.start();
+      await scheduler.start();
       // Wait long enough that an armed every-second job would have fired
       // several times. No rows should appear.
       await new Promise((r) => setTimeout(r, 1500));
-      assert.equal(runCount(db), 0, "a disabled job must never fire");
+      assert.equal(await runCount(db), 0, "a disabled job must never fire");
     } finally {
       scheduler.stop();
-      db.close();
+      await db.close();
     }
   });
 });
@@ -230,31 +230,31 @@ describe("Scheduler — fires on schedule", () => {
     );
     // Sub-minute schedule (every second) so the test resolves in ~1s.
     const jobs = { tick: { schedule: "* * * * * *", handler: "./jobs/handler.ts" } };
-    const { scheduler, db } = makeScheduler(cwd, jobs);
+    const { scheduler, db } = await makeScheduler(cwd, jobs);
 
     try {
-      scheduler.start();
+      await scheduler.start();
       await waitForRuns(db, 1);
 
-      const row = runs(db)[0];
+      const row = (await runs(db))[0];
       assert.equal(row.job_name, "tick");
       assert.equal(row.status, "success");
       assert.match(row.output as string, /cron-fired/);
     } finally {
       scheduler.stop();
-      db.close();
+      await db.close();
     }
   });
 
   it("stop() cancels all future firings", async () => {
     const cwd = writeHandler(`export default async () => {}`);
     const jobs = { tick: { schedule: "* * * * * *", handler: "./jobs/handler.ts" } };
-    const { scheduler, db } = makeScheduler(cwd, jobs);
+    const { scheduler, db } = await makeScheduler(cwd, jobs);
 
     try {
-      scheduler.start();
+      await scheduler.start();
       await waitForRuns(db, 1);
-      const countAfterFirst = runCount(db);
+      const countAfterFirst = await runCount(db);
       assert.ok(countAfterFirst >= 1, "job should have fired at least once");
 
       scheduler.stop();
@@ -263,12 +263,12 @@ describe("Scheduler — fires on schedule", () => {
       // the count did not grow.
       await new Promise((r) => setTimeout(r, 1500));
       assert.equal(
-        runCount(db),
+        await runCount(db),
         countAfterFirst,
         "no new runs after stop()"
       );
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });
@@ -283,23 +283,23 @@ describe("Scheduler.runNow — manual trigger", () => {
       };`
     );
     const jobs = { cleanup: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { scheduler, db } = makeScheduler(cwd, jobs);
+    const { scheduler, db } = await makeScheduler(cwd, jobs);
 
     try {
       const result = await scheduler.runNow("cleanup");
       assert.equal(result.status, "success");
       assert.ok(typeof result.runId, "number");
 
-      const row = runs(db)[0];
+      const row = (await runs(db))[0];
       assert.equal(row.job_name, "cleanup");
       assert.equal(row.status, "success");
       assert.match(row.output as string, /manual/);
       assert.match(row.output as string, /"ok":true/);
 
       // The handler really got the live Database.
-      assert.equal(db.select("sessions").length, 1);
+      assert.equal((await db.select("sessions")).length, 1);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
@@ -308,21 +308,21 @@ describe("Scheduler.runNow — manual trigger", () => {
       `export default async () => { throw new Error("boom"); };`
     );
     const jobs = { bad: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { scheduler, db } = makeScheduler(cwd, jobs);
+    const { scheduler, db } = await makeScheduler(cwd, jobs);
 
     try {
       const result = await scheduler.runNow("bad");
       assert.equal(result.status, "failed");
-      assert.equal(runs(db)[0].error, "boom");
+      assert.equal((await runs(db))[0].error, "boom");
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("throws JobError for an unknown job name (no row written)", async () => {
     const cwd = writeHandler(`export default async () => {}`);
     const jobs = { known: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { scheduler, db } = makeScheduler(cwd, jobs);
+    const { scheduler, db } = await makeScheduler(cwd, jobs);
 
     try {
       await assert.rejects(() => scheduler.runNow("nope"), (err: unknown) => {
@@ -330,9 +330,9 @@ describe("Scheduler.runNow — manual trigger", () => {
         assert.match((err as Error).message, /Unknown job/);
         return true;
       });
-      assert.equal(runCount(db), 0);
+      assert.equal(await runCount(db), 0);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });
@@ -348,7 +348,7 @@ describe("Scheduler — concurrency (overlap is skipped)", () => {
       };`
     );
     const jobs = { slow: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { scheduler, db } = makeScheduler(cwd, jobs);
+    const { scheduler, db } = await makeScheduler(cwd, jobs);
 
     try {
       const run = scheduler.runNow("slow");
@@ -361,11 +361,11 @@ describe("Scheduler — concurrency (overlap is skipped)", () => {
       assert.equal(result.status, "success");
       assert.equal(scheduler.getRunner().isRunning("slow"), false);
 
-      const row = runs(db)[0];
+      const row = (await runs(db))[0];
       assert.equal(row.status, "success");
       assert.match(row.output as string, /finished/);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
@@ -379,7 +379,7 @@ describe("Scheduler — concurrency (overlap is skipped)", () => {
       };`
     );
     const jobs = { slow: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { scheduler, db } = makeScheduler(cwd, jobs);
+    const { scheduler, db } = await makeScheduler(cwd, jobs);
 
     try {
       // Fire the first run but don't await; let it enter the running set.
@@ -402,10 +402,10 @@ describe("Scheduler — concurrency (overlap is skipped)", () => {
       );
 
       // Exactly one row — the overlap was dropped, not queued.
-      assert.equal(runCount(db), 1);
-      assert.equal(runs(db)[0].status, "success");
+      assert.equal(await runCount(db), 1);
+      assert.equal((await runs(db))[0].status, "success");
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });
@@ -422,11 +422,11 @@ describe("Scheduler — readers", () => {
       },
       beta: { schedule: "0 4 * * *", handler: "./jobs/handler.ts" },
     };
-    const { scheduler, db } = makeScheduler(cwd, jobs);
+    const { scheduler, db } = await makeScheduler(cwd, jobs);
 
     try {
       // Before any run: lastRun/lastStatus are null.
-      let summaries = scheduler.listJobs();
+      let summaries = await scheduler.listJobs();
       assert.deepEqual(
         summaries.map((s) => s.name),
         ["alpha", "beta"]
@@ -440,8 +440,8 @@ describe("Scheduler — readers", () => {
       assert.equal(alphaBefore.lastStatus, null);
       assert.equal(alphaBefore.nextRun, null, "nextRun null before start");
 
-      scheduler.start();
-      summaries = scheduler.listJobs();
+      await scheduler.start();
+      summaries = await scheduler.listJobs();
       assert.ok(
         summaries[0].nextRun instanceof Date,
         "nextRun is a Date after start"
@@ -449,7 +449,7 @@ describe("Scheduler — readers", () => {
 
       // Run alpha manually; its lastRun/lastStatus should reflect the result.
       await scheduler.runNow("alpha");
-      summaries = scheduler.listJobs();
+      summaries = await scheduler.listJobs();
       const alphaAfter = summaries.find((s) => s.name === "alpha")!;
       assert.equal(alphaAfter.lastStatus, "success");
       assert.ok(alphaAfter.lastRun, "lastRun set after a run");
@@ -459,18 +459,18 @@ describe("Scheduler — readers", () => {
       assert.equal(betaAfter.lastStatus, null);
     } finally {
       scheduler.stop();
-      db.close();
+      await db.close();
     }
   });
 
-  it("getNextRun throws JobError for an unknown job", () => {
+  it("getNextRun throws JobError for an unknown job", async () => {
     const cwd = writeHandler(`export default async () => {}`);
     const jobs = { known: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { scheduler, db } = makeScheduler(cwd, jobs);
+    const { scheduler, db } = await makeScheduler(cwd, jobs);
     try {
       assert.throws(() => scheduler.getNextRun("nope"), JobError);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
@@ -479,7 +479,7 @@ describe("Scheduler — readers", () => {
       `export default async ({ log }) => { log("run"); };`
     );
     const jobs = { repeat: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { scheduler, db } = makeScheduler(cwd, jobs);
+    const { scheduler, db } = await makeScheduler(cwd, jobs);
 
     try {
       for (let i = 0; i < 3; i++) {
@@ -487,7 +487,7 @@ describe("Scheduler — readers", () => {
       }
 
       // Page of 2.
-      const page = scheduler.getRuns("repeat", { limit: 2, offset: 0 });
+      const page = await scheduler.getRuns("repeat", { limit: 2, offset: 0 });
       assert.equal(page.runs.length, 2);
       assert.equal(page.total, 3, "total ignores limit/offset");
 
@@ -495,41 +495,44 @@ describe("Scheduler — readers", () => {
       assert.ok(page.runs[0].id > page.runs[1].id, "ordered newest-first");
 
       // Second page returns the remaining row.
-      const page2 = scheduler.getRuns("repeat", { limit: 2, offset: 2 });
+      const page2 = await scheduler.getRuns("repeat", { limit: 2, offset: 2 });
       assert.equal(page2.runs.length, 1);
       assert.equal(page2.total, 3);
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
   it("getRuns applies defaults (limit 50, offset 0) and throws for unknown jobs", async () => {
     const cwd = writeHandler(`export default async () => {}`);
     const jobs = { once: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { scheduler, db } = makeScheduler(cwd, jobs);
+    const { scheduler, db } = await makeScheduler(cwd, jobs);
 
     try {
       await scheduler.runNow("once");
-      const all = scheduler.getRuns("once");
+      const all = await scheduler.getRuns("once");
       assert.equal(all.runs.length, 1);
       assert.equal(all.total, 1);
 
-      assert.throws(() => scheduler.getRuns("missing"), JobError);
+      await assert.rejects(
+        async () => await scheduler.getRuns("missing"),
+        JobError
+      );
     } finally {
-      db.close();
+      await db.close();
     }
   });
 });
 
 describe("Scheduler — index provisioning", () => {
-  it("start() creates the _job_runs history index idempotently", () => {
+  it("start() creates the _job_runs history index idempotently", async () => {
     const cwd = writeHandler(`export default async () => {}`);
     const jobs = { a: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { scheduler, db } = makeScheduler(cwd, jobs);
+    const { scheduler, db } = await makeScheduler(cwd, jobs);
 
     const hasIndex = (): boolean =>
       db
-        .raw()
+        .sqliteRaw()
         .prepare(
           `SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = '_job_runs_name_started_idx'`
         )
@@ -537,54 +540,54 @@ describe("Scheduler — index provisioning", () => {
 
     try {
       assert.equal(hasIndex(), false, "index absent before start");
-      scheduler.start();
+      await scheduler.start();
       assert.equal(hasIndex(), true, "index created on start");
       // Calling ensureIndexes again (or start again) is a no-op.
-      scheduler.ensureIndexes();
+      await scheduler.ensureIndexes();
       assert.equal(hasIndex(), true);
     } finally {
       scheduler.stop();
-      db.close();
+      await db.close();
     }
   });
 
-  it("ensureIndexes is a safe no-op when _job_runs does not exist", () => {
+  it("ensureIndexes is a safe no-op when _job_runs does not exist", async () => {
     const cwd = writeHandler(`export default async () => {}`);
     const jobs = { a: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
     // Deliberately omit `jobs` from DatabaseOptions so `_job_runs` is absent.
-    const db = new Database({ schema: baseSchema, dataDir: cwd });
-    const { scheduler } = makeScheduler(cwd, jobs, db);
+    const db = await Database.open({ schema: baseSchema, dataDir: cwd });
+    const { scheduler } = await makeScheduler(cwd, jobs, db);
 
     try {
       // Must not throw on a table that isn't there.
-      scheduler.ensureIndexes();
+      await scheduler.ensureIndexes();
     } finally {
-      db.close();
+      await db.close();
     }
   });
 
-  it("start() reconciles orphaned running rows from a previous process as failed", () => {
+  it("start() reconciles orphaned running rows from a previous process as failed", async () => {
     const cwd = writeHandler(`export default async () => {}`);
     const jobs = { a: { schedule: "0 3 * * *", handler: "./jobs/handler.ts" } };
-    const { scheduler, db } = makeScheduler(cwd, jobs);
+    const { scheduler, db } = await makeScheduler(cwd, jobs);
 
     try {
       // Simulate a crashed process leaving a "running" row alongside a completed row.
-      db.insert("_job_runs", {
+      await db.insert("_job_runs", {
         job_name: "a",
         status: "running",
         started_at: "2026-01-01T00:00:00.000Z",
       });
-      db.insert("_job_runs", {
+      await db.insert("_job_runs", {
         job_name: "a",
         status: "success",
         started_at: "2026-01-01T00:00:00.000Z",
         ended_at: "2026-01-01T00:00:01.000Z",
       });
 
-      scheduler.start();
+      await scheduler.start();
 
-      const { runs } = scheduler.getRuns("a");
+      const { runs } = await scheduler.getRuns("a");
       const orphan = runs.find((r) => r.id === 1);
       const completed = runs.find((r) => r.id === 2);
 
@@ -598,7 +601,7 @@ describe("Scheduler — index provisioning", () => {
       assert.equal(completed.error, null);
     } finally {
       scheduler.stop();
-      db.close();
+      await db.close();
     }
   });
 });

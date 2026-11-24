@@ -55,7 +55,7 @@ describe("Storage REST API", () => {
 
   before(async () => {
     tmp = tempDir();
-    db = new Database({
+    db = await Database.open({
       schema: testSchema,
       auth: authConfig,
       dataDir: tmp,
@@ -74,8 +74,8 @@ describe("Storage REST API", () => {
     token = session.accessToken;
   });
 
-  after(() => {
-    db.close();
+  after(async () => {
+    await db.close();
     fs.rmSync(tmp, { recursive: true, force: true });
   });
 
@@ -111,7 +111,7 @@ describe("Storage REST API", () => {
 
     it("should reject oversized uploads from createServer storage options", async () => {
       const limitedTmp = tempDir();
-      const limitedDb = new Database({
+      const limitedDb = await Database.open({
         schema: testSchema,
         auth: authConfig,
         dataDir: limitedTmp,
@@ -143,7 +143,7 @@ describe("Storage REST API", () => {
         assert.equal(status, 413);
         assert.ok(/exceeds maximum/.test(body.error));
       } finally {
-        limitedDb.close();
+        await limitedDb.close();
         fs.rmSync(limitedTmp, { recursive: true, force: true });
       }
     });
@@ -323,7 +323,7 @@ describe("Storage REST API", () => {
   describe("maxFileSize enforcement", () => {
     it("should reject files larger than the configured limit", async () => {
       const limitedTmp = tempDir();
-      const limitedDb = new Database({
+      const limitedDb = await Database.open({
         schema: testSchema,
         auth: authConfig,
         dataDir: limitedTmp,
@@ -361,7 +361,7 @@ describe("Storage REST API", () => {
         assert.equal(status, 413);
         assert.ok(/exceeds maximum/.test(body.error));
       } finally {
-        limitedDb.close();
+        await limitedDb.close();
         fs.rmSync(limitedTmp, { recursive: true, force: true });
       }
     });

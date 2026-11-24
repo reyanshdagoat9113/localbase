@@ -88,7 +88,7 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
     }
 
     // Create database and run migrations
-    const db = new Database({
+    const db = await Database.open({
       path: dbPath,
       schema: config.tables,
       auth: config.auth,
@@ -96,7 +96,7 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
       buckets: config.buckets,
       jobs: config.jobs,
     });
-    const applied = db.getAppliedMigrations();
+    const applied = await db.getAppliedMigrations();
     log.info(`Database: ${path.relative(cwd, dbPath)}`);
     log.info(`Tables: ${[...applied].join(", ")}`);
     if (config.auth?.enabled) {
@@ -216,7 +216,7 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
     // and is torn down + re-armed on config hot-reload. No-op when `jobs` is
     // empty/absent (Decision #7).
     if (hasJobs) {
-      scheduler.start();
+      await scheduler.start();
       const armed = Object.entries(jobsMap)
         .filter(([, j]) => j.enabled !== false)
         .map(([n]) => n);
@@ -312,7 +312,7 @@ export async function devCommand(opts: DevOptions = {}): Promise<void> {
       currentServer = null;
     }
     if (currentDb) {
-      currentDb.close();
+      await currentDb.close();
       currentDb = null;
     }
   }

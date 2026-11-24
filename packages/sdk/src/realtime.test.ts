@@ -35,7 +35,7 @@ describe("SDK realtime", () => {
   let port: number;
 
   before(async () => {
-    db = new Database({ schema: testSchema });
+    db = await Database.open({ schema: testSchema });
     const app = createServer(db, testSchema);
     server = serve({ fetch: app.fetch, port: 0 });
     port = (server.address() as { port: number }).port;
@@ -54,7 +54,7 @@ describe("SDK realtime", () => {
     await new Promise<void>((resolve, reject) => {
       server.close((err) => (err ? reject(err) : resolve()));
     });
-    db.close();
+    await db.close();
   });
 
   it("receives insert events", async () => {
@@ -66,7 +66,7 @@ describe("SDK realtime", () => {
     // Wait a tick for the WebSocket to connect and subscribe.
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    db.insert("messages", { room_id: 1, body: "sdk test" });
+    await db.insert("messages", { room_id: 1, body: "sdk test" });
 
     // Wait for the event to arrive.
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -90,8 +90,8 @@ describe("SDK realtime", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 200));
 
-    db.insert("messages", { room_id: 1, body: "room one" });
-    db.insert("messages", { room_id: 2, body: "room two" });
+    await db.insert("messages", { room_id: 1, body: "room one" });
+    await db.insert("messages", { room_id: 2, body: "room two" });
 
     await new Promise((resolve) => setTimeout(resolve, 200));
 
@@ -112,7 +112,7 @@ describe("SDK realtime", () => {
     unsubscribe();
     await new Promise((resolve) => setTimeout(resolve, 50));
 
-    db.insert("messages", { room_id: 1, body: "after unsub" });
+    await db.insert("messages", { room_id: 1, body: "after unsub" });
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     assert.equal(events.length, 0);
@@ -137,7 +137,7 @@ describe("SDK realtime", () => {
     });
 
     await new Promise((resolve) => setTimeout(resolve, 50));
-    db.insert("messages", { room_id: 1, body: "custom path" });
+    await db.insert("messages", { room_id: 1, body: "custom path" });
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     assert.equal(events.length, 1);
@@ -158,7 +158,7 @@ describe("SDK realtime", () => {
     });
 
     await new Promise((resolve) => setTimeout(resolve, 50));
-    db.insert("messages", { room_id: 1, body: "disabled client" });
+    await db.insert("messages", { room_id: 1, body: "disabled client" });
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     assert.equal(events.length, 0);

@@ -44,6 +44,8 @@ interface ClientState {
   subscriptions: Map<string, ClientSubscription>;
   presence: Map<string, PresenceState>;
   roleCache: RoleCache | null;
+  /** Serializes async per-client event delivery so role refreshes cannot reorder events. */
+  deliveryQueue: Promise<void>;
 }
 
 /** Outcome of a subscribe attempt, surfaced to the caller for the wire ack. */
@@ -109,6 +111,7 @@ export class SubscriptionManager {
       subscriptions: new Map(),
       presence: new Map(),
       roleCache: null,
+      deliveryQueue: Promise.resolve(),
     });
   }
 
@@ -138,12 +141,12 @@ export class SubscriptionManager {
    * frozen onto the subscription so the per-event match is a pure function
    * of the row + the (server-supplied) scope.
    */
-  subscribe(
+  async subscribe(
     socket: WebSocket,
     subscriptionId: string,
     table: string,
     filters: RealtimeFilter[]
-  ): SubscribeOutcome {
+  ): Promise<SubscribeOutcome> {
     const client = this.clients.get(socket);
     if (!client) return { ok: false, reason: "auth_required" };
 
@@ -151,8 +154,11 @@ export class SubscriptionManager {
       return { ok: false, reason: "too_many_subscriptions" };
     }
 
-    const scope = this.resolveScope(client, table);
+    const scope = await this.resolveScope(client, table);
     if (scope === "denied") return { ok: false, reason: "auth_required" };
+
+    // Re-check client still connected after async scope lookup.
+    if (!this.clients.has(socket)) return { ok: false, reason: "auth_required" };
 
     client.subscriptions.set(subscriptionId, { table, filters, scope });
     return { ok: true };
@@ -170,28 +176,46 @@ export class SubscriptionManager {
     client.subscriptions.clear();
   }
 
-  broadcast(event: RealtimeEvent): void {
+  broadcast(event: RealtimeEvent): Promise<void> {
+    const tasks: Promise<void>[] = [];
     for (const client of this.clients.values()) {
-      for (const sub of client.subscriptions.values()) {
-        if (this.matchesSubscription(event, sub, client)) {
-          this.send(client.socket, { type: "event", event });
+      const task = this.enqueueDelivery(client, async () => {
+        if (!this.clients.has(client.socket)) return;
+        for (const sub of [...client.subscriptions.values()]) {
+          if (await this.matchesSubscription(event, sub, client)) {
+            this.send(client.socket, { type: "event", event });
+          }
         }
-      }
+      });
+      tasks.push(task);
     }
+    return Promise.all(tasks).then(() => {});
   }
 
-  replay(socket: WebSocket, events: RealtimeEvent[]): void {
+  replay(socket: WebSocket, events: RealtimeEvent[]): Promise<void> {
     const client = this.clients.get(socket);
-    if (!client) return;
+    if (!client) return Promise.resolve();
 
-    for (const event of events) {
-      for (const sub of client.subscriptions.values()) {
-        if (this.matchesSubscription(event, sub, client)) {
-          this.send(socket, { type: "event", event });
-          break;
+    return this.enqueueDelivery(client, async () => {
+      if (!this.clients.has(socket)) return;
+      for (const event of events) {
+        for (const sub of [...client.subscriptions.values()]) {
+          if (await this.matchesSubscription(event, sub, client)) {
+            this.send(socket, { type: "event", event });
+            break;
+          }
         }
       }
-    }
+    });
+  }
+
+  private enqueueDelivery(
+    client: ClientState,
+    fn: () => Promise<void>
+  ): Promise<void> {
+    const next = client.deliveryQueue.then(fn, fn);
+    client.deliveryQueue = next.catch(() => {});
+    return client.deliveryQueue;
   }
 
   joinPresence(
@@ -303,16 +327,18 @@ export class SubscriptionManager {
    *   - policy + `adminBypass` + live admin → bypass scope (all rows);
    *   - otherwise → owner-scoped to `user.id`.
    */
-  private resolveScope(
+  private async resolveScope(
     client: ClientState,
     table: string
-  ): { ownerColumn: string; userId: number; bypass: boolean } | "denied" | undefined {
+  ): Promise<
+    { ownerColumn: string; userId: number; bypass: boolean } | "denied" | undefined
+  > {
     if (!this.policyMap || !this.database) return undefined;
     const policy = this.policyMap.get(table);
     if (!policy) return undefined;
     if (!client.user) return "denied";
 
-    const bypass = policy.adminBypass && this.isLiveAdmin(client);
+    const bypass = policy.adminBypass && (await this.isLiveAdmin(client));
     return {
       ownerColumn: policy.ownerColumn,
       userId: client.user.id,
@@ -320,39 +346,29 @@ export class SubscriptionManager {
     };
   }
 
-  /**
-   * TTL-cached live admin check. Caching bounds the per-event cost (one indexed
-   * `_users` lookup per connection per TTL window) while keeping demotion
-   * latency well under the access-token lifetime — satisfying "demoted admins
-   * lose bypass privileges without waiting for JWT expiry."
-   */
-  private isLiveAdmin(client: ClientState): boolean {
+  private async isLiveAdmin(client: ClientState): Promise<boolean> {
     if (!client.user) return false;
     const now = Date.now();
     if (client.roleCache && now - client.roleCache.at < this.roleTtlMs) {
       return client.roleCache.admin;
     }
-    const admin = liveAdminRole(this.database!, client.user.id);
-    client.roleCache = { admin, at: now };
+    const admin = await liveAdminRole(this.database!, client.user.id);
+    client.roleCache = { admin, at: Date.now() };
     return admin;
   }
 
-  private matchesSubscription(
+  private async matchesSubscription(
     event: RealtimeEvent,
     subscription: ClientSubscription,
     client: ClientState
-  ): boolean {
+  ): Promise<boolean> {
     const row = event.row as Record<string, unknown> | undefined;
     if (subscription.table !== event.table) return false;
     if (row === undefined) return false;
 
-    // Server-enforced owner gate. Applied BEFORE any client filter so a forged
-    // filter can never widen visibility. Bypass subscriptions re-check the live
-    // admin role on each event; a demoted admin immediately falls back to
-    // seeing only their own rows (and nothing if they never owned any).
     if (subscription.scope) {
       const { ownerColumn, userId, bypass } = subscription.scope;
-      if (bypass && this.isLiveAdmin(client)) {
+      if (bypass && (await this.isLiveAdmin(client))) {
         // admin sees all rows on this table
       } else {
         if (row[ownerColumn] !== userId) return false;

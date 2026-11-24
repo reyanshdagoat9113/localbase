@@ -123,10 +123,10 @@ export class Scheduler {
    * Per Decision #9 there is **no backfill**: croner computes the next future
    * match from now, so runs missed while the server was down are not replayed.
    */
-  start(): void {
+  async start(): Promise<void> {
     if (this.started) return;
-    this.ensureIndexes();
-    this.reconcileOrphanedRuns();
+    await this.ensureIndexes();
+    await this.reconcileOrphanedRuns();
 
     for (const [name, job] of Object.entries(this.jobs)) {
       // `enabled` defaults to true; an explicit `false` registers-but-pauses.
@@ -205,18 +205,13 @@ export class Scheduler {
    * The admin trigger endpoint uses this so it can return a run id immediately
    * while readers observe the eventual success/failure update.
    */
-  triggerNow(name: string): TriggerJobResult {
+  async triggerNow(name: string): Promise<TriggerJobResult> {
     this.requireJob(name);
-    if (this.runner.isRunning(name)) {
-      return {
-        runId: null,
-        completion: Promise.resolve({ runId: null, status: "skipped" }),
-      };
+    const { runId, completion } = await this.runner.startRun(name);
+    if (runId !== null) {
+      this.inFlight.add(completion);
+      completion.finally(() => this.inFlight.delete(completion)).catch(() => {});
     }
-
-    // JobRunner inserts the running row synchronously before its first await.
-    const completion = this.runTracked(name);
-    const runId = this.latestRun(name)?.id ?? null;
     return { runId, completion };
   }
 
@@ -235,25 +230,26 @@ export class Scheduler {
    * scheduled fire time, and the most recent run. Order matches the config
    * map's insertion order. Used by `localbase jobs list` and the admin viewer.
    */
-  listJobs(): JobSummary[] {
-    return Object.entries(this.jobs).map(([name, job]) => {
+  async listJobs(): Promise<JobSummary[]> {
+    const entries = Object.entries(this.jobs);
+    const summaries: JobSummary[] = [];
+    for (const [name, job] of entries) {
       const enabled = job.enabled !== false;
       const cron = this.crons.get(name);
-      const last = this.latestRun(name);
+      const last = await this.latestRun(name);
 
-      return {
+      summaries.push({
         name,
         schedule: job.schedule,
         timezone: job.timezone,
         enabled,
         description: job.description,
-        // nextRun is only meaningful for armed, enabled jobs. A disabled job
-        // or one whose scheduler hasn't started reports `null`.
         nextRun: enabled && this.started && cron ? cron.nextRun() : null,
         lastRun: last ? last.started_at : null,
         lastStatus: last ? last.status : null,
-      };
-    });
+      });
+    }
+    return summaries;
   }
 
   /**
@@ -275,55 +271,36 @@ export class Scheduler {
    *
    * @throws {JobError} if `name` is not a registered job.
    */
-  getRuns(name: string, opts?: GetRunsOptions): GetRunsResult {
+  async getRuns(name: string, opts?: GetRunsOptions): Promise<GetRunsResult> {
     this.requireJob(name);
     const limit = opts?.limit ?? 50;
     const offset = opts?.offset ?? 0;
     const filter = [{ column: "job_name", operator: "eq" as const, value: name }];
 
-    // Order by `id desc` (not `started_at desc`): id is monotonic + unique,
-    // so rapid runs sharing the same `started_at` millisecond still get a
-    // deterministic newest-first order. The `(job_name, started_at)` index
-    // still accelerates the job_name equality filter.
-    const runs = this.db.select("_job_runs", {
+    const runs = (await this.db.select("_job_runs", {
       filters: filter,
       orderBy: [{ column: "id", direction: "desc" }],
       limit,
       offset,
-    }) as JobRunRow[];
+    })) as JobRunRow[];
 
-    const total = this.db.count("_job_runs", filter);
+    const total = await this.db.count("_job_runs", filter);
     return { runs, total };
   }
 
-  /**
-   * Ensure `_job_runs` carries the index the history/`logs` query needs.
-   * Indexes are not tracked by the additive migration system, so — mirroring
-   * `StorageEngine.ensureIndexes` — we create them idempotently here, outside
-   * the migration flow. If `_job_runs` doesn't exist yet we skip silently;
-   * operations that need it will fail later with a clear SQLite error.
-   */
-  ensureIndexes(): void {
-    if (!this.hasRunsTable()) return;
+  async ensureIndexes(): Promise<void> {
+    if (!(await this.hasRunsTable())) return;
 
-    // Covers the per-job history query (filter by job_name, order by
-    // started_at desc) that `getRuns`, `localbase jobs logs`, and the admin
-    // run viewer all issue.
-    this.db.raw().exec(`
+    await this.db.execBatch(`
       CREATE INDEX IF NOT EXISTS "_job_runs_name_started_idx"
         ON "_job_runs" ("job_name", "started_at" DESC);
     `);
   }
 
-  /**
-   * Mark any leftover `status = "running"` rows from a previous crashed or
-   * killed process as failed so they do not stay stuck as "running" forever
-   * in `jobs logs` and Admin Studio.
-   */
-  private reconcileOrphanedRuns(): void {
-    if (!this.hasRunsTable()) return;
+  private async reconcileOrphanedRuns(): Promise<void> {
+    if (!(await this.hasRunsTable())) return;
 
-    this.db.update(
+    await this.db.update(
       "_job_runs",
       {
         status: "failed",
@@ -334,23 +311,14 @@ export class Scheduler {
     );
   }
 
-  private hasRunsTable(): boolean {
-    return (
-      this.db
-        .raw()
-        .prepare(
-          `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_job_runs'`
-        )
-        .get() !== undefined
-    );
+  private async hasRunsTable(): Promise<boolean> {
+    return this.db.tableExists("_job_runs");
   }
 
   /** Run through the shared runner while tracking the promise for shutdown drains. */
   private runTracked(name: string): Promise<JobRunResult> {
     const promise = this.runner.run(name);
     this.inFlight.add(promise);
-    // Observe the cleanup promise so a rejected runner call cannot become an
-    // unhandled rejection when this was fired from a cron callback.
     promise.finally(() => this.inFlight.delete(promise)).catch(() => {});
     return promise;
   }
@@ -363,12 +331,12 @@ export class Scheduler {
   }
 
   /** Newest run row for `name` (or `null`), ordered by id desc. */
-  private latestRun(name: string): JobRunRow | null {
-    const rows = this.db.select("_job_runs", {
+  private async latestRun(name: string): Promise<JobRunRow | null> {
+    const rows = (await this.db.select("_job_runs", {
       filters: [{ column: "job_name", operator: "eq", value: name }],
       orderBy: [{ column: "id", direction: "desc" }],
       limit: 1,
-    }) as JobRunRow[];
+    })) as JobRunRow[];
     return rows[0] ?? null;
   }
 }

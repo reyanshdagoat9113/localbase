@@ -29,8 +29,8 @@ const testSchema: DatabaseSchema = {
 
 // ─── Helpers ───────────────────────────────────────────────────
 
-function seedUsers(db: Database) {
-  db.insert("users", [
+async function seedUsers(db: Database) {
+  await db.insert("users", [
     { name: "Alice", email: "alice@test.com", age: 30 },
     { name: "Bob", email: "bob@test.com", age: 25 },
     { name: "Charlie", email: "charlie@test.com", age: 35 },
@@ -48,14 +48,14 @@ describe("REST API", () => {
   let db: Database;
   let app: Hono;
 
-  before(() => {
-    db = new Database({ schema: testSchema });
+  before(async () => {
+    db = await Database.open({ schema: testSchema });
     app = createServer(db, testSchema, { auth: { enabled: false } });
     seedUsers(db);
   });
 
-  after(() => {
-    db.close();
+  after(async () => {
+    await db.close();
   });
 
   // ── Health check ──
@@ -414,7 +414,7 @@ describe("REST API", () => {
   // ── Boolean coercion (body + query filters) ──
 
   describe("boolean coercion", () => {
-    it("accepts JS booleans, string booleans, and 1/0 in POST/PATCH bodies and stores 1/0", async () => {
+    it("accepts JS booleans, string booleans, and 1/0 in POST/PATCH bodies, stores 1/0 on SQLite, and normalizes reads to true/false", async () => {
       const boolSchema: DatabaseSchema = {
         flags: {
           id: { type: "integer", primaryKey: true, autoIncrement: true },
@@ -422,7 +422,7 @@ describe("REST API", () => {
           active: { type: "boolean", nullable: false },
         },
       };
-      const boolDb = new Database({ schema: boolSchema });
+      const boolDb = await Database.open({ schema: boolSchema });
       const boolApp = createServer(boolDb, boolSchema, {
         auth: { enabled: false },
       });
@@ -434,8 +434,11 @@ describe("REST API", () => {
           body: JSON.stringify({ name: "a", active: true }),
         });
         assert.equal(resTrue.status, 201);
-        const bodyTrue = (await resTrue.json()) as { data: { id: number; active: number } };
-        assert.equal(bodyTrue.data.active, 1);
+        const bodyTrue = (await resTrue.json()) as { data: { id: number; active: boolean } };
+        assert.strictEqual(bodyTrue.data.active, true);
+        // Verify SQLite stores 1 underneath
+        const rawTrue = boolDb.sqliteRaw().prepare(`SELECT active FROM flags WHERE id = ?`).get(bodyTrue.data.id) as { active: number };
+        assert.strictEqual(rawTrue.active, 1);
 
         const resFalse = await boolApp.request("/api/flags", {
           method: "POST",
@@ -443,8 +446,8 @@ describe("REST API", () => {
           body: JSON.stringify({ name: "b", active: false }),
         });
         assert.equal(resFalse.status, 201);
-        const bodyFalse = (await resFalse.json()) as { data: { id: number; active: number } };
-        assert.equal(bodyFalse.data.active, 0);
+        const bodyFalse = (await resFalse.json()) as { data: { id: number; active: boolean } };
+        assert.strictEqual(bodyFalse.data.active, false);
 
         const resPatch = await boolApp.request(`/api/flags/${bodyFalse.data.id}`, {
           method: "PATCH",
@@ -452,8 +455,8 @@ describe("REST API", () => {
           body: JSON.stringify({ active: "true" }),
         });
         assert.equal(resPatch.status, 200);
-        const bodyPatch = (await resPatch.json()) as { data: { active: number } };
-        assert.equal(bodyPatch.data.active, 1);
+        const bodyPatch = (await resPatch.json()) as { data: { active: boolean } };
+        assert.strictEqual(bodyPatch.data.active, true);
 
         const resBad = await boolApp.request("/api/flags", {
           method: "POST",
@@ -465,8 +468,9 @@ describe("REST API", () => {
         // Query filters: "true", "false", "1", "0"
         const qTrue = await boolApp.request("/api/flags?active=eq.true");
         assert.equal(qTrue.status, 200);
-        const qTrueBody = (await qTrue.json()) as { data: unknown[] };
+        const qTrueBody = (await qTrue.json()) as { data: { active: boolean }[] };
         assert.equal(qTrueBody.data.length, 2);
+        assert.strictEqual(qTrueBody.data[0].active, true);
 
         const qFalse = await boolApp.request("/api/flags?active=eq.false");
         assert.equal(qFalse.status, 200);
@@ -481,8 +485,25 @@ describe("REST API", () => {
         const qBad = await boolApp.request("/api/flags?active=eq.notabool");
         assert.equal(qBad.status, 400);
       } finally {
-        boolDb.close();
+        await boolDb.close();
       }
+    });
+
+    it("rejects non-integer :id path params on integer PK tables with 400", async () => {
+      const getRes = await app.request("/api/users/not-a-number");
+      assert.equal(getRes.status, 400);
+
+      const patchRes = await app.request("/api/users/not-a-number", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "X" }),
+      });
+      assert.equal(patchRes.status, 400);
+
+      const delRes = await app.request("/api/users/not-a-number", {
+        method: "DELETE",
+      });
+      assert.equal(delRes.status, 400);
     });
   });
 });
