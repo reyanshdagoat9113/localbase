@@ -415,7 +415,7 @@ describe("Realtime", () => {
           const parsed = JSON.parse(payload) as { event?: { id?: number } };
           if (parsed.event?.id !== undefined) sent.push(parsed.event.id);
         },
-      } as unknown as WebSocket;
+      } as unknown as Parameters<InstanceType<typeof SubscriptionManager>["addClient"]>[0];
 
       const mgr = new SubscriptionManager({
         database: fakeDb,

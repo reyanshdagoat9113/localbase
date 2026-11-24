@@ -258,6 +258,7 @@ Once M1–M6 ship, PostgreSQL unlocks multi-instance features that were previous
 - **Distributed Scheduled Jobs:** Use `pg_try_advisory_lock` so only one instance runs a scheduled cron firing.
 - **Pluggable Object Storage:** S3/R2-compatible storage adapter alongside local disk so multiple instances share uploaded files.
 - **Transactional `change`-event buffering:** `Database.insert/update/delete` currently emit `"change"` events immediately, even when called inside a transaction that later rolls back. Buffering events per transaction and flushing them only after `COMMIT` is a planned follow-up.
+- **Estimated row counts in Postgres `introspect()`:** `PostgresDriver.introspect()` currently runs exact `SELECT COUNT(*)` per table. Switching to a `pg_class.reltuples` estimate for large tables is a planned follow-up to avoid full sequential scans during Admin Studio introspection.
 
 ---
 

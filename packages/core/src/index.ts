@@ -6,6 +6,9 @@ export {
   normalizeDatabaseError,
   SqliteDriver,
   sqliteDialect,
+  PostgresDriver,
+  postgresDialect,
+  redactConnectionUrl,
 } from "./db/index.js";
 export type {
   DatabaseEngine,
@@ -13,6 +16,7 @@ export type {
   DbDriver,
   QueryExecutor,
   SqlDialect,
+  PostgresDriverOptions,
 } from "./db/index.js";
 
 // API server
